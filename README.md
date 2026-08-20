@@ -12,7 +12,7 @@ lake build
 
 The separation logic contains various extensions: top/and/or/sat, septraction, framing modalities ([new!](https://dariusf.github.io/thesis/)).
 
-The xsimpl tactic supports frame inference/biabduction, and a typeclass for teaching it about new separation logics.
+The xsimpl tactic supports frame inference/biabduction, and a typeclass for teaching it about new separation logics, including affine ones.
 <!-- An Iris-like higher-order separation logic using it is available [here](https://github.com/dariusf/indirection). -->
 
 Other useful, new tactics for working with separation logic are also available:
