@@ -1,0 +1,12 @@
+name = "Sep"
+version = "0.1.0"
+defaultTargets = ["Sep"]
+
+[[lean_lib]]
+name = "Sep"
+globs = ["Sep.+"]
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+rev = "v4.29.0"
