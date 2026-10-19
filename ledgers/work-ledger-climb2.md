@@ -8,6 +8,8 @@ Grow the set of SL-COMP benchmarks that `xsearch` proves (and refutes) beyond th
 
 Divisions not yet covered: `qf_shlid_entl` 60, `qf_shidlia_entl` 61, `shid_entl` 73, `shidlia_entl` 181, `onprob_qf_shid_entl` 11, and the sat divisions `qf_shls_sat` 110, `qf_shid_sat` 99, `qf_bsl_sat` 46, `qf_bsllia_sat` 24, `qf_shidlia_sat` 33.
 
+End state (user, 2026-10-20): the result must be one proper algorithm, not a collection of shape-specific special cases. The proof climb may add mechanisms quickly, but it is followed by a mandatory consolidation phase (backlog C1 and successors): a series of passes that fold the descriptor kinds and planning passes into one indexed-segment abstraction with one lemma family and one planner, each pass verified by the full bench with zero losses, and only then the time passes.
+
 Scope rule (user, 2026-10-20): the goal is the best separation-logic automation. Divisions whose difficulty is a background theory (LIA, bitvectors) are handled by delegating the pure residue to an existing Lean closing tactic (`omega`, `bv_decide`, `simp`), not by building arithmetic reasoning into `xsearch`; the separation-logic part around them is in scope.
 
 ## Acceptance criteria
@@ -87,6 +89,7 @@ No parse errors or unsupported problems: the encoder covers every entailment div
   | s3 | 708 | 16.8 s | 17.8 s | 56.1 s | 423 |
   | s5a | 745 | 16.8 s | 17.8 s | 68.2 s | 488 |
 
+- [ ] C-phase (mandatory, user 2026-10-20): consolidation passes until the search is one algorithm. C1 is the first; expect further passes for the older kinds (`SegDesc`/`SnocD`/`ParD` versus the indexed abstraction, the compose pre-pass versus the join-then-split planner, the witness strategies `exWitAlt`/`arWitness`/S5b candidates), each a Sonnet or Opus step with the full bench as the check.
 - [ ] C1. Consolidate the descriptor kinds (user question 2026-10-20: are these special cases per predicate kind? No names or constants, but the code is organised by shape, and `ArD` (counter), `DatD` (ordered payload), `LenP` (length profile) and the coming `dsegC` each carry their own join/split/peel/conversion lemmas and pass). Target: one indexed-segment abstraction with location coordinates plus any number of numeric coordinates, each with a base value and a step relation (counter = decrement 1, data = monotone relation, profile = derived length set), one lemma family, one planning pass; the three existing kinds become instances. Expected to cut lines and per-problem lemma-building time. Do after the proof steps, before T0/T1, with the full bench as the monotonicity check.
 - [ ] T0. Profile the LIA proofs (shidlia 33 s over 158 proved, about 200 ms each): lemma building per predicate (B/F/Z/H/S/J/conversions/Bnd/J/T, 60–150 ms each) is rebuilt per problem by design (one-problem rule); cut it with cheaper proof terms (direct `Expr` construction instead of tactic scripts), lazy building of only the lemmas the plan uses, and skipping the countermodel check when the arithmetic pass has a verified plan.
 - [ ] T1. Cancellation at scale: Yolo Cancel100..400 grow about cubically (0.34/1.7/5.3/12.4 s); make xsimpl's cancellation and permutation proofs O(n log n) in atoms and memory-bounded, so Cancel500..800 run on 7 GB and all eight are under 5 s. Then the full-suite time.
