@@ -7524,11 +7524,21 @@ def fastHopeless : TacticM Bool := withMainContext do
 elab "xsearch_fastgate" : tactic => do
   if ← fastHopeless then throwError "xsearch: fast path hopeless"
 
+def hasPredAtom : TacticM Bool := withMainContext do
+  let entries := xsearchUnfoldExt.getState (← getEnv)
+  let allFns := entries.map (·.headFn)
+  let t ← instantiateMVars (← (← getMainGoal).getType)
+  return (t.find? fun e => match e with
+    | .const n _ => allFns.contains n
+    | _ => false).isSome
+
 syntax "xsearch_scope " tactic : tactic
 elab_rules : tactic
   | `(tactic| xsearch_scope $t) => do
     simpOnlyCache.set #[]
-    withEnableInfoTree false (Sep.Xsimpl.withCheapCancel (evalTactic t))
+    let cheap ← hasPredAtom
+    withEnableInfoTree false
+      (if cheap then Sep.Xsimpl.withCheapCancel (evalTactic t) else evalTactic t)
 
 syntax "xsearch" : tactic
 macro_rules

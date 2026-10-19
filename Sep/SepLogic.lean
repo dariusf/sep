@@ -360,6 +360,15 @@ theorem nt_wand_r.{w, z} {α : Type w} [SepLogic.{w, z} α] {l a b : α}
     (h : l ∗ a ==> b) : l ==> a -∗ b :=
   wand_intro h
 
+theorem nt_wand_same.{w, z} {α : Type w} [SepLogic.{w, z} α] (a : α) {l r : α}
+    (h : l ==> r) : l ==> (a -∗ a) ∗ r :=
+  entails_trans h (entails_trans (nt_of_eq (star_emp_l r).symm)
+    (frame_l (wand_intro (nt_of_eq (star_emp_l a)))))
+
+theorem nt_wand_same1.{w, z} {α : Type w} [SepLogic.{w, z} α] (a : α) {l : α}
+    (h : l ==> emp) : l ==> a -∗ a :=
+  entails_trans h (wand_intro (nt_of_eq (star_emp_l a)))
+
 end NativeLemmas
 
 -- ============================================================
@@ -2041,6 +2050,37 @@ partial def nativeGoal (g : MVarId) : MetaM (Option (List MVarId)) := g.withCont
     if ← residualEq c r created (c.starL sr) (c.starL tr) then
       changed := true
       res := none
+  if let (some w, some r0) := (c.wandOp, res) then
+    let mut r := r0
+    repeat
+      let tra ← r.withContext (tr.toArray.mapM instantiateMVars)
+      let mut hit : Option Nat := none
+      for j in [0 : tra.size] do
+        let t := tra[j]!
+        unless NCtx.isOp w t do continue
+        let a := NCtx.arg w t 0
+        let b := NCtx.arg w t 1
+        if a.hasExprMVar || b.hasExprMVar then continue
+        if ← r.withContext (cheapDefEq a b) then
+          hit := some j
+          break
+      let some j := hit | break
+      changed := true
+      let rest := (List.range tra.size).filter (· != j)
+      let restE := rest.map (tra[·]!)
+      let a := NCtx.arg w tra[j]! 0
+      let inv := (List.range tra.size).map (fun k => if k == j then 0 else if k < j then k + 1 else k)
+      let mid := c.starL (tra[j]! :: restE)
+      let rt := c.starL tra.toList
+      let lsr := c.starL sr
+      let ty := c.mkEnt lsr (c.starL restE)
+      r ← newGoal r ty fun m =>
+        c.transO' lsr mid rt (if restE.isEmpty then c.lem ``nt_wand_same1 #[a, lsr, m]
+          else c.lem ``nt_wand_same #[a, lsr, c.starL restE, m]) (c.perm (tra[j]! :: restE) inv)
+      tr := restE
+    res := some r
+    if tr.isEmpty then
+      if ← closeRefl c r (c.starL sr) c.empE then res := none
   let mut sub : Option (List MVarId) := none
   if let (some w, some r) := (c.wandOp, res) then
     let sr ← r.withContext (sr.mapM instantiateMVars)
