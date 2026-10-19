@@ -188,6 +188,10 @@ example {H1 H2 H3} : H1 ==> H2 -✶ (H3 -✶ (H3 ✶ H2 ✶ H1)) := by
 example {H1 H2 H3} : H1 ==> (H2 ✶ H3) -✶ (H3 ✶ H1 ✶ H2) := by
   xsimpl
 
+example {H5 H8 H11 H22 : HProp} :
+    H5 ✶ (H8 -✶ emp) ✶ H11 ==> ((H11 -✶ H8) -✶ H5) ✶ (H22 -✶ H22) ✶ (H11 -✶ H11) := by
+  xsimpl
+
 -- Introduction exposes a pure conjunct to extract.
 example {H1 H2 : HProp} {P : Prop} (h : P → (H1 ==> H2)) :
     H1 ==> (⌈P⌉ -✶ H2) := by
