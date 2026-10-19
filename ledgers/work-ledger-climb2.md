@@ -22,12 +22,20 @@ Read this file fully, then `git status` and `git log --oneline -5`. An uncommitt
 
 ## History
 
-(none yet)
+1. (2026-10-20) Split the xsimpl driver out of `Sep/SepLogic.lean` into `Sep/Xsimpl/Core.lean` per the (now deleted) `refactor.md`, so that class consumers (`Reordering`, `GrwSepLogic`) stop recompiling on driver edits. Pure move, no namespace changes. Bench `evolve/ref/split.csv`: 454 proved, lost and gained empty, reasons identical. Commit "Split the xsimpl driver into Sep/Xsimpl/Core".
+2. (2026-10-20) `Bench/Yolo` moved to its own lake target `Yolo` (lakefile.toml). Reason: this machine has 7 GB RAM and 24 cores; `Bench.Yolo.Cancel500..800` are OOM-killed (exit 137, ~5.8 GB peak each) during `lake build Bench`, on unmodified HEAD too. `lake build Sep Bench bench` now completes (1427 jobs). Build Yolo on demand with `lake build Yolo`.
 
 ## Backlog
 
-- [ ] 1. Do `refactor.md` (split the xsimpl driver out of `Sep/SepLogic.lean` into `Sep/Xsimpl/Core.lean`); verify 454 proved, lost empty; commit.
+- [x] 1. Do `refactor.md` (split the xsimpl driver out of `Sep/SepLogic.lean` into `Sep/Xsimpl/Core.lean`); verify 454 proved, lost empty; commit.
 - [ ] 2. Upgrade toolchain to Lean v4.35.0 (and mathlib to a matching tag); fix breakage; rebench; commit and push.
-- [ ] 3. Survey the uncovered divisions: what logic each needs (`qf_shlid`: linear inductive definitions with data? `shid`: quantified; `shidlia`: inductive definitions + LIA; sat divisions: satisfiability checking, needs a model finder or a refutation procedure); what the `Bench/SmtLib` parser and `Bench/Encode` already accept; count parse-error vs unsupported vs failed per division when run as-is.
+- [ ] 3. Survey the uncovered divisions. Preliminary (2026-10-20, static read of the files; the driver already lists all 7 entailment dirs in `entlDirs`, the parser AST already has Int, arithmetic, quantifiers, `define-funs-rec`, and `xsearch` already discharges pure residues with `omega`):
+  - `qf_shlid_entl` 60 (36 unsat): SPEN dll/nll/skl/lsso and Le's lss/sll; same shapes as `qf_shid_entl`. Expect mostly in reach already.
+  - `shid_entl` 73 (70 unsat): Songbird 64, Iosif/SLIDE 9; 70 have an existential at the top of the RHS; 71 multi-predicate (mutual recursion in the SLIDE ones).
+  - `qf_shidlia_entl` 61 (50 unsat): Songbird 39, Wu/COMPSPEN 22; Int parameters (length-indexed lists, dll with lengths), inequalities in 48.
+  - `shidlia_entl` 181 (all unsat): Songbird; Int parameters, inequalities and RHS existentials (over Int and locations) in every file.
+  - `onprob_qf_shid_entl` 11 (7 unsat): Harrsh; mutually recursive tll/atll/ptree; the encoder rejects forward references ("mutually recursive or forward-referenced predicate") unless the group machinery (`c.group`) covers it.
+  - Sat divisions ignored for now (user, 2026-10-20). BSL = boolean SL without inductive predicates (CVC4).
+  Next: run the bench over all 7 dirs after the refactor builds, to get real parse-error / unsupported / failed / proved counts.
 - [ ] 4. Yolo benchmarks (`Bench/Yolo/Cancel100..800`, `Misc`, `PureThings`): rerun through the driver, record times, decide whether they rejoin the regular bench as a time pressure.
 - [ ] 5. Plan the climb from the survey: ordered list of techniques with expected reach per division; execute one subagent step per technique.
