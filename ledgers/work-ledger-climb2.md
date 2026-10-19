@@ -24,6 +24,7 @@ Read this file fully, then `git status` and `git log --oneline -5`. An uncommitt
 
 1. (2026-10-20) Split the xsimpl driver out of `Sep/SepLogic.lean` into `Sep/Xsimpl/Core.lean` per the (now deleted) `refactor.md`, so that class consumers (`Reordering`, `GrwSepLogic`) stop recompiling on driver edits. Pure move, no namespace changes. Bench `evolve/ref/split.csv`: 454 proved, lost and gained empty, reasons identical. Commit "Split the xsimpl driver into Sep/Xsimpl/Core".
 2. (2026-10-20) `Bench/Yolo` moved to its own lake target `Yolo` (lakefile.toml). Reason: this machine has 7 GB RAM and 24 cores; `Bench.Yolo.Cancel500..800` are OOM-killed (exit 137, ~5.8 GB peak each) during `lake build Bench`, on unmodified HEAD too. `lake build Sep Bench bench` now completes (1427 jobs). Build Yolo on demand with `lake build Yolo`.
+3. (2026-10-20) Yolo through the bench driver (`lake exe bench --dir yolo --filter <file>`, one file at a time; the whole dir OOM-kills the driver at 7 GB): PureThings 8.8 s, Misc 0.1 s, Cancel100 0.34 s, Cancel200 1.7 s, Cancel300 5.3 s, Cancel400 12.4 s; Cancel500..800 not runnable here. Growth is about cubic in the atom count, so cancellation at scale is a real target for `xsimpl` (memory as much as time). Decision: Cancel100..400 join the regular time measurements as a second pressure; Cancel500..800 become a milestone (first make them run under 7 GB, then under 5 s).
 
 ## Backlog
 
@@ -37,5 +38,5 @@ Read this file fully, then `git status` and `git log --oneline -5`. An uncommitt
   - `onprob_qf_shid_entl` 11 (7 unsat): Harrsh; mutually recursive tll/atll/ptree; the encoder rejects forward references ("mutually recursive or forward-referenced predicate") unless the group machinery (`c.group`) covers it.
   - Sat divisions ignored for now (user, 2026-10-20). BSL = boolean SL without inductive predicates (CVC4).
   Next: run the bench over all 7 dirs after the refactor builds, to get real parse-error / unsupported / failed / proved counts.
-- [ ] 4. Yolo benchmarks (`Bench/Yolo/Cancel100..800`, `Misc`, `PureThings`): rerun through the driver, record times, decide whether they rejoin the regular bench as a time pressure.
+- [x] 4. (see history 3) Yolo benchmarks (`Bench/Yolo/Cancel100..800`, `Misc`, `PureThings`): rerun through the driver, record times, decide whether they rejoin the regular bench as a time pressure.
 - [ ] 5. Plan the climb from the survey: ordered list of techniques with expected reach per division; execute one subagent step per technique.
