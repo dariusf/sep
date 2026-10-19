@@ -8,7 +8,11 @@ globs = ["Sep.+"]
 
 [[lean_lib]]
 name = "Bench"
-globs = ["Bench.+"]
+globs = ["Bench.Driver", "Bench.Encode", "Bench.Fixpoint", "Bench.Main", "Bench.Slcomp", "Bench.SlcompTests", "Bench.SmtLib.+"]
+
+[[lean_lib]]
+name = "Yolo"
+globs = ["Bench.Yolo.+"]
 
 [[require]]
 name = "mathlib"
