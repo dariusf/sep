@@ -14,7 +14,7 @@ Scope rule (user, 2026-10-20): the goal is the best separation-logic automation.
 
 - Monotone per step: full bench on every covered division, diff against the previous accepted CSV by file name: lost list empty; proved (or refuted) count not lower; no problem newly over 3500 ms.
 - Standing rules from the previous ledgers hold: keep the `xsimpl` interface and speed it up internally; general tactics only, no hard-coded predicate names, shapes, or constants tuned to problems; no `sorry`, axioms, `native_decide`, `unsafe`; no comments or docstrings in code.
-- Commit and push after each milestone; `telegram-ping` the user after each.
+- Commit and push after each milestone; `telegram-ping` the user after each, stating how the proved count climbed (before → after, out of 798).
 
 ## How to use this ledger
 
