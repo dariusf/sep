@@ -10591,6 +10591,84 @@ elab "xsearch_backtrack" : tactic => do
       reset 48
   searchSolve 40
 
+partial def rootCombos (cs : List (Array Expr)) (acc : Array Expr) (out : Array (Array Expr))
+    (cap : Nat) : Array (Array Expr) :=
+  if out.size ≥ cap then out else
+  match cs with
+  | [] => out.push acc
+  | c :: rest => c.foldl (fun o v => rootCombos rest (acc.push v) o cap) out
+
+def rootInst (vals : Array Expr) : TacticM Unit := do
+  for v in vals do
+    withMainContext do
+    let g ← getMainGoal
+    let t ← instantiateMVars (← g.getType)
+    let some (lhs, rhs) := entailHead? t | throwError "root: goal"
+    unless rhs.isAppOf ``HProp.hexists do throwError "root: binder"
+    let lam := rhs.appArg!
+    let inst := t.getAppArgs[0]!
+    let body := (lam.bindingBody!.instantiate1 v)
+    let m ← g.withContext do mkFreshExprSyntheticOpaqueMVar (← mkAppM ``HProp.himpl #[lhs, body])
+    g.assign (← mkAppOptM ``HProp.himpl_hexists_r #[inst, lam.bindingDomain!, v, lhs, lam, m])
+    replaceMainGoal [m.mvarId!]
+
+elab "xsearch_rootwit" : tactic => do
+  let cands ← withMainContext do
+    let s ← saveState
+    let t ← instantiateMVars (← (← getMainGoal).getType)
+    if t.hasExprMVar then throwError "root: mvars"
+    let some (lhs, rhs) := entailHead? t | throwError "root: goal"
+    let (body, ms) ← arOpen rhs
+    if ms.isEmpty then throwError "root: no binder"
+    let entries := xsearchUnfoldExt.getState (← getEnv)
+    let heads := entries.map (·.headFn)
+    let isPred := fun (e : Expr) => match e.getAppFn.constName? with
+      | some n => heads.contains n
+      | none => false
+    let Rs := (flatStar body #[]).filter (!·.isAppOf ``HProp.hpure)
+    let Ls := (flatStar lhs #[]).filter (!·.isAppOf ``HProp.hpure)
+    unless Rs.all isPred && !Ls.isEmpty && Ls.all isPred do throwError "root: shape"
+    let mut roots : Array Expr := #[]
+    let mut holes : Array Expr := #[]
+    for x in Ls do
+      let xa := x.getAppArgs
+      for i in [0 : xa.size] do
+        unless ← isDefEq (← inferType xa[i]!) (mkConst ``Nat) do continue
+        if i == 0 then
+          unless roots.contains xa[i]! do roots := roots.push xa[i]!
+        else unless holes.contains xa[i]! do holes := holes.push xa[i]!
+    let nil := mkNatLit 0
+    let mut out : Array (Array Expr) := #[]
+    for m in ms do
+      unless ← isDefEq (← inferType m) (mkConst ``Nat) do throwError "root: type"
+      let atRoot := Rs.any (fun r => r.getAppArgs[0]? == some m)
+      unless Rs.any (fun r => r.getAppArgs.contains m) do throwError "root: unused"
+      let base := if atRoot then roots ++ holes ++ #[nil] else holes ++ #[nil] ++ roots
+      let mut c : Array Expr := #[]
+      for v in base do
+        if !c.contains v && c.size < 5 then c := c.push v
+      out := out.push c
+    s.restore
+    pure out
+  let combos := rootCombos cands.toList #[] #[] 40
+  let gd ← globalDeadline.get
+  let saved ← getGoals
+  for combo in combos do
+    if (← vclock) + 300 > gd then break
+    let s ← saveState
+    let ok ← try (do
+        rootInst combo
+        if ← goalRefuted then throwError "root: refuted"
+        globalDeadline.set (min gd ((← vclock) + 900))
+        evalTactic (← `(tactic| xsearch_backtrack))
+        unless (← getUnsolvedGoals).isEmpty do throwError "root: open"
+        pure true) catch _ => pure false
+    globalDeadline.set gd
+    if ok then return
+    s.restore
+    setGoals saved
+  throwError "root: no witness"
+
 elab "xsearch_cmodel" : tactic => do
   if ← (try cmFind catch _ => pure false) then
     throwError "xsearch: countermodel"
@@ -10669,6 +10747,7 @@ macro_rules
             first
             | done
             | xsearch_backtrack)
+         | xsearch_rootwit
          | xsearch_backtrack)))
 
 -- # EVOLVE-BLOCK-END
