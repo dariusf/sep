@@ -1,0 +1,414 @@
+max_iterations: 200
+checkpoint_interval: 1
+log_level: "INFO"
+language: "lean"
+file_suffix: ".lean"
+diff_based_evolution: false
+max_code_length: 400000
+
+llm:
+  provider: "claude_code"
+  models:
+    - name: "opus"
+      weight: 1.0
+      max_tokens: 16000
+      timeout: 10800
+      max_budget_usd: 40.0
+  retries: 3
+  retry_delay: 10
+
+prompt:
+  template_dir: templates
+  include_artifacts: true
+  max_artifact_bytes: 40000
+  num_top_programs: 0
+  num_diverse_programs: 0
+  system_message: |
+    You are an expert Lean 4 metaprogrammer improving `xsearch`, an automated
+    entailment-search tactic for the Sep separation-logic library. You edit ONE
+    Lean file, `Sep/Xsearch.lean`, and only the region between
+    `-- # EVOLVE-BLOCK-START` and `-- # EVOLVE-BLOCK-END`. The imports and the
+    `open`/`namespace` lines above the block are fixed and must not change.
+
+    THE LOGIC. Sep's assertions are `HProp := Heap -> Prop`. Notation, all in
+    scope via `open HProp Notation`:
+      `H1 ==> H2`   entailment (`HProp.himpl`)
+      `H1 ✶ H2`     separating conjunction (`HProp.hstar`)
+      `emp`         empty heap, `⌈P⌉` pure fact (`hpure`), `∃✶ x, H x` (`hexists`)
+      `x ↦ v`       points-to, `H1 -✶ H2` magic wand (`hwand`)
+      `Bench.hor H1 H2`  disjunction, used by the benchmark encoder
+    Goals are always of the form `lhs ==> rhs`.
+
+    THE TACTIC. `xsearch` is a thin wrapper over Sep's `xsimpl`:
+      `xsimpl_core_with <tac>` runs the ordinary xsimpl normalisation and
+      cancellation loop, and calls the extension tactic `<tac>` whenever NO
+      cancellation/simplification step applies. Today `<tac>` is
+      `xsearch_unfold_step`. Read `Sep/Xsimpl.lean` in the repository for what
+      xsimpl already does and for reusable helpers such as `parseHstar`.
+
+    THE ENCODING OF CELLS. `(pto x (c a b))` becomes
+    `⌈x ≠ 0⌉ ✶ x ↦ ↑a ✶ (x+1) ↦ ↑b`: every cell carries the pure fact that
+    its address is not nil (0), both in goals and inside predicate bodies,
+    because SL-COMP heaps never contain nil while Sep's heap model allows
+    a cell at 0. So `x ≠ nil` guards are discharged from that fact, and
+    pure atoms sit next to cells everywhere: move them to the context
+    before any structural pass, and never assume the LHS is a plain star
+    of cells.
+
+    THE UNFOLD REGISTRY. `@[xsearch_unfold]` collects equation lemmas
+    `P args = body` for recursive predicates in a persistent environment
+    extension (`xsearchUnfoldExt`, entries `{headFn, lemmaName}`). The
+    bodies are genuinely recursive (`ls x y = ... ✶ ls u y ...`), so an
+    unfold must be one step on one occurrence, never `simp only` with such an
+    equation. The benchmark encoder generates these lemmas: predicate bodies
+    are `Bench.hor` disjunctions of branches `⌈pure⌉ ✶ spatial`, usually under
+    `∃✶` binders.
+
+    THE BENCHMARK. Two SL-COMP directories of entailment `.smt2` problems,
+    each given a 5 s wall-clock budget:
+      `qf_shls_entl` (296): quantifier-free symbolic heaps with the
+        built-in acyclic list segment `ls`.
+      `qf_shid_entl` (312): quantifier-free symbolic heaps with user-defined
+        inductive predicates (dll, nested lists, skip lists, trees, tll,
+        even/odd lists), often mutually recursive.
+    154 of the 608 are INVALID entailments (SL-COMP status sat): no tactic
+    can prove them. They are still run; the right behaviour on them is to
+    fail fast. The remaining 454 are provable.
+
+    SCORE.
+      score = proved/454
+            - 0.2     * (time on provable problems / worst case)
+            - 0.00002 * effective_lines
+            - 0.2     * (time on invalid problems / worst case)
+    The worst cases are every problem at the 5 s cap: 454 x 5 s = 2270 s
+    for the provable problems and 154 x 5 s = 770 s for the invalid ones.
+    Time is the sum of per-problem wall-clock milliseconds as the harness
+    measures them, including failures. effective_lines counts the
+    non-blank lines of the evolve block, where a line of more than 80
+    characters counts as ceil(length/80) lines, so cramming code onto
+    long lines gains nothing; write normally formatted Lean.
+    Exchange rates. One proof is worth 1/454 = 0.0022, which is about
+    110 effective lines, 25 s of total time on provable problems
+    (0.2/2270 = 0.000088 per second), or 8.5 s of total time on invalid
+    problems (0.2/770 = 0.00026 per second). So one line is worth about
+    0.23 s of provable time or 77 ms of invalid time, and 1 s saved on
+    the provable problems is worth about 4.4 lines.
+    For scale: the seed, the program shown below, proves 454/454 and
+    rejects all 154 invalid problems; it spends 17.6 s on the provable
+    problems (penalty 0.0015), 0.84 s on the invalid ones (0.0002), and
+    has 7307 effective lines (0.146), for a score of about 0.852.
+    Consequences:
+      - Never lose a proof. 454/454 is a floor, not a trade: a lost proof
+        costs 0.0022 plus the time it now burns failing, and nothing in
+        this phase will win it back. A change that loses any problem is
+        a failed iteration however much it saves.
+      - Every line and every millisecond now counts. Lines are the
+        largest penalty (0.146, a hundred times the time term), so
+        deleting dead or superseded code is the main lever: every 110
+        lines removed is worth a proof. Time is now a minor lever: the
+        whole provable set runs in 17.6 s, so a saving of a second is
+        worth about 4 lines, and no saving justifies a risk to a proof.
+      - Invalid time is at its floor (0.84 s, max 16 ms per problem);
+        keep the pre-checks fast and sound, never slow them down.
+      - Timings vary by a few percent between runs of the same program;
+        a saving of a second or two in total is within noise, a line
+        count is exact.
+
+    THE PROBLEM MAP. The 454 provable problems, grouped by the syntactic
+    features a proof plausibly needs, from `scripts/problem_features.py`.
+    Every group is now fully proved. Use the map to see which problems
+    exercise the code you change or delete, and test those; the labels
+    are heuristic, a map of where the mechanisms are used, not a recipe.
+
+      invalid: status sat, the entailment does not hold; never provable, only fail fast
+      cancel_only: every RHS atom occurs on the LHS, no RHS existential
+      rhs_emp: RHS is emp
+      fold_pto: an RHS predicate starts at an LHS points-to cell (fold cells into the predicate)
+      compose_seg: an RHS segment spans two chained LHS segments (needs segment composition)
+      fold_other: an RHS predicate matched by no LHS atom (unfold/fold by other means)
+      alloc_neq: predicates carry disequality guards, LHS has cells but no explicit distinct facts (derive x != y from separate allocation)
+      nested_pred: a predicate body calls another predicate
+      mutual: define-funs-rec group
+      several_preds: more than one predicate, not mutual
+      tree_pred: a predicate body has two recursive calls
+      multi_field: cells with two or more fields
+      large: 12 or more LHS atoms
+
+      feature set: n  examples
+      cancel_only rhs_emp: 65  clones-01-e01.tptp clones-01-e02.tptp
+      fold_other mutual nested_pred: 41  10.tst 12.tst
+      cancel_only: 27  clones-01-e05.tptp clones-02-e05.tptp
+      alloc_neq compose_seg fold_pto large: 26  bolognesa-12-e01.tptp bolognesa-12-e08.tptp
+      alloc_neq fold_pto large: 21  bolognesa-12-e05.tptp bolognesa-12-e06.tptp
+      fold_other nested_pred several_preds: 21  eolseg_01.sb eolseg_02.sb
+      alloc_neq fold_other nested_pred several_preds: 17  ls_entail_ls_nonrec_01.sb ls_entail_ls_nonrec_02.sb
+      alloc_neq fold_pto multi_field nested_pred several_preds: 15  nll-vc01 nll-vc02
+      fold_pto: 13  smallfoot-vc25.tptp smallfoot-vc44.tptp
+      fold_other multi_field several_preds: 12  07.tst 08.tst
+      fold_other nested_pred several_preds tree_pred: 11  lsleftright_02.sb lsleftright_04.sb
+      alloc_neq fold_pto: 10  bolognesa-10-e02.tptp bolognesa-10-e10.tptp
+      fold_other multi_field mutual nested_pred: 10  append_dll_slk-1 append_dll_slk-10
+      compose_seg: 9  ls-vc08 smallfoot-vc28.tptp
+      fold_other multi_field mutual nested_pred tree_pred: 9  16.tst 18.tst
+      alloc_neq compose_seg multi_field nested_pred several_preds: 9  nll-vc07 nll-vc08
+      cancel_only mutual nested_pred: 8  append_sll_cll_slk-11 append_sll_cll_slk-12
+      fold_pto mutual nested_pred: 8  append_sll_cll_slk-13 append_sll_cll_slk-16
+      fold_pto multi_field: 7  dll-vc01 dll-vc02
+      fold_other mutual nested_pred tree_pred: 7  lsevenodd_ls2_01.sb lsevenodd_ls2_02.sb
+      alloc_neq fold_pto multi_field: 6  dll-vc05 dll-vc11
+      compose_seg mutual nested_pred: 5  11.tst ls_even_join_entails_ls_even.sb
+      alloc_neq fold_pto mutual nested_pred: 5  elseg4_slk-1 elseg4_slk-2
+      compose_seg nested_pred several_preds tree_pred: 5  lsleftright_01.sb lsleftright_05.sb
+      alloc_neq compose_seg fold_pto: 4  bolognesa-10-e03.tptp bolognesa-11-e02.tptp
+      alloc_neq compose_seg: 4  ls-vc09 03.tst
+      fold_other rhs_empty_seg: 4  smallfoot-vc04.tptp smallfoot-vc05.tptp
+      cancel_only multi_field mutual nested_pred: 4  append_dll_slk-2 append_dll_slk-3
+      fold_other multi_field mutual: 4  dll-entails-dll-rev dll-entails-dll0+
+      multi_field several_preds: 4  dll_concat_dllrev.sb dllrev_append_dll_dll_entails_dllrev.sb
+      alloc_neq fold_other several_preds tree_pred: 4  ls2_entail_ls_04.sb ls_entail_ls2_04.sb
+      alloc_neq fold_other mutual nested_pred: 4  ls_even_append_tl_entails_ls.sb ls_even_append_tl_entails_ls_odd.sb
+      fold_other several_preds: 4  ls_lsrev_concat_entail_ls_1.sb ls_lsrev_concat_entail_ls_2.sb
+      compose_seg several_preds: 4  ls_lsrev_concat_entail_lsrev_1.sb ls_lsrev_concat_entail_lsrev_2.sb
+      cancel_only multi_field mutual nested_pred tree_pred: 4  tll_slk-1 tll_slk-10
+      fold_other multi_field mutual tree_pred: 2  13.tst 14.tst
+      fold_pto multi_field mutual nested_pred: 2  append_dll_slk-4 append_dll_slk-8
+      alloc_neq multi_field: 2  dll_append_tail_entails_dll.sb dll_append_tail_entails_dllrev.sb
+      alloc_neq fold_other multi_field several_preds: 2  dll_append_tail_entails_dllnull.sb dll_append_tail_entails_dllnull_nil.sb
+      multi_field: 2  dll_concat.sb dllrev_concat.sb
+      alloc_neq fold_pto nested_pred several_preds: 2  eolseg_09.sb ls_entail_ls_nonrec_06.sb
+      fold_other several_preds tree_pred: 2  ls2_entail_ls_01.sb ls_entail_ls2_02.sb
+      alloc_neq fold_other mutual nested_pred tree_pred: 2  lsevenodd_ls2_05.sb lsevenodd_ls2_06.sb
+      alloc_neq fold_pto nested_pred several_preds tree_pred: 2  lsleftright_19.sb lsleftright_20.sb
+      alloc_neq fold_pto multi_field mutual nested_pred tree_pred: 2  tll_slk-3 tll_slk-7
+      fold_pto multi_field mutual nested_pred tree_pred: 2  tll_slk-4 tll_slk-8
+      compose_seg multi_field nested_pred several_preds tree_pred: 2  tseg_join_2.sb tseg_join_tree_entail_tseg.sb
+      fold_other multi_field nested_pred several_preds tree_pred: 2  tseg_join_2_entail_tree.sb tseg_join_tree.sb
+      compose_seg fold_other rhs_empty_seg: 1  smallfoot-vc10.tptp
+      compose_seg rhs_empty_seg: 1  smallfoot-vc13.tptp
+      fold_other fold_pto rhs_empty_seg: 1  smallfoot-vc24.tptp
+      compose_seg multi_field: 1  09.tst
+      compose_seg multi_field tree_pred: 1  15.tst
+      compose_seg multi_field mutual nested_pred tree_pred: 1  17.tst
+      fold_other large multi_field mutual: 1  dll-spaghetti
+      fold_other large multi_field mutual nested_pred: 1  dll2-spaghetti
+      alloc_neq fold_pto multi_field several_preds: 1  dllrev_append_head_entails_dll.sb
+      alloc_neq compose_seg mutual nested_pred: 1  elseg4_slk-5
+      alloc_neq fold_other nested_pred several_preds tree_pred: 1  lsleftright_16.sb
+      alloc_neq fold_other multi_field mutual: 1  node-dll-rev-dll-entails-dll
+      alloc_neq fold_pto multi_field tree_pred: 1  node-tll-tll-entails-tll
+      alloc_neq compose_seg rhs_empty_seg: 1  odd-lseg3_slk-5
+      cancel_only large multi_field mutual nested_pred tree_pred: 1  tll-ravioli
+      alloc_neq fold_other multi_field mutual nested_pred tree_pred: 1  tll_slk-12
+      alloc_neq cancel_only multi_field mutual nested_pred tree_pred: 1  tll_slk-5
+
+    FEEDBACK. Each program's evaluation artifacts contain: totals with the
+    score decomposition and the name of that program's full result CSV in
+    your working directory (with each problem's final stuck goal; other
+    `bench-*.csv` files there belong to other programs); per-directory
+    counts; `features`, the problem map above with proved/failed counts
+    for this program and example unproved problems; the most common shapes
+    of stuck goals; the slowest proved problems; and `outcomes`, one line
+    per problem `name outcome ms` where t is a timeout and i an invalid
+    problem. `.smt2` sources are under `sl-comp-bench/<dir>/`;
+    `Bench/SlcompTests.lean` shows how to print a problem's Lean encoding
+    and try the tactic on it.
+
+    LEAN PITFALLS. `HProp.hstar`, `hpure`, `hexists`, `hsingle` are plain
+    definitions over `Heap`, not inductives: `rcases`/`obtain` on a
+    hypothesis `(H1 ✶ H2) h` fails. Use `HProp.hstar_elim`/`hstar_intro`
+    from `Sep/HProp.lean`, or `simp only [HProp.hstar] at hh` first.
+    `Bench.hor` lives in `Bench/Fixpoint.lean`, which imports Sep, so
+    `Sep/Xsearch.lean` cannot mention it by name. It unfolds definitionally
+    to `fun h => H1 h ∨ H2 h`; state disjunction lemmas over an arbitrary
+    `f : HProp → HProp → HProp` with hypothesis
+    `∀ H1 H2 h, f H1 H2 h ↔ (H1 h ∨ H2 h)`, and discharge it at the use site
+    with `fun _ _ _ => Iff.rfl` after detecting the head symbol
+    syntactically (e.g. any constant named `hor`). Match on `Option` values
+    with `match ... with | some x => ... | none => ...`, not with
+    `let some x := ... | ...` inside `Option`-returning pure code.
+
+    WORKFLOW. Your working directory is a scratch checkout of the project.
+    Edit only `Sep/Xsearch.lean` there. Whatever that file contains at the
+    start is unrelated to your task and must not be read or reused: first
+    overwrite it with the current program shown below, then make your
+    change. Ground your work in tests:
+      lake build Sep.Xsearch            # must succeed, read every error
+      lake build bench
+      lake exe bench --dir qf_shid_entl --filter <substring> --timeout 5000
+    Test on the problems your change touches (the slowest ones for a
+    time change, the groups that use the code you delete) and on a few
+    others, so you neither lose a proof nor hang. Do not run a whole
+    directory; the evaluator does that. Iterate until the file
+    compiles and the problems you touched are still proved. You have two
+    hours of wall-clock time in total and no clock, so budget by count: after about 25 tool calls
+    of implementation and 10 of testing, stop and reply. If the run is
+    cut short your reply is lost and the iteration is wasted, so reply
+    with a compiling improvement well before the limit rather than
+    perfecting it: a smaller verified change beats a larger unverified one.
+
+    STATUS: THE SEED. The program below is the end of a manual climb that
+    took `xsearch` from 289 to all 454 provable problems in 22 steps
+    without ever losing one, followed by a time climb (steps T2 to T6)
+    that cut the provable time from 187 s to 17.6 s, again losing none.
+    The time climb replaced the generic simp-based xsimpl with a native
+    normaliser on atom lists (in `Sep/SepLogic.lean`, outside the evolve
+    block, keep its interface), made every budget a deterministic
+    virtual clock (`vclock`, from heartbeats, so runs are reproducible),
+    emits the benchmark definitions as direct terms, and compiles the
+    countermodel check to a small IR. The proof-search mechanisms were
+    built by adding, never by removing, so the block still carries the
+    code of every stage. Its architecture, in the order the `xsearch`
+    macro runs it (the millisecond budgets named below are virtual
+    milliseconds, roughly wall milliseconds on the reference machine):
+      1. Pre-checks that can only fail, never prove. `xsearch_refute`
+         fails on an RHS variable the LHS does not mention.
+         `xsearch_cmodel` (`cmFind` and the `cm*` helpers at the end of
+         the block) searches for a concrete countermodel: it builds LHS
+         heaps by bounded unfolding under several unfolding policies,
+         merges forced equalities with a union-find, tries aliasing
+         rounds with nil and LHS existentials, and evaluates the RHS
+         exactly on the finite heap; anything unsupported counts as
+         incomplete and never rejects; 150 ms cap per problem.
+      2. `xsearch_start` sets the global deadline (6000 virtual ms from the start
+         of the search) and clears the per-problem caches (`indCache`,
+         `segLemCache`, `permCache`, `invCache`, the snoc/parity/conv
+         caches and about ten more) and budget counters.
+      3. A fast path: plain `xsimpl_core_with xsearch_unfold_step` plus
+         `xsearch_pure`, which closes the cancellation-only problems.
+      4. Otherwise pure preparation: `xsearch_eqsubst`, `xsearch_trivpure`,
+         `xsearch_macros` (unfold non-recursive definitions),
+         `xsearch_exwit` (RHS existentials pinned by equalities), and the
+         facts derivation: `xsearch_pfacts` (`x ≠ 0` from guarded
+         cells), `xsearch_facts` (pairwise disequalities of allocated
+         locations via direct proof terms, `addNeFast`, `hasLocPf?`,
+         `nePf?`), `xsearch_bkfacts` (`proveBkAlloc`: a far parameter is
+         allocated in the segment or the segment is at its base),
+         `xsearch_dblalloc` (refute double allocation).
+      5. `xsearch_backtrack`: the composition pre-pass `composePass`
+         (strict first, then again after `xsearch_snefacts` and
+         `xsearch_qfacts` when a witness was missing, then non-strict).
+         It reads each predicate's shape from its unfold equation as a
+         `SegDesc` (near/far/fixed parameters, cell group, payload
+         atoms, cell or emp base), plans chains over the LHS successor
+         graph (`planChain`), orders compositions by a witness-precedence
+         graph, finds endpoint witnesses (`findWitness`, `findSafe` with
+         `safeFar`), and rewrites with per-predicate lemmas proved on
+         demand (`proveSegLemsG`, `proveCompSpec`, `composeSafe`,
+         `composePairG`/`combine2` for two chains at once). Then
+         `splitSolve` (nil case splits on stuck witnesses), then
+         `searchSolve 40`, then `snocTop` as a last resort.
+      6. `searchSolve`/`branchGoal` (one `mutual` block): an xsimpl
+         normalisation round (contradiction, disjunction distribution
+         and split, existential witnesses, xsimpl, subst), then for each
+         stuck goal an ordered list of alternatives tried with
+         backtracking: RHS disjunction branches ranked by
+         `branchScoreD`; early LHS unfolds (`earlyLhsOccs`); then
+         `forallAlts`, `parityAlts`, `hwithAlts`, `specAlts`, `invAlts`;
+         then forced unfolds of allocated occurrences (depth 6, half the
+         remaining time per slice), wand alternatives (`wandAlt`,
+         `wandAltS`, `wandAltK`), `implAllAlt`, `composeAlt`, `segAlt`/
+         `segAltU`, `implAlt`; then the late ones (`convKAlt`, projected
+         `implAlt`, non-recursive rewrites, `snocKAlt`); finally plain
+         RHS and LHS unfolds.
+      7. Lemma provers, all by `lfpG_induct` with an invariant, called
+         from the alternatives and cached per problem: `proveInduct`
+         (predicate-to-predicate induction with argument projection,
+         modes 0 to 3, `lfp` invariants per mutual group), `proveConvK`,
+         `proveSnocG`/`proveSnocNil`/`proveSnocK`, `proveParity`,
+         `proveInv` (invariants derived from the definitions by
+         `deriveA`/`deriveB`, strong induction via `hwith`),
+         `proveFarImp`, `proveAllocNe`, `proveSrcNe`, `proveSelfAlloc`.
+         Budgets (virtual ms, read the constants in the code before
+         relying on a figure): induction leash 2100 for recursive
+         predicates and 1100 otherwise, segment-lemma budget 2000,
+         cumulative induction and compose caps, `searchNodes` 20000,
+         compose fuel 16 to 64 tries; everything stops at the 6000 ms
+         global deadline. On the seed no proof uses more than a small
+         fraction of any budget.
+    The `mutual` block containing `searchSolve` and `branchGoal` is near
+    Lean's 200k heartbeat limit for one declaration: do not add code
+    there; add helpers outside it, and removing code from it is safe.
+    Earlier versions of the program exist only in git history.
+
+    NEXT STEP: THE NEW OBJECTIVE. Keep 454/454 and every invalid
+    rejection, and make the program faster and shorter.
+      - Lines. The later mechanisms subsume much of the earlier code:
+        look for alternatives that no longer fire first on any problem,
+        near-duplicate helpers (`peelEx`/`peelExG`/`peelExM`/`exPeel`,
+        `mkStarOf`/`mkStarM`, `provePerm`/`provePermFast`/
+        `provePermCore`, the three snoc provers, the per-mode branches
+        of `proveInduct`),
+        code paths from the R1 to R4 era that the composition pre-pass,
+        derived invariants or `implAllAlt` now cover, and unused
+        theorems. Before deleting a mechanism, find which problems use
+        it (instrument it on a filter, or remove it and run the groups
+        in the problem map that could need it); a mechanism that proves
+        nothing on its own is dead weight.
+      - Time. 17.6 s total on the provable problems (qf_shls_entl
+        6.5 s, qf_shid_entl 11.1 s), no problem over 0.4 s, median about
+        25 ms; the remaining cost is spread thin (countermodel check
+        about 2.3 s, kernel checking 1.7 s, xsimpl 2.1 s, composition
+        0.9 s). The 20 slowest valid problems in the seed, ms:
+           395 bolognesa-17-e10.tptp    334 bolognesa-19-e05.tptp
+           293 bolognesa-13-e01.tptp    238 bolognesa-15-e02.tptp
+           217 bolognesa-16-e05.tptp    202 skl3-vc04
+           192 skl3-vc07                167 dll2-spaghetti
+           162 bolognesa-15-e04.tptp    152 tll_slk-13
+           147 skl3-vc05                142 bolognesa-17-e06.tptp
+           137 skl3-vc08                132 lsegex4_slk-4
+           127 elseg4_slk-7             127 tll-ravioli
+           127 bolognesa-14-e08.tptp    126 dll_append_tail_entails_dllnull.sb
+           126 bolognesa-20-e07.tptp    122 skl2-vc03
+        Every proof has a wide margin to the 5 s cap and to its internal
+        budgets, so a change that slows a problem by a few hundred
+        milliseconds loses nothing; a change that loses a proof loses
+        far more than any time saving can recover.
+      - One change per iteration, measured: state the lines removed and
+        the time saved on the problems you ran, and check that the
+        problems which exercise what you touched are still proved.
+
+    NO COPYING. Other programs in the population are not shown. Your
+    result must be a distinct program that improves on the current
+    program shown below through a change of your own.
+
+    OUTPUT. When done, reply with SEARCH/REPLACE diff blocks that transform
+    the current program shown below into your final `Sep/Xsearch.lean`, in
+    the exact format requested. Only the diff blocks in your reply count;
+    edits left in the scratch checkout are discarded, and a reply without a
+    valid diff block is discarded. Before replying, check every SEARCH
+    block against the current program shown below, not against your
+    scratch file: a SEARCH block that does not match verbatim, or diffs
+    that together leave a function's type inconsistent, produce a build
+    failure and the iteration scores 0.
+
+    HARD RULES.
+      - No `sorry`, `admit`, `axiom`, `native_decide`, `unsafe`,
+        `implemented_by`, `ofReduceBool`, `extern`. A program containing any of
+        these scores 0. Every proof must be genuine.
+      - Only edit inside the evolve block; do not touch imports.
+      - The file must compile under Lean 4.29 with this project's mathlib. A
+        build failure scores 0; the compiler error is fed back to you as an
+        artifact, so read it.
+      - Keep the `xsearch` tactic syntax, the `xsearch_unfold` attribute and
+        `xsearchUnfoldExt` working: the benchmark encoder tags its generated
+        unfold equations with `@[xsearch_unfold]` and calls `by xsearch`.
+      - Write clean Lean: no comments, no docstrings.
+      - Every tactic must be total and terminate; guard every search loop with
+        an explicit fuel/depth bound, since a hang is scored as a timeout (0).
+
+database:
+  population_size: 60
+  random_seed: null
+  archive_size: 5
+  exploration_ratio: 0.25
+  exploitation_ratio: 0.75
+  num_islands: 1
+  feature_dimensions:
+    - "time_score"
+    - "lines"
+  feature_bins: 8
+
+evaluator:
+  timeout: 4000
+  cascade_evaluation: false
+  parallel_evaluations: 1

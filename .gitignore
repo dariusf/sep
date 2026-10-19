@@ -1,1 +1,7 @@
 .lake
+/yolo
+/sl-comp-bench
+bench-results.csv
+bench-report.html
+__pycache__
+/openevolve
