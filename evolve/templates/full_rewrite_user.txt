@@ -1,0 +1,37 @@
+# Current Program Information
+- Fitness: {fitness_score}
+- Feature coordinates: {feature_coords}
+- Focus areas: {improvement_areas}
+
+{artifacts}
+
+# Program Evolution History
+{evolution_history}
+
+# Current Program
+```{language}
+{current_program}
+```
+
+# Task
+Improve the current program's FITNESS SCORE without losing any proof.
+Every provable problem is proved and every invalid one is rejected, so
+the score now moves only through lines and time: at the score's rates
+110 effective lines or 25 s of total provable time are worth one proof.
+Use the `slowest_proved` and `outcomes` artifacts above to find where
+the time goes, and the NEXT STEP section of the system prompt for where
+the dead code is. Make one measured change: delete superseded code,
+merge duplicated helpers, tighten a slack budget or reorder a costly
+alternative. Other programs in the population are not shown, because
+the program is too large to include several copies; the result must
+still be a change of your own that improves on this program.
+
+The system maintains diversity across these dimensions: {feature_dimensions}
+
+Work in the file `Sep/Xsearch.lean` of the working directory: it holds
+the current program. Edit it in place, keep all edits inside the
+EVOLVE-BLOCK, build it, and run the bench on the problems your change
+could affect before you finish. Leave the file containing the program
+you want evaluated; do not paste the program into your reply. Reply
+with one paragraph stating what you removed or changed, the lines
+saved, and what you measured.

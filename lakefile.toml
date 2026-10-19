@@ -6,7 +6,20 @@ defaultTargets = ["Sep"]
 name = "Sep"
 globs = ["Sep.+"]
 
+[[lean_lib]]
+name = "Bench"
+globs = ["Bench.Driver", "Bench.Encode", "Bench.Fixpoint", "Bench.Main", "Bench.Slcomp", "Bench.SlcompTests", "Bench.SmtLib.+"]
+
+[[lean_lib]]
+name = "Yolo"
+globs = ["Bench.Yolo.+"]
+
 [[require]]
 name = "mathlib"
 scope = "leanprover-community"
 rev = "v4.35.0"
+
+[[lean_exe]]
+name = "bench"
+root = "Bench.Main"
+supportInterpreter = true

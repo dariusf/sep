@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>xsearch Time Climb</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* layout: one reading column; one full-width SVG chart with three series on three axes, then the data table */
+:root{
+  --bg:#f7f6f2; --fg:#1d1c1a; --muted:#6b6862; --rule:#d9d6cf; --panel:#ffffff;
+  --c1:#1f5f8b; --c2:#b5451b; --c3:#5a7d2a; --grid:#e6e3dc; --mark:#9a9690;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#17181a; --fg:#e7e5df; --muted:#9a978f; --rule:#34363a; --panel:#1f2124;
+  --c1:#6fb0e0; --c2:#e8865a; --c3:#9ccb5a; --grid:#2b2d31; --mark:#6e6c66; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#17181a; --fg:#e7e5df; --muted:#9a978f; --rule:#34363a; --panel:#1f2124;
+  --c1:#6fb0e0; --c2:#e8865a; --c3:#9ccb5a; --grid:#2b2d31; --mark:#6e6c66; color-scheme:dark }
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 48px}
+main{max-width:1040px;margin:0 auto;display:grid;gap:28px}
+h1{font-size:1.6rem;font-weight:600;margin:0;text-wrap:balance;letter-spacing:-.01em}
+h2{font-size:1.1rem;font-weight:600;margin:0 0 4px}
+p{max-width:68ch;margin:0}
+.lede{color:var(--muted)}
+.kpis{display:flex;flex-wrap:wrap;gap:10px 28px;font-variant-numeric:tabular-nums}
+.kpi{display:grid;gap:2px}
+.kpi b{font-family:var(--mono);font-weight:500;font-size:1.25rem}
+.kpi span{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+figure{margin:0;display:grid;gap:8px;min-width:0}
+.chart{width:100%;height:auto;display:block;background:var(--panel);border:1px solid var(--rule);border-radius:4px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.85rem;color:var(--muted)}
+.legend i{display:inline-block;width:18px;height:0;border-top:3px solid;vertical-align:middle;margin-right:6px;border-radius:2px}
+.legend i.dash{border-top-style:dashed}
+.legend i.dot{border-top-style:dotted}
+figcaption{font-size:.85rem;color:var(--muted);max-width:76ch}
+svg text{font-family:var(--mono);font-size:11px;fill:var(--fg)}
+svg .ax{stroke:var(--rule);stroke-width:1}
+svg .grid{stroke:var(--grid);stroke-width:1}
+svg .lab{fill:var(--muted)}
+svg .pt{cursor:default}
+svg .pt:hover circle{stroke-width:3}
+.tip{position:fixed;pointer-events:none;background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:8px 10px;font-size:.8rem;max-width:300px;box-shadow:0 4px 14px rgba(0,0,0,.12);display:none;z-index:5}
+.tip b{font-family:var(--mono);font-weight:500}
+.tip .n{color:var(--muted)}
+.tablewrap{overflow-x:auto;border:1px solid var(--rule);border-radius:4px}
+table{border-collapse:collapse;width:100%;font-size:.82rem;font-variant-numeric:tabular-nums;min-width:820px}
+th,td{padding:5px 10px;text-align:right;border-bottom:1px solid var(--rule);white-space:nowrap}
+th{font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-size:.72rem;position:sticky;top:0;background:var(--panel)}
+td:first-child,th:first-child,td:nth-child(2),th:nth-child(2),td:last-child,th:last-child{text-align:left}
+td:last-child{white-space:normal;min-width:260px;color:var(--muted)}
+td.num{font-family:var(--mono)}
+tr.phase td{background:var(--bg);color:var(--muted);font-weight:500;text-align:left;font-size:.78rem;letter-spacing:.04em;text-transform:uppercase}
+.notes{display:grid;gap:8px}
+.notes p{max-width:76ch}
+code{font-family:var(--mono);font-size:.9em}
+a{color:var(--c1)}
+@media (max-width:640px){ table{font-size:.76rem} h1{font-size:1.3rem} }
+</style>
+</head>
+<body>
+
+<main>
+  <header style="display:grid;gap:10px">
+    <h1>xsearch solving time against hours of agent work</h1>
+    <p class="lede">Time to prove the two original SL-COMP entailment divisions (qf_shls + qf_shid, 454 provable problems) on one machine (i7-13700, 5 s cap per problem), with the number of problems proved and the size of the tactic code, against cumulative hours of Claude Code activity on this repository. One continuous line across both climbs, 2026-09-25 to 2026-10-22.</p>
+    <div class="kpis">
+      <div class="kpi"><b>348 → 13.8 s</b><span>qf_shls + qf_shid, 454 problems</span></div>
+      <div class="kpi"><b>443 → 788</b><span>valid problems proved</span></div>
+      <div class="kpi"><b>9.8k → 14.4k</b><span>lines, three files</span></div>
+      <div class="kpi"><b>65.9 h</b><span>agent hours</span></div>
+    </div>
+  </header>
+
+  <figure>
+    <div class="legend"><span><i style="border-color:var(--c2)"></i>Solving time, 454 problems (left axis, log)</span><span><i class="dash" style="border-color:var(--c3)"></i>Problems proved (inner right axis)</span><span><i class="dot" style="border-color:var(--c1)"></i>Lines of code, Xsearch + SegC + xsimpl driver (outer right axis)</span><span><i class="dash" style="border-color:var(--mark)"></i>benchmark widened from 2 to 7 divisions</span></div>
+    <svg id="c1" class="chart" viewBox="0 0 1000 500" role="img" aria-label="Solving time, problems proved and lines of code against agent hours"></svg>
+    <figcaption>The time climb (0–12.6 h) took the two divisions from 348 s to 17.6 s. From 13.8 h the benchmark widened to seven divisions (798 problems, 788 valid); the proved count climbs from 516 to 788 by 29.9 h while the original two divisions are held between 14 and 16 s, then the consolidation and time passes end at 13.8 s. Lines of code grow with the new divisions, peak at 16.8k, and drop by 2.8k in one step at 43.6 h (the engine deletion, which also produced the 20.8 s spike, recovered in the next pass). Hover a point for the step, the date and what changed.</figcaption>
+  </figure>
+
+  <section class="notes">
+    <h2>How the axes were measured</h2>
+    <p><b>Hours.</b> Every Claude Code transcript for this repository (main sessions and their subagents) was merged into one timeline; the horizontal axis is the running sum of gaps between consecutive events, counting a gap only when it is under 30 minutes. This counts wall-clock time during which an agent was active, not tokens or human attention. The time climb spans 0–12.6 h (Sep 25–26); the reset on Oct 19 adds 0.4 h; climb 2 spans 13.0–65.9 h (Oct 20–22).</p>
+    <p><b>Solving time.</b> Each point is one accepted reference CSV at its file time, or for climb 1 the ledger's figure at the time the transcript shows the step accepted. Climb 1 values are "valid time" on the 454 provable problems, which includes failures at the cap (the first point has 11 failures). Climb 2 values are summed from the CSVs of the seven-division run and sit 1.5–2.5 s below the standalone measurements in the ledger.</p>
+    <p><b>Problems proved.</b> Of the 454 provable problems in two divisions until 13.7 h, then of the 788 valid problems in seven divisions.</p>
+    <p><b>Lines of code.</b> <code>wc -l</code> of Sep/Xsearch.lean, Sep/SegC.lean and the xsimpl driver (Sep/Xsimpl/Core.lean, or Sep/SepLogic.lean before the split on Oct 20) at each step's commit. Climb 1 commits were removed when the repository was reset on Oct 19, so the line series starts at the T6 end state; the ledger records only Xsearch.lean at some earlier steps (5885 lines at step 19, 6381 at step 22).</p>
+    <p><b>Not on the chart.</b> The proof climb that preceded the time climb (steps 1–20, 2026-09-22 to 09-24, 289 → 454 problems proved on a Mac) has no transcripts on this machine and no comparable times. The raw rows and these notes are kept in <code>ledgers/time-climb-data.md</code> beside this page.</p>
+  </section>
+
+  <section>
+    <h2>Data</h2>
+    <div class="tablewrap"><table id="tbl"><thead><tr><th>Step</th><th>Date</th><th>Hours</th><th>Old div. s</th><th>Suite proved s</th><th>Suite total s</th><th>Proved</th><th>Lines</th><th>What changed</th></tr></thead><tbody></tbody></table></div>
+  </section>
+</main>
+<div class="tip" id="tip"></div>
+
+<script>
+const ROWS=[{"n": "step 20 (Linux baseline)", "d": "2026-09-25 00:33", "c": "", "h": 0.39, "old": 348, "ps": null, "tot": null, "p": 443, "loc": null, "note": "Wall-clock budgets tuned on a Mac; 11 provable problems fail on this machine"}, {"n": "step 21", "d": "2026-09-25 03:05", "c": "", "h": 2.92, "old": 219, "ps": null, "tot": null, "p": 454, "loc": null, "note": "Virtual clock from heartbeats (deterministic budgets), cheaper facts, lazy segment lemmas, failed-subgoal memo"}, {"n": "step 22", "d": "2026-09-25 04:25", "c": "", "h": 4.26, "old": 187, "ps": null, "tot": null, "p": 454, "loc": null, "note": "Cell-count pruning, countermodel on induction statements, alternative ordering"}, {"n": "T2", "d": "2026-09-26 04:50", "c": "", "h": 5.68, "old": 148.3, "ps": null, "tot": null, "p": 454, "loc": null, "note": "Simp set built once per problem, always-failing xsimpl step removed, cheap defeq at cancel sites"}, {"n": "T3", "d": "2026-09-26 06:11", "c": "", "h": 7.03, "old": 77.2, "ps": null, "tot": null, "p": 454, "loc": null, "note": "xsimpl driver works natively on atom lists; no fold/unfold/relevel/simp"}, {"n": "T4", "d": "2026-09-26 08:28", "c": "", "h": 9.32, "old": 33.3, "ps": null, "tot": null, "p": 454, "loc": null, "note": "Declarations emitted directly, Meta procedures replace macro searches, Mono as a proof term"}, {"n": "T5", "d": "2026-09-26 08:49", "c": "", "h": 9.67, "old": 32.5, "ps": null, "tot": null, "p": 454, "loc": null, "note": "One native xsimpl implementation; folded path and relevel deleted"}, {"n": "T6", "d": "2026-09-26 11:44", "c": "", "h": 12.58, "old": 17.6, "ps": null, "tot": null, "p": 454, "loc": null, "note": "Countermodel on a compiled IR, goals built as Expr, native normalisers, caches reset per problem"}, {"n": "reset", "d": "2026-10-19 23:31", "c": "3f0c8c7", "h": 13.02, "old": 17.6, "ps": null, "tot": null, "p": 454, "loc": 9781, "note": "Repository reset to T6; evolution artefacts archived; driver still inside SepLogic.lean"}, {"n": "lean435", "d": "2026-10-20 02:14", "c": "3a6d38a", "h": 13.72, "old": 14.8, "ps": null, "tot": null, "p": 454, "loc": 9584, "note": "Driver split into Sep/Xsimpl/Core; Lean v4.35.0 and mathlib upgrade"}, {"n": "climb2-base", "d": "2026-10-20 02:22", "c": "3a6d38a", "h": 13.84, "old": 14.8, "ps": 17.2, "tot": 259.0, "p": 516, "loc": 9584, "note": "Stock-take over seven divisions (798 problems, 788 valid)"}, {"n": "S1", "d": "2026-10-20 03:22", "c": "e612b75", "h": 14.86, "old": 15.1, "ps": 29.9, "tot": 266.2, "p": 601, "loc": 10688, "note": "Arithmetic segment descriptors, split/join/peel lemmas"}, {"n": "S2", "d": "2026-10-20 04:01", "c": "f9353c2", "h": 15.5, "old": 15.0, "ps": 53.7, "tot": 273.5, "p": 679, "loc": 11180, "note": "Conversions between length-indexed predicates, join-then-split plans"}, {"n": "S3", "d": "2026-10-20 04:32", "c": "c60cbbc", "h": 16.01, "old": 15.0, "ps": 56.1, "tot": 220.1, "p": 708, "loc": 11934, "note": "Data descriptors and the data pass"}, {"n": "S5a", "d": "2026-10-20 05:13", "c": "9eb9640", "h": 16.71, "old": 15.0, "ps": 68.2, "tot": 176.5, "p": 745, "loc": 12806, "note": "Length abstraction through a Nat-indexed segment with length profiles"}, {"n": "S5b", "d": "2026-10-20 05:25", "c": "4a694ec", "h": 16.9, "old": 15.1, "ps": 68.3, "tot": 167.0, "p": 754, "loc": 12885, "note": "Witness candidates for RHS existentials in predicate arguments"}, {"n": "C1 st.1", "d": "2026-10-20 06:33", "c": "99adbc2", "h": 18.03, "old": 15.2, "ps": 63.0, "tot": 159.8, "p": 761, "loc": 13034, "note": "wseg carrier, one parse, Abs/Conc planner replaces ArD"}, {"n": "C1 st.2", "d": "2026-10-20 07:52", "c": "10b3dc8", "h": 19.36, "old": 15.2, "ps": 59.4, "tot": 156.5, "p": 762, "loc": 12537, "note": "Data instance through wseg; DatD deleted"}, {"n": "C1 st.3", "d": "2026-10-20 08:39", "c": "5133724", "h": 20.13, "old": 14.9, "ps": 60.0, "tot": 156.9, "p": 762, "loc": 12100, "note": "Length profiles through wseg; LenP and segC deleted"}, {"n": "C1 st.4", "d": "2026-10-20 09:09", "c": "32817fa", "h": 20.63, "old": 14.9, "ps": 63.9, "tot": 153.3, "p": 776, "loc": 12390, "note": "dll and size-indexed trees through wseg"}, {"n": "C1 st.5", "d": "2026-10-20 11:08", "c": "6d0b92e", "h": 22.62, "old": 15.3, "ps": 73.5, "tot": 147.4, "p": 780, "loc": 12486, "note": "One witness search replaces rootwit, arWitness, exWitAlt"}, {"n": "C2 st.1", "d": "2026-10-20 12:58", "c": "0b31b93", "h": 23.79, "old": 15.4, "ps": 63.1, "tot": 136.9, "p": 780, "loc": 12317, "note": "SnocD deleted, lazy plan execution, cheaper arithmetic side goals"}, {"n": "C2 st.2", "d": "2026-10-20 14:34", "c": "d84ce78", "h": 25.39, "old": 15.7, "ps": 63.9, "tot": 137.8, "p": 780, "loc": 12690, "note": "End-guarded cells and nested cell payloads in wseg"}, {"n": "C2 st.3a", "d": "2026-10-20 16:44", "c": "a53ba09", "h": 27.56, "old": 15.6, "ps": 52.6, "tot": 125.9, "p": 780, "loc": 13450, "note": "Generic Abs/Conc theorems, MetaM omega, one-pass multi-chain planning"}, {"n": "P11 W", "d": "2026-10-20 17:50", "c": "22fff8e", "h": 28.66, "old": 15.6, "ps": 53.8, "tot": 116.9, "p": 783, "loc": 13693, "note": "Invariant facts at wseg entry, empty-segment elimination"}, {"n": "P11 T", "d": "2026-10-20 18:19", "c": "8cc2a10", "h": 29.14, "old": 15.6, "ps": 54.1, "tot": 117.1, "p": 785, "loc": 13919, "note": "Path-view Abs with predicate payloads, witness case split"}, {"n": "P11 H", "d": "2026-10-20 19:03", "c": "d13dc38", "h": 29.88, "old": 15.5, "ps": 54.1, "tot": 102.1, "p": 788, "loc": 14087, "note": "Helper inlining, multi-cell bases, reversal planning: all 788 valid problems proved"}, {"n": "C2 st.3b", "d": "2026-10-20 21:08", "c": "0b624ff", "h": 31.45, "old": 15.5, "ps": 53.8, "tot": 101.9, "p": 788, "loc": 14557, "note": "Nested payload composition, grouped join/split execution"}, {"n": "C2 st.3b2", "d": "2026-10-20 22:48", "c": "203b7dd", "h": 33.12, "old": 15.8, "ps": 53.7, "tot": 101.9, "p": 788, "loc": 14780, "note": "Direct LHS rewriting without xsimpl"}, {"n": "C2 st.3c1", "d": "2026-10-21 00:24", "c": "d348733", "h": 34.72, "old": 15.6, "ps": 51.4, "tot": 99.4, "p": 788, "loc": 14887, "note": "Plan selection inside the backtracking search, cached lemmas"}, {"n": "C2 st.3c2", "d": "2026-10-21 01:29", "c": "aa246b7", "h": 35.8, "old": 15.7, "ps": 49.5, "tot": 97.5, "p": 788, "loc": 15082, "note": "Invariant lemmas by library instances, shared group proofs"}, {"n": "C2 st.3c2b", "d": "2026-10-21 04:09", "c": "59f977d", "h": 38.47, "old": 15.8, "ps": 46.2, "tot": 94.2, "p": 788, "loc": 16722, "note": "Generic Abs/Conc/Inv over branch data for all path groups"}, {"n": "C2 st.3c2c", "d": "2026-10-21 05:17", "c": "a78ed14", "h": 39.6, "old": 15.5, "ps": 45.1, "tot": 93.1, "p": 788, "loc": 16766, "note": "Map attempts gated by cell signature, planner starts from RHS locations"}, {"n": "C2 st.3c3", "d": "2026-10-21 09:19", "c": "3a67543", "h": 43.63, "old": 20.8, "ps": 51.1, "tot": 99.1, "p": 788, "loc": 13977, "note": "Engine deletion: compose/SegDesc, proveInduct modes, ParD, witAlts deleted; attributed regression accepted"}, {"n": "C2 st.3c4", "d": "2026-10-21 11:45", "c": "65ab6ca", "h": 46.07, "old": 15.1, "ps": 41.5, "tot": 89.4, "p": 788, "loc": 14249, "note": "LHS rewriting defects fixed, direct proof terms; C2 complete"}, {"n": "C3 p.2a", "d": "2026-10-21 13:04", "c": "9cdde0a", "h": 47.39, "old": 14.8, "ps": 39.7, "tot": 87.6, "p": 788, "loc": 14396, "note": "One deterministic conversion closer; no xsimpl or search in lemma building"}, {"n": "C3 p.2b", "d": "2026-10-21 13:59", "c": "0ba3c4d", "h": 48.3, "old": 14.4, "ps": 38.1, "tot": 85.9, "p": 788, "loc": 14054, "note": "One abs induction and one conc theorem over tails"}, {"n": "C3 p.3", "d": "2026-10-21 14:41", "c": "d673b04", "h": 49.02, "old": 14.2, "ps": 37.6, "tot": 85.4, "p": 788, "loc": 13883, "note": "One reader of the unfold equation, one carrier derivation"}, {"n": "C3 p.4", "d": "2026-10-21 16:28", "c": "a097406", "h": 50.8, "old": 14.3, "ps": 37.6, "tot": 85.3, "p": 788, "loc": 13609, "note": "One pure prover, one permutation prover, one allocation prover; 17 mechanisms deleted"}, {"n": "C3 p.5a", "d": "2026-10-21 22:03", "c": "f58abad", "h": 56.36, "old": 14.3, "ps": 37.2, "tot": 44.9, "p": 788, "loc": 13788, "note": "Int countermodel, omega proof uses folded into the pure prover; sat problems fail fast"}, {"n": "C3 p.5b", "d": "2026-10-21 22:31", "c": "d02c195", "h": 56.83, "old": 14.2, "ps": 37.2, "tot": 43.7, "p": 788, "loc": 13943, "note": "Countermodel at depth zero replaces sizeGap and fastHopeless"}, {"n": "C3 p.6", "d": "2026-10-21 23:07", "c": "0ec2f4e", "h": 57.44, "old": 14.2, "ps": 37.2, "tot": 43.7, "p": 788, "loc": 13889, "note": "One witness search (witSearch) with one ranking and one case split"}, {"n": "C3 p.7", "d": "2026-10-22 01:33", "c": "2a6dcc5", "h": 59.86, "old": 14.3, "ps": 37.6, "tot": 44.1, "p": 788, "loc": 13923, "note": "Bounds derived from the goal or deadline; three clock literals remain"}, {"n": "C3 p.3b", "d": "2026-10-22 05:22", "c": "350d744", "h": 63.68, "old": 14.3, "ps": 37.5, "tot": 44.0, "p": 788, "loc": 14236, "note": "One theorem family (gAbs, gConc) with thin corollaries; 50 SegC theorems deleted"}, {"n": "T0 A", "d": "2026-10-22 06:46", "c": "812d979", "h": 65.09, "old": 14.0, "ps": 36.6, "tot": 43.1, "p": 788, "loc": 14080, "note": "Fast path is xsimpl only, RHS macro inlining by forced determination"}, {"n": "T0 B", "d": "2026-10-22 07:02", "c": "0f62c6f", "h": 65.34, "old": 13.6, "ps": 35.2, "tot": 41.7, "p": 788, "loc": 14275, "note": "One witnessed branch closer for pg and gen"}, {"n": "T1", "d": "2026-10-22 07:33", "c": "134c8fa", "h": 65.87, "old": 13.8, "ps": 35.6, "tot": 42.2, "p": 788, "loc": 14361, "note": "xsimpl cancellation by a reflected permutation certificate; Yolo Cancel800 0.6 s"}];
+
+const tip=document.getElementById('tip');
+function showTip(e,html){tip.innerHTML=html;tip.style.display='block';moveTip(e)}
+function moveTip(e){const w=tip.offsetWidth,h=tip.offsetHeight;let x=e.clientX+14,y=e.clientY+14;if(x+w>innerWidth-8)x=e.clientX-w-14;if(y+h>innerHeight-8)y=e.clientY-h-14;tip.style.left=x+'px';tip.style.top=y+'px'}
+function hideTip(){tip.style.display='none'}
+const NS='http://www.w3.org/2000/svg';
+function el(t,a,txt){const n=document.createElementNS(NS,t);for(const k in a)n.setAttribute(k,a[k]);if(txt!=null)n.textContent=txt;return n}
+const tipHtml=p=>`<b>${p.n}</b> · ${p.d}${p.c?' · '+p.c:''}<br>${p.h.toFixed(1)} h · ${p.old} s · ${p.p} proved${p.loc?' · '+p.loc+' lines':''}<br><span class="n">${p.note}</span>`;
+
+function chart(){
+  const svg=document.getElementById('c1');const W=1000,H=500,L=64,R=120,T=24,B=48;
+  const x=h=>L+(h/68)*(W-L-R);
+  const yT=s=>{const lo=Math.log10(10),hi=Math.log10(400);return T+(hi-Math.log10(s))/(hi-lo)*(H-T-B)};
+  const yP=n=>T+(1-(n-400)/400)*(H-T-B);
+  const yL=n=>T+(1-(n-8000)/10000)*(H-T-B);
+  for(const s of [10,20,50,100,200,400]){svg.append(el('line',{x1:L,x2:W-R,y1:yT(s),y2:yT(s),class:'grid'}));svg.append(el('text',{x:L-8,y:yT(s)+4,'text-anchor':'end'},s+' s'))}
+  for(let h=0;h<=65;h+=5){svg.append(el('line',{x1:x(h),x2:x(h),y1:H-B,y2:H-B+5,class:'ax'}));svg.append(el('text',{x:x(h),y:H-B+18,'text-anchor':'middle'},h))}
+  svg.append(el('line',{x1:L,x2:W-R,y1:H-B,y2:H-B,class:'ax'}));
+  svg.append(el('line',{x1:W-R,x2:W-R,y1:T,y2:H-B,class:'ax'}));
+  svg.append(el('line',{x1:W-R+56,x2:W-R+56,y1:T,y2:H-B,class:'ax'}));
+  for(const n of [400,500,600,700,800]){svg.append(el('line',{x1:W-R,x2:W-R+5,y1:yP(n),y2:yP(n),class:'ax'}));svg.append(el('text',{x:W-R+8,y:yP(n)+4,fill:'var(--c3)'},n))}
+  for(const n of [8000,10000,12000,14000,16000,18000]){svg.append(el('line',{x1:W-R+56,x2:W-R+61,y1:yL(n),y2:yL(n),class:'ax'}));svg.append(el('text',{x:W-R+64,y:yL(n)+4,fill:'var(--c1)'},(n/1000)+'k'))}
+  svg.append(el('text',{x:(L+W-R)/2,y:H-8,'text-anchor':'middle',class:'lab'},'cumulative agent hours'));
+  svg.append(el('text',{x:14,y:T-8,class:'lab'},'seconds (log)'));
+  svg.append(el('text',{x:W-R+8,y:T-8,class:'lab',fill:'var(--c3)'},'proved'));
+  svg.append(el('text',{x:W-R+64,y:T-8,class:'lab',fill:'var(--c1)'},'lines'));
+  svg.append(el('line',{x1:x(13.8),x2:x(13.8),y1:T,y2:H-B,stroke:'var(--mark)','stroke-dasharray':'4 4'}));
+  svg.append(el('text',{x:x(13.8)+6,y:H-B-10,class:'lab'},'7 divisions'));
+
+  const pts=ROWS;
+  let d='';pts.forEach((p,i)=>{const X=x(p.h).toFixed(1),Y=yP(p.p).toFixed(1);d+=i?` H${X} V${Y}`:`M${X} ${Y}`});
+  svg.append(el('path',{d,fill:'none',stroke:'var(--c3)','stroke-width':2,'stroke-dasharray':'5 4'}));
+  const lp=pts.filter(p=>p.loc!=null);
+  svg.append(el('path',{d:lp.map((p,i)=>(i?'L':'M')+x(p.h).toFixed(1)+' '+yL(p.loc).toFixed(1)).join(' '),fill:'none',stroke:'var(--c1)','stroke-width':2,'stroke-dasharray':'2 3','stroke-linejoin':'round'}));
+  lp.forEach(p=>{const g=el('g',{class:'pt'});g.append(el('circle',{cx:x(p.h),cy:yL(p.loc),r:3,fill:'var(--c1)',stroke:'var(--panel)','stroke-width':1}));
+    g.addEventListener('mouseenter',e=>showTip(e,tipHtml(p)));g.addEventListener('mousemove',moveTip);g.addEventListener('mouseleave',hideTip);svg.append(g)});
+  svg.append(el('path',{d:pts.map((p,i)=>(i?'L':'M')+x(p.h).toFixed(1)+' '+yT(p.old).toFixed(1)).join(' '),fill:'none',stroke:'var(--c2)','stroke-width':2.2,'stroke-linejoin':'round'}));
+  const labelled={'step 20 (Linux baseline)':['step 20',0,-10],'step 21':['step 21',6,-8],'step 22':['step 22',6,-8],'T2':['T2',6,-8],'T3':['T3',6,-8],'T4':['T4',6,-9],'T5':['T5',6,12],'T6':['T6',6,-9],'lean435':['lean435',6,14],'P11 H':['788 proved',6,-9],'C2 st.3c3':['engine deletion',6,-9],'T1':['T1',-6,-9]};
+  pts.forEach(p=>{
+    const g=el('g',{class:'pt'});
+    g.append(el('circle',{cx:x(p.h),cy:yT(p.old),r:4.5,fill:'var(--panel)',stroke:'var(--c2)','stroke-width':2}));
+    const lab=labelled[p.n];
+    if(lab){svg.append(el('text',{x:x(p.h)+lab[1],y:yT(p.old)+lab[2],'text-anchor':lab[1]<0?'end':'start'},`${lab[0]} ${p.old} s`))}
+    g.addEventListener('mouseenter',e=>showTip(e,tipHtml(p)));g.addEventListener('mousemove',moveTip);g.addEventListener('mouseleave',hideTip);
+    svg.append(g);
+  });
+  const p788=pts.find(q=>q.p===788);svg.append(el('text',{x:x(p788.h)+6,y:yP(788)-6,class:'lab'},'788 / 788 valid'));
+  const peak=lp.reduce((a,b)=>b.loc>a.loc?b:a);svg.append(el('text',{x:x(peak.h)+6,y:yL(peak.loc)-6,class:'lab'},peak.loc+' lines'));
+}
+
+function table(){
+  const tb=document.querySelector('#tbl tbody');const f=v=>v==null?'':v;
+  const row=(p,ph)=>{if(ph){const tr=document.createElement('tr');tr.className='phase';tr.innerHTML=`<td colspan="9">${ph}</td>`;tb.append(tr)}
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${p.n}</td><td>${p.d}</td><td class="num">${p.h.toFixed(1)}</td><td class="num">${p.old}</td><td class="num">${f(p.ps)}</td><td class="num">${f(p.tot)}</td><td class="num">${p.p}</td><td class="num">${f(p.loc)}</td><td>${p.note}</td>`;tb.append(tr)};
+  ROWS.forEach(p=>{const ph=p.n==='step 20 (Linux baseline)'?'Climb 1, time climb (Sep 25–26), qf_shls + qf_shid':p.n==='reset'?'Reset (Oct 19)':p.n==='lean435'?'Climb 2 (Oct 20–22), seven divisions':null;row(p,ph)});
+}
+chart();table();
+</script>
+</body>
+</html>
