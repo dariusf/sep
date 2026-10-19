@@ -1,12 +1,12 @@
 import Sep.HProp
-import Sep.SepLogic
+import Sep.Xsimpl.Core
 
 open Lean Meta Elab Tactic
 
 /-!
 # `HProp` as a `SepLogic`
 
-The `xsimpl` tactic itself lives in `Sep/SepLogic.lean`, generically over the
+The `xsimpl` tactic itself lives in `Sep/Xsimpl/Core.lean`, generically over the
 `SepLogic` class. This file supplies the instance for `HProp` and the
 fold/unfold bridge lemmas the tactic uses to translate `HProp` goals into class
 form and back.

@@ -1,11 +1,11 @@
-import Sep.SepLogic
+import Sep.Xsimpl.Core
 
 open Lean Meta Elab Tactic
 
 /-!
 # Frame inference and biabduction over the `SepLogic` class
 
-The `xsimpl` pipeline of `Sep/SepLogic.lean` cancels matching atoms.  This file
+The `xsimpl` pipeline of `Sep/Xsimpl/Core.lean` cancels matching atoms.  This file
 adds the two *granular* steps that make an entailment with metavariable
 remainders solvable: a leftover atom on the left is absorbed into a frame
 metavariable on the right, and a missing atom on the right is absorbed into an
