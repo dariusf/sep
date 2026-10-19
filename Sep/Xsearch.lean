@@ -1,4 +1,5 @@
 import Sep.Xsimpl
+import Sep.SegC
 import Lean
 open Lean Meta Elab Tactic
 open HProp Notation
@@ -8515,6 +8516,9 @@ def arWitness : TacticM Unit := do
     let some (lhs, rhs) := entailHead? t | throwError "ar: not an entailment"
     let L := (flatStar lhs #[]).filter (!·.isAppOf ``HProp.hpure)
     let R := (flatStar rhs #[]).filter (fun r => !r.isAppOf ``HProp.hpure && r.hasExprMVar)
+    if (← IO.getEnv "LEN_DBG").isSome then
+      IO.eprintln s!"WIT L={← L.mapM (fun e => do return toString (← ppExpr e))}"
+      IO.eprintln s!"WIT R={← R.mapM (fun e => do return toString (← ppExpr (← instantiateMVars e)))}"
     unless ← arAssign L R.toList #[] do throwError "ar: no witness"
   for w in ws do
     if (← instantiateMVars w).hasExprMVar then throwError "ar: witness open"
@@ -9629,6 +9633,755 @@ def datPass : TacticM Unit := do
     catch _ => s.restore
   throwError "dat: no plan"
 
+structure LenP where
+  pname : Name
+  inst : Expr
+  c : Expr
+  phiLam : Expr
+  lo : Nat
+  trivial : Bool
+  branches : Array (Array (Bool × Name))
+  members : Array Name
+  recursive : Bool
+  deriving Inhabited
+
+partial def lenHorBranches (e : Expr) (acc : Array Expr) : Array Expr :=
+  if isHorConst e && e.getAppNumArgs ≥ 2 then
+    let a := e.getAppArgs
+    lenHorBranches a[a.size - 1]! (lenHorBranches a[a.size - 2]! acc)
+  else acc.push e
+
+def lenInfo (p : Name) : MetaM (Option (Expr × Expr × Array (Array (Bool × Name)))) := do
+  let entries := xsearchUnfoldExt.getState (← getEnv)
+  let some ent := entries.find? (·.headFn == p) | return none
+  let ty := (← getConstInfo ent.lemmaName).type
+  forallTelescopeReducing ty fun xs concl => do
+    unless xs.size == 2 do return none
+    let some (eqT, _, body) := concl.eq? | return none
+    let inst := eqT.appArg!
+    let mut cLam : Option Expr := none
+    let mut brs : Array (Array (Bool × Name)) := #[]
+    for br in lenHorBranches body #[] do
+      let r ← peelExG br #[] fun _ bd => do
+        let items := flatStar bd #[]
+        let mut cells : Array (Expr × Expr × Expr) := #[]
+        let mut atoms : Array (Name × Expr × Expr) := #[]
+        let mut pures : Array Expr := #[]
+        for it in items do
+          match it.getAppFnArgs with
+          | (``HProp.hpure, #[_, pr]) => pures := pureConjs pr pures
+          | (``HProp.hsingle, #[_, a, v]) => cells := cells.push (a, v, it)
+          | _ =>
+            match it.getAppFn.constName? with
+            | some q =>
+              if it.getAppNumArgs == 2 then
+                atoms := atoms.push (q, it.getAppArgs[0]!, it.getAppArgs[1]!)
+              else return none
+            | none => return none
+        let mut cl : Option Expr := none
+        let mut nexts : Array Expr := #[]
+        for (a, v, h) in cells do
+          let fvs := (Lean.collectFVars {} v).fvarIds
+          unless fvs.size == 1 do return none
+          let nx := mkFVar fvs[0]!
+          nexts := nexts.push nx
+          let guard := pures.find? (fun q => match q.getAppFnArgs with
+            | (``Ne, #[_, x, _]) => x == a
+            | _ => false)
+          let ta ← inferType a
+          let tn ← inferType nx
+          let lam ← withLocalDeclD `la ta fun la => withLocalDeclD `lb tn fun lb => do
+            let hs := (h.replaceFVar a la).replaceFVar nx lb
+            let body ← match guard with
+              | some g => mkAppM ``HProp.hstar #[← mkAppOptM ``HProp.hpure #[inst, g.replaceFVar a la], hs]
+              | none => pure hs
+            mkLambdaFVars #[la, lb] body
+          if let some c0 := cl then
+            unless c0 == lam do return none
+          else cl := some lam
+        for q in pures do
+          match q.getAppFnArgs with
+          | (``Ne, #[_, x, _]) => unless cells.any (·.1 == x) do return none
+          | (``Eq, #[_, x, y]) => unless (x == xs[0]! && y == xs[1]!) || (x == xs[1]! && y == xs[0]!) do return none
+          | (``True, _) => pure ()
+          | _ => return none
+        let mut cur := xs[0]!
+        let mut used : Array Nat := #[]
+        let mut usedA : Array Nat := #[]
+        let mut ps : Array (Bool × Name) := #[]
+        for _ in [0 : cells.size + atoms.size] do
+          match (Array.range cells.size).find? (fun i => !used.contains i && cells[i]!.1 == cur) with
+          | some i =>
+            used := used.push i
+            ps := ps.push (true, .anonymous)
+            cur := nexts[i]!
+          | none =>
+            match (Array.range atoms.size).find? (fun i => !usedA.contains i && atoms[i]!.2.1 == cur) with
+            | some i =>
+              usedA := usedA.push i
+              ps := ps.push (false, atoms[i]!.1)
+              cur := atoms[i]!.2.2
+            | none => break
+        unless used.size == cells.size && usedA.size == atoms.size do return none
+        if ps.isEmpty then
+          unless pures.any (fun q => q.isAppOf ``Eq) do return none
+        else unless cur == xs[1]! do return none
+        return some (cl, ps)
+      let some (cl, ps) := r | return none
+      if let some l := cl then
+        if let some c0 := cLam then
+          unless c0 == l do return none
+        else cLam := some l
+      brs := brs.push ps
+    let some c := cLam | return some (inst, mkConst ``Unit, brs)
+    return some (inst, c, brs)
+
+def lenW : Nat := 16
+
+def lenPhi (S : Array Bool) : Option (Nat × Nat × Array Nat) := do
+  let m ← (Array.range S.size).find? (fun i => S[i]!)
+  let p ← [1, 2, 3, 4].find? (fun p => (List.range S.size).all (fun n =>
+    n < m || n + p ≥ S.size || S[n]! == S[n + p]!))
+  let rs := (List.range p).filter (fun r => m + r < S.size && S[m + r]!)
+  some (m, p, rs.toArray)
+
+def lenPhiExpr (m p : Nat) (rs : Array Nat) (n : Expr) : MetaM Expr := do
+  let lit := fun (v : Nat) => arIntLit v
+  let ge ← mkAppM ``LE.le #[← lit m, n]
+  if p == 1 then return ge
+  let d ← mkAppM ``HMod.hMod #[← mkAppM ``HSub.hSub #[n, ← lit m], ← lit p]
+  let mut alts : Array Expr := #[]
+  for r in rs do alts := alts.push (← mkAppM ``Eq #[d, ← lit r])
+  let mut disj := alts[alts.size - 1]!
+  for i in [0 : alts.size - 1] do disj ← mkAppM ``Or #[alts[alts.size - 2 - i]!, disj]
+  mkAppM ``And #[ge, disj]
+
+initialize lenPCache : IO.Ref (Array (Name × Option LenP)) ← IO.mkRef #[]
+
+def lenPOf (p : Name) : MetaM (Option LenP) := do
+  if let some r := (← lenPCache.get).findSome? (fun e => if e.1 == p then some e.2 else none) then
+    return r
+  let r ← try (do
+      let mut todo : Array Name := #[p]
+      let mut infos : Array (Name × Expr × Expr × Array (Array (Bool × Name))) := #[]
+      let mut guard := 0
+      while !todo.isEmpty && guard < 16 do
+        guard := guard + 1
+        let q := todo.back!
+        todo := todo.pop
+        if infos.any (·.1 == q) then continue
+        let some (inst, c, brs) ← lenInfo q | throwError "len: info"
+        infos := infos.push (q, inst, c, brs)
+        for br in brs do
+          for (isC, nm) in br do
+            if !isC && !infos.any (·.1 == nm) && !todo.contains nm then todo := todo.push nm
+      unless todo.isEmpty do throwError "len: closure"
+      let cs := (infos.map (·.2.2.1)).filter (· != mkConst ``Unit)
+      let some c := cs[0]? | throwError "len: no cell"
+      unless cs.all (· == c) do throwError "len: cells"
+      let mut S : Array (Name × Array Bool) := infos.map (fun i => (i.1, Array.replicate (lenW + 1) false))
+      for _ in [0 : lenW + 2] do
+        let mut S2 := S
+        for (q, _, _, brs) in infos do
+          let mut acc := Array.replicate (lenW + 1) false
+          for br in brs do
+            let mut cur := Array.replicate (lenW + 1) false
+            let nc := (br.filter (·.1)).size
+            if nc ≤ lenW then cur := cur.set! nc true
+            for (isC, nm) in br do
+              if isC then continue
+              let some (_, sq) := S.find? (·.1 == nm) | throwError "len: set"
+              let mut nxt := Array.replicate (lenW + 1) false
+              for a in [0 : lenW + 1] do
+                if cur[a]! then
+                  for b in [0 : lenW + 1 - a] do
+                    if sq[b]! then nxt := nxt.set! (a + b) true
+              cur := nxt
+            for n in [0 : lenW + 1] do
+              if cur[n]! then acc := acc.set! n true
+          S2 := S2.map (fun e => if e.1 == q then (q, acc) else e)
+        S := S2
+      let some (_, sp) := S.find? (·.1 == p) | throwError "len: no set"
+      let some (m, per, rs) := lenPhi sp | throwError "len: profile"
+      let some (_, inst, _, brs) := infos.find? (·.1 == p) | throwError "len: info"
+      let phiLam ← withLocalDeclD `n arIntT fun n => do mkLambdaFVars #[n] (← lenPhiExpr m per rs n)
+      let rec_ ← isRecPred p
+      let ms ← if rec_ then groupMembers p else pure #[p]
+      let ms := if ms.isEmpty then #[p] else ms
+      pure (some { pname := p, inst := inst, c := c, phiLam := phiLam, lo := m,
+                   trivial := m == 0 && per == 1, branches := brs, members := ms,
+                   recursive := rec_ : LenP }))
+    catch _ => pure none
+  lenPCache.modify (·.push (p, r))
+  return r
+
+def lenSeg (P : LenP) (n x y : Expr) : Expr := mkAppN (mkConst ``Sep.segI) #[P.inst, P.c, n, x, y]
+
+def lenAbsTarget (P : LenP) (x y : Expr) : MetaM Expr := do
+  withLocalDeclD `ln arIntT fun n => do
+    let body ← mkAppM ``HProp.hstar #[lenSeg P n x y, ← mkAppOptM ``HProp.hpure #[P.inst, P.phiLam.beta #[n]]]
+    arExists P.inst #[n] body
+
+def lenBeta (e : Expr) : MetaM Expr := do
+  let ty ← instantiateMVars (← inferType e)
+  mkExpectedTypeHint e (← Core.betaReduce ty)
+
+def lenIsSeg (e : Expr) : Bool := e.isAppOf ``Sep.segI && e.getAppNumArgs == 5
+
+def lenCells (P : LenP) : TacticM Unit := do
+  for _ in [0 : 64] do
+    let found ← withMainContext do
+      let t ← instantiateMVars (← (← getMainGoal).getType)
+      let some (lhs, _) := entailHead? t | return none
+      let Ls := flatStar lhs #[]
+      for h in Ls do
+        unless h.isAppOf ``HProp.hsingle do continue
+        let a := h.getAppArgs[1]!
+        let v := h.getAppArgs[2]!
+        let fvs := (Lean.collectFVars {} v).fvarIds
+        for f in fvs do
+          let cell := (P.c.beta #[a, mkFVar f]).headBeta
+          let parts := flatStar cell #[]
+          if parts.all (Ls.contains ·) then
+            return some (parts, a, mkFVar f)
+        if fvs.isEmpty then
+          if let some b := v.find? (fun e => e.isFVar || e.isAppOf ``OfNat.ofNat) then
+            let cell := (P.c.beta #[a, b]).headBeta
+            let parts := flatStar cell #[]
+            if parts.all (Ls.contains ·) then return some (parts, a, b)
+      return none
+    match found with
+    | none => return
+    | some (parts, a, b) =>
+      let lem ← withMainContext do lenBeta (← mkAppOptM ``Sep.segI_cell #[P.inst, P.c, a, b])
+      let _ ← arRwLhs parts.toList lem
+
+def lenJoinAll (P : LenP) : TacticM (Option Expr) := do
+  for _ in [0 : 64] do
+    let r ← withMainContext do
+      let t ← instantiateMVars (← (← getMainGoal).getType)
+      let some (lhs, _) := entailHead? t | throwError "len: goal"
+      let Ss := (flatStar lhs #[]).filter lenIsSeg
+      if Ss.size ≤ 1 then return (Ss[0]?, none)
+      for A in Ss do
+        for B in Ss do
+          if A == B then continue
+          let aa := A.getAppArgs
+          let ba := B.getAppArgs
+          if aa[4]! == ba[3]! then
+            let lem ← mkAppOptM ``Sep.segI_join #[P.inst, P.c, aa[2]!, ba[2]!, aa[3]!, aa[4]!, ba[4]!]
+            return (none, some (A, B, lem))
+      throwError "len: no join"
+    match r with
+    | (res, none) => return res
+    | (_, some (A, B, lem)) => let _ ← arRwLhs [A, B] lem
+  throwError "len: join fuel"
+
+initialize lenAbsCache : IO.Ref (Array (Name × Option Expr)) ← IO.mkRef #[]
+initialize lenConcCache : IO.Ref (Array (Name × Option Expr)) ← IO.mkRef #[]
+
+mutual
+
+partial def lenAbsOf (p : Name) : TacticM (Option Expr) := do
+  if let some r := (← lenAbsCache.get).findSome? (fun e => if e.1 == p then some e.2 else none) then
+    return r
+  lenAbsCache.modify (·.push (p, none))
+  let saved ← getGoals
+  let st ← saveState
+  let r ← try (do
+      let some P ← lenPOf p | throwError "len: no profile"
+      pure (some (← lenBuildAbs P)))
+    catch _ => do st.restore; pure none
+  setGoals saved
+  lenAbsCache.modify (fun a => #[(p, r)] ++ a.filter (·.1 != p))
+  return r
+
+partial def lenAbsLeaf (P : LenP) (grp : Array Name) : TacticM Unit := do
+  let _ ← arIntroLhs
+  for _ in [0 : 16] do
+    let nxt ← withMainContext do
+      let t ← instantiateMVars (← (← getMainGoal).getType)
+      let some (lhs, _) := entailHead? t | throwError "len: goal"
+      pure ((flatStar lhs #[]).find? (fun x => match x.getAppFn.constName? with
+        | some q => q != ``Sep.segI && q != ``HProp.hpure && q != ``HProp.hsingle && !grp.contains q
+            && x.getAppNumArgs == 2
+        | none => false))
+    match nxt with
+    | none => break
+    | some x =>
+      let some q := x.getAppFn.constName? | throwError "len: atom"
+      let some lem ← lenAbsOf q | throwError "len: no abs"
+      let inst ← withMainContext do lenBeta (mkAppN lem x.getAppArgs)
+      let _ ← arRwLhs [x] inst
+      let _ ← arIntroLhs
+  lenCells P
+  arIntroFacts
+  let res ← lenJoinAll P
+  if res.isNone then
+    withMainContext do
+      let t ← instantiateMVars (← (← getMainGoal).getType)
+      let some (_, rhs) := entailHead? t | throwError "len: goal"
+      let (body, _) ← arOpen rhs
+      let some s := (flatStar body #[]).find? lenIsSeg | throwError "len: rhs"
+      let a := s.getAppArgs[3]!
+      let b := s.getAppArgs[4]!
+      let a ← instantiateMVars a
+      let b ← instantiateMVars b
+      let h ← arOmega (← mkAppM ``Eq #[a, b])
+      let lem ← mkAppOptM ``Sep.segI_zero_intro #[P.inst, P.c, a, b, h]
+      let _ ← arRwLhs [] lem
+  datMatchClose
+
+partial def lenBuildAbs (P : LenP) : TacticM Expr := do
+  let pty := (← getConstInfo P.pname).type
+  forallTelescope pty fun xs _ => do
+    unless xs.size == 2 do throwError "len: arity"
+    let atom := mkAppN (mkConst P.pname) xs
+    let tgt ← lenAbsTarget P xs[0]! xs[1]!
+    if P.recursive then
+      let some (F, ta) ← functionalOf? atom | throwError "len: lfp"
+      let aty ← inferType ta
+      let tup := stripInj ta
+      let mut templs : Array Expr := #[]
+      for q in P.members do
+        let some Q ← lenPOf q | throwError "len: member"
+        templs := templs.push (← lenAbsTarget Q xs[0]! xs[1]!)
+      let X ← mkXFunN tup templs 0 aty
+      let hX ← indSetup F X aty 1
+      let mut leaves : List MVarId := []
+      for g in ← getGoals do
+        setGoals [g]
+        leaves := leaves ++ (← datSplitDisj)
+      for g in leaves do
+        setGoals [g]
+        lenAbsLeaf P P.members
+      setGoals []
+      let key ← instantiateMVars (← mkAppM ``lfpG_induct #[F, X, hX, ta])
+      let ty ← mkAppM ``HProp.himpl #[atom, tgt]
+      unless ← isDefEq (← inferType key) ty do throwError "len: abs type"
+      let pf ← instantiateMVars (← mkExpectedTypeHint key ty)
+      if pf.hasExprMVar then throwError "len: abs mvar"
+      mkLambdaFVars xs pf
+    else
+      let m ← arGoal (← mkAppM ``HProp.himpl #[atom, tgt])
+      rewriteOcc (← arEntries) atom
+      let leaves ← datSplitDisj
+      for g in leaves do
+        setGoals [g]
+        lenAbsLeaf P #[]
+      arFinish m xs
+
+partial def lenConcOf (p : Name) : TacticM (Option Expr) := do
+  if let some r := (← lenConcCache.get).findSome? (fun e => if e.1 == p then some e.2 else none) then
+    return r
+  lenConcCache.modify (·.push (p, none))
+  let saved ← getGoals
+  let st ← saveState
+  let r ← try (do
+      let some P ← lenPOf p | throwError "len: no profile"
+      pure (some (← lenBuildConc P)))
+    catch _ => do st.restore; pure none
+  setGoals saved
+  lenConcCache.modify (fun a => #[(p, r)] ++ a.filter (·.1 != p))
+  return r
+
+partial def lenConcBody (P : LenP) (ms : Array LenP) (k : Expr) : MetaM Expr := do
+  withLocalDeclD `n arIntT fun n => withLocalDeclD `x (mkConst ``Nat) fun x =>
+  withLocalDeclD `y (mkConst ``Nat) fun y => do
+  withLocalDeclD `hk (← mkAppM ``Eq #[n, ← mkAppOptM ``Nat.cast #[arIntT, none, k]]) fun hk => do
+    let mut parts : Array Expr := #[]
+    for Q in ms do
+      let st ← mkAppM ``HProp.himpl #[lenSeg P n x y, mkAppN (mkConst Q.pname) #[x, y]]
+      parts := parts.push (← mkArrow (Q.phiLam.beta #[n]) st)
+    let conj ← datConj parts
+    mkForallFVars #[n, x, y, hk] conj
+
+partial def lenCond (Q : LenP) (j : Nat) (n : Expr) : TacticM Expr := do
+  let br := Q.branches[j]!
+  let nc := (br.filter (·.1)).size
+  let atoms := br.filter (!·.1)
+  if atoms.isEmpty then return ← mkAppM ``Eq #[n, ← arIntLit nc]
+  let some A ← lenPOf atoms[0]!.2 | throwError "len: atom"
+  let l ← arSub n (← arIntLit nc)
+  mkAppM ``And #[← arLe (← arIntLit nc) n, A.phiLam.beta #[l]]
+
+partial def lenConcOne (P : LenP) (ms : Array LenP) (Q : LenP) (j : Nat) (k ih goalTy : Expr) :
+    TacticM Expr := do
+  let m ← arGoal goalTy
+  lenConcBranch P ms Q j k ih
+  unless (← getUnsolvedGoals).isEmpty do throwError "len: open"
+  let pf ← instantiateMVars m
+  if pf.hasExprMVar then throwError "len: branch mvar"
+  return pf
+
+partial def lenConcTry (P : LenP) (ms : Array LenP) (Q : LenP) (k ih n goalTy : Expr)
+    (js : List Nat) : TacticM Expr := do
+  match js with
+  | [] => throwError "len: no branch"
+  | j :: rest =>
+    if rest.isEmpty then return ← lenConcOne P ms Q j k ih goalTy
+    let cond ← lenCond Q j n
+    let proves := fun (p : Expr) => do
+      try (do let _ ← arOmega p; pure true) catch _ => pure false
+    if ← proves (← mkAppM ``Not #[cond]) then return ← lenConcTry P ms Q k ih n goalTy rest
+    let st ← saveState
+    let p1 ← try some <$> withLocalDeclD `hc cond (fun hc => do
+        mkLambdaFVars #[hc] (← lenConcOne P ms Q j k ih goalTy)) catch _ => pure none
+    let some p1 := p1 | do st.restore; throwError "len: branch"
+    let p2 ← withLocalDeclD `hnc (← mkAppM ``Not #[cond]) fun hn => do
+      mkLambdaFVars #[hn] (← lenConcTry P ms Q k ih n goalTy rest)
+    mkAppOptM ``Classical.byCases #[cond, goalTy, p1, p2]
+
+partial def lenConcCase (P : LenP) (ms : Array LenP) (i : Nat) (k ih n x y : Expr) :
+    TacticM Expr := do
+  let Q := ms[i]!
+  withLocalDeclD `hphi (Q.phiLam.beta #[n]) fun hphi => do
+    let goalTy ← mkAppM ``HProp.himpl #[lenSeg P n x y, mkAppN (mkConst Q.pname) #[x, y]]
+    let saved ← getGoals
+    let pf ← lenConcTry P ms Q k ih n goalTy (List.range Q.branches.size)
+    setGoals saved
+    mkLambdaFVars #[hphi] pf
+
+partial def lenConcBranch (P : LenP) (ms : Array LenP) (Q : LenP) (j : Nat) (k ih : Expr) :
+    TacticM Unit := withMainContext do
+  let br := Q.branches[j]!
+  let t ← instantiateMVars (← (← getMainGoal).getType)
+  let some (lhs, rhs) := entailHead? t | throwError "len: goal"
+  let la := lhs.getAppArgs
+  let n := la[2]!
+  let x := la[3]!
+  let y := la[4]!
+  let nc := (br.filter (·.1)).size
+  let atoms := br.filter (!·.1)
+  let one ← arIntLit 1
+  if atoms.size == 0 then
+    let _ ← arOmega (← mkAppM ``Eq #[n, ← arIntLit nc])
+  else if atoms.size > 1 then throwError "len: two atoms"
+  let l ← arSub n (← arIntLit nc)
+  let lens ← br.mapM fun (c, _) => if c then pure one else pure l
+  if atoms.size == 1 then
+    let some A ← lenPOf atoms[0]!.2 | throwError "len: atom"
+    let _ ← arOmega (← mkAppM ``And #[← arLe (← arIntLit 0) l, A.phiLam.beta #[l]])
+  if br.isEmpty then
+    let h ← arOmega (← mkAppM ``Eq #[n, ← arIntLit 0])
+    let _ ← arRwLhs [lhs] (← mkAppOptM ``Sep.segI_zero_elim #[P.inst, P.c, n, x, y, h])
+    arIntroFacts
+  else
+    let mut cur := lhs
+    let mut pieces : Array Expr := #[]
+    for i in [0 : br.size] do
+      if i + 1 == br.size then
+        let ca := cur.getAppArgs
+        if ca[2]! != lens[i]! then
+          let h ← withMainContext do arOmega (← mkAppM ``Eq #[ca[2]!, lens[i]!])
+          let lem ← withMainContext do
+            mkAppOptM ``Sep.segI_cong #[P.inst, P.c, ca[2]!, lens[i]!, ca[3]!, ca[4]!, h]
+          let _ ← arRwLhs [cur] lem
+          cur := lenSeg P lens[i]! ca[3]! ca[4]!
+        pieces := pieces.push cur
+      else
+        let ca := cur.getAppArgs
+        let rest ← arSum (lens.extract (i + 1) br.size).toList
+        let lem ← withMainContext do
+          let hn ← arOmega (← mkAppM ``Eq #[ca[2]!, ← arAdd lens[i]! rest])
+          let ha ← arOmega (← arLe (← arIntLit 0) lens[i]!)
+          let hb ← arOmega (← arLe (← arIntLit 0) rest)
+          mkAppOptM ``Sep.segI_split #[P.inst, P.c, ca[2]!, lens[i]!, rest, ca[3]!, ca[4]!, hn, ha, hb]
+        let vs ← arRwLhs [cur] lem
+        let some v := vs[0]? | throwError "len: split"
+        pieces := pieces.push (lenSeg P lens[i]! ca[3]! v)
+        cur := lenSeg P rest v ca[4]!
+    for (pc, (isC, nm)) in pieces.zip br do
+      let pa := pc.getAppArgs
+      if isC then
+        let _ ← arRwLhs [pc] (← withMainContext do
+          lenBeta (← mkAppOptM ``Sep.segI_uncell #[P.inst, P.c, pa[3]!, pa[4]!]))
+      else
+        let some A ← lenPOf nm | throwError "len: atom"
+        let lem ← withMainContext do
+          let kk ← mkAppM ``Int.toNat #[pa[2]!]
+          let hk ← arOmega (← mkAppM ``Eq #[pa[2]!, ← mkAppOptM ``Nat.cast #[arIntT, none, kk]])
+          let hphi ← arOmega (A.phiLam.beta #[pa[2]!])
+          match ms.findIdx? (·.pname == nm) with
+          | some idx =>
+            let hlt ← arOmega (← mkAppM ``LT.lt #[kk, k])
+            let c ← pure (mkAppN ih #[kk, hlt, pa[2]!, pa[3]!, pa[4]!, hk])
+            let mut proj := c
+            for _ in [0 : idx] do proj ← mkAppM ``And.right #[proj]
+            if idx + 1 < ms.size then proj ← mkAppM ``And.left #[proj]
+            pure (mkApp proj hphi)
+          | none =>
+            let some cl ← lenConcOf nm | throwError "len: conc"
+            pure (mkAppN cl #[kk, pa[2]!, pa[3]!, pa[4]!, hk, hphi])
+        let _ ← arRwLhs [pc] lem
+  let _ := rhs
+  withMainContext do
+    let t ← instantiateMVars (← (← getMainGoal).getType)
+    let some (_, r) := entailHead? t | throwError "len: goal"
+    rewriteOcc (← arEntries) r
+  for i in [0 : j] do
+    let _ := i
+    applyConstT ``hdisj_right
+  if j + 1 < Q.branches.size then applyConstT ``hdisj_left
+  datMatchClose
+
+partial def lenBuildConc (P : LenP) : TacticM Expr := do
+  let ms ← if P.recursive then P.members.mapM (fun q => do
+      let some Q ← lenPOf q | throwError "len: member"
+      pure Q) else pure #[P]
+  let some i := ms.findIdx? (·.pname == P.pname) | throwError "len: self"
+  let motive ← withLocalDeclD `k (mkConst ``Nat) fun k => do
+    mkLambdaFVars #[k] (← lenConcBody P ms k)
+  let step ← withLocalDeclD `k (mkConst ``Nat) fun k => do
+    let ihTy ← withLocalDeclD `m (mkConst ``Nat) fun mm => do
+      mkForallFVars #[mm] (← mkArrow (← mkAppM ``LT.lt #[mm, k]) (motive.beta #[mm]))
+    withLocalDeclD `ih ihTy fun ih =>
+    withLocalDeclD `n arIntT fun n => withLocalDeclD `x (mkConst ``Nat) fun x =>
+    withLocalDeclD `y (mkConst ``Nat) fun y => do
+    withLocalDeclD `hk (← mkAppM ``Eq #[n, ← mkAppOptM ``Nat.cast #[arIntT, none, k]]) fun hk => do
+      let mut parts : Array Expr := #[]
+      for idx in [0 : ms.size] do
+        parts := parts.push (← lenConcCase P ms idx k ih n x y)
+      let mut acc := parts[parts.size - 1]!
+      for t in [0 : parts.size - 1] do
+        acc ← mkAppM ``And.intro #[parts[parts.size - 2 - t]!, acc]
+      mkLambdaFVars #[k, ih, n, x, y, hk] acc
+  let rec_ ← withLocalDeclD `k (mkConst ``Nat) fun k => do
+    let t ← mkAppOptM ``Nat.strongRecOn #[motive, k, step]
+    mkLambdaFVars #[k] t
+  withLocalDeclD `k (mkConst ``Nat) fun k => withLocalDeclD `n arIntT fun n =>
+  withLocalDeclD `x (mkConst ``Nat) fun x => withLocalDeclD `y (mkConst ``Nat) fun y => do
+  withLocalDeclD `hk (← mkAppM ``Eq #[n, ← mkAppOptM ``Nat.cast #[arIntT, none, k]]) fun hk => do
+  withLocalDeclD `hphi (P.phiLam.beta #[n]) fun hphi => do
+    let mut c := mkAppN (rec_.beta #[k]) #[n, x, y, hk]
+    for _ in [0 : i] do c ← mkAppM ``And.right #[c]
+    if i + 1 < ms.size then c ← mkAppM ``And.left #[c]
+    let pf ← instantiateMVars (mkApp c hphi)
+    if pf.hasExprMVar then throwError "len: conc mvar"
+    let _ ← inferType pf
+    mkLambdaFVars #[k, n, x, y, hk, hphi] pf
+
+end
+
+def lenStarProof (inst : Expr) (pfs : List (Expr × Expr × Expr)) : MetaM Expr := do
+  match pfs with
+  | [] => mkAppOptM ``HProp.himpl_refl #[inst, mkApp (mkConst ``HProp.hempty) inst]
+  | [(_, _, p)] => pure p
+  | (a, b, p) :: rest => do
+    let q ← lenStarProof inst rest
+    mkAppOptM ``HProp.himpl_frame_lr #[inst, a, b, starOf inst (rest.map (·.1)),
+      starOf inst (rest.map (·.2.1)), p, q]
+
+partial def lenRhsBody {α : Type} [Inhabited α] (P : LenP) (inst : Expr) (atoms : List Expr)
+    (acc : Array Expr) (k : Array Expr → Array Expr → TacticM α) : TacticM α := do
+  match atoms with
+  | [] => k acc #[]
+  | a :: rest =>
+    match a.getAppFn.constName? with
+    | some q =>
+      if q == ``HProp.hpure || q == ``HProp.hsingle || q == ``Sep.segI then
+        lenRhsBody P inst rest (acc.push a) k
+      else
+        let some Q ← lenPOf q | throwError "len: rhs atom"
+        withLocalDeclD `rm arIntT fun m => do
+          let a' ← mkAppM ``HProp.hstar #[← mkAppOptM ``HProp.hpure #[inst, Q.phiLam.beta #[m]],
+            lenSeg P m a.getAppArgs[0]! a.getAppArgs[1]!]
+          lenRhsBody P inst rest (acc.push a') fun acc2 ms => k acc2 (#[m] ++ ms)
+    | none => throwError "len: rhs atom"
+
+partial def lenRhsGo (P : LenP) (inst : Expr) (r : Expr) : TacticM (Expr × Expr) := do
+  if r.isAppOf ``HProp.hexists then
+    let lam := r.appArg!
+    if lam.isLambda then
+      return ← withLocalDeclD lam.bindingName! lam.bindingDomain! fun w => do
+        let (r', pf) ← lenRhsGo P inst (lam.bindingBody!.instantiate1 w)
+        let lam' ← mkLambdaFVars #[w] r'
+        let ex' ← mkAppOptM ``HProp.hexists #[inst, lam.bindingDomain!, lam']
+        let pfl ← mkLambdaFVars #[w] (← instantiateMVars pf)
+        let pfE ← mkAppOptM ``HProp.himpl_hexists #[inst, lam.bindingDomain!, lam', lam, pfl]
+        pure (ex', pfE)
+  let Rs0 := flatStar r #[]
+  let mut guards : Array Expr := #[]
+  for h in Rs0 do
+    if h.isAppOf ``HProp.hsingle then
+      let addr := h.getAppArgs[1]!
+      for g in flatStar ((P.c.beta #[addr, addr]).headBeta) #[] do
+        if g.isAppOf ``HProp.hpure then guards := guards.push g
+  let Rs := Rs0.filter (fun a => !guards.contains a)
+  let mut items : Array Expr := #[]
+  let mut tgts : Array Expr := #[]
+  for a in Rs do
+    if a.isAppOf ``HProp.hsingle then
+      let addr := a.getAppArgs[1]!
+      let fvs := (Lean.collectFVars {} a.getAppArgs[2]!).fvarIds
+      let b ← match fvs[0]? with
+        | some f => pure (mkFVar f)
+        | none => match a.getAppArgs[2]!.find? (·.isAppOf ``OfNat.ofNat) with
+          | some b => pure b
+          | none => throwError "len: rhs cell"
+      items := items.push (lenSeg P (← arIntLit 1) addr b)
+      tgts := tgts.push ((P.c.beta #[addr, b]).headBeta)
+    else
+      items := items.push a
+      tgts := tgts.push a
+  lenRhsBody P inst items.toList #[] fun acc ms => do
+    let body' := starOf inst acc.toList
+    let mut pfs : Array (Expr × Expr × Expr) := #[]
+    for (a', tg) in acc.zip tgts do
+      if lenIsSeg a' then
+        let aa := a'.getAppArgs
+        pfs := pfs.push (a', tg, ← lenBeta (← mkAppOptM ``Sep.segI_uncell #[P.inst, P.c, aa[3]!, aa[4]!]))
+      else if a'.isAppOf ``HProp.hstar then
+        let seg := a'.getAppArgs[2]!
+        let sa := seg.getAppArgs
+        let some q := tg.getAppFn.constName? | throwError "len: rhs"
+        let some Q ← lenPOf q | throwError "len: rhs"
+        let some cl ← lenConcOf q | throwError "len: conc"
+        let phi := Q.phiLam.beta #[sa[2]!]
+        let pf ← withLocalDeclD `hp phi fun hp => do
+          let kk ← mkAppM ``Int.toNat #[sa[2]!]
+          let hk ← arOmega (← mkAppM ``Eq #[sa[2]!, ← mkAppOptM ``Nat.cast #[arIntT, none, kk]])
+          mkLambdaFVars #[hp] (mkAppN cl #[kk, sa[2]!, sa[3]!, sa[4]!, hk, hp])
+        pfs := pfs.push (a', tg, ← mkAppOptM ``HProp.himpl_hstar_hpure_l #[inst, phi, seg, tg, pf])
+      else
+        pfs := pfs.push (a', tg, ← mkAppOptM ``HProp.himpl_refl #[inst, a'])
+    let step1 ← lenStarProof inst pfs.toList
+    let mid := starOf inst tgts.toList
+    let m2 ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``HProp.himpl #[mid, r])
+    let saved ← getGoals
+    setGoals [m2.mvarId!]
+    Sep.Xsimpl.xsimplDriver none
+    cleanAll
+    arCloseProps
+    setGoals saved
+    let pfBody ← instantiateMVars (← mkAppM ``HProp.himpl_trans #[step1, m2])
+    let ex ← arExists inst ms body'
+    let mut pf := pfBody
+    for i in [0 : ms.size] do
+      let mv := ms[ms.size - 1 - i]!
+      pf ← mkAppM ``HProp.himpl_hexists_l #[← mkLambdaFVars #[mv] pf]
+    pure (ex, pf)
+
+def lenRhsTransform (P : LenP) : TacticM Unit := withMainContext do
+  let g ← getMainGoal
+  let t ← instantiateMVars (← g.getType)
+  let some (lhs, rhs) := entailHead? t | throwError "len: goal"
+  let inst := t.getAppArgs[0]!
+  let (r', pf) ← lenRhsGo P inst rhs
+  let ng ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``HProp.himpl #[lhs, r'])
+  g.assign (← mkAppM ``HProp.himpl_trans #[ng, pf])
+  replaceMainGoal [ng.mvarId!]
+
+partial def lenWalk (atoms : Array Expr) (cur tgt : Expr) (used : Array Nat) (acc : Array Expr)
+    (okF : Array Expr → TacticM Bool) : TacticM (Option (Array Expr)) := do
+  for j in [0 : atoms.size] do
+    if used.contains j then continue
+    let a := atoms[j]!
+    let aa := a.getAppArgs
+    let s ← saveState
+    let hd ← instantiateMVars aa[3]!
+    let cu ← instantiateMVars cur
+    let ok ← if hd == cu then pure true
+      else if hd.isMVar then (try checkpointDefEq (isDefEq hd cu) catch _ => pure false)
+      else pure false
+    if ok then
+      if let some r ← lenWalk atoms aa[4]! tgt (used.push j) (acc.push a) okF then return some r
+    s.restore
+  if acc.isEmpty then return none
+  let s ← saveState
+  if ← (try checkpointDefEq (isDefEq cur tgt) catch _ => pure false) then
+    if used.size == atoms.size then
+      let s3 ← saveState
+      let good ← okF acc
+      s3.restore
+      if good then return some acc
+  s.restore
+  return none
+
+def lenCut (P : LenP) (A : Expr) (lens : Array Expr) : TacticM Unit := do
+  let k := lens.size
+  let mut cur := A
+  for i in [0 : k] do
+    let ca := cur.getAppArgs
+    if i + 1 == k then
+      if ca[2]! != lens[i]! then
+        let lem ← withMainContext do
+          let h ← arOmega (← mkAppM ``Eq #[ca[2]!, lens[i]!])
+          mkAppOptM ``Sep.segI_cong #[P.inst, P.c, ca[2]!, lens[i]!, ca[3]!, ca[4]!, h]
+        let _ ← arRwLhs [cur] lem
+    else
+      let rest ← withMainContext do arSum (lens.extract (i + 1) k).toList
+      let lem ← withMainContext do
+        let hn ← arOmega (← mkAppM ``Eq #[ca[2]!, ← arAdd lens[i]! rest])
+        let ha ← arOmega (← arLe (← arIntLit 0) lens[i]!)
+        let hb ← arOmega (← arLe (← arIntLit 0) rest)
+        mkAppOptM ``Sep.segI_split #[P.inst, P.c, ca[2]!, lens[i]!, rest, ca[3]!, ca[4]!, hn, ha, hb]
+      let vs ← arRwLhs [cur] lem
+      let some v := vs[0]? | throwError "len: split"
+      cur := lenSeg P rest v ca[4]!
+
+def lenPass : TacticM Unit := do
+  let (L, R, hasEx) ← withMainContext do
+    let t ← instantiateMVars (← (← getMainGoal).getType)
+    if t.hasExprMVar then throwError "len: mvars"
+    let some (lhs, rhs) := entailHead? t | throwError "len: goal"
+    let (body, ws) ← arOpen rhs
+    let mut ex := false
+    for w in ws do
+      if ← isDefEq (← inferType w) (mkConst ``Nat) then ex := true
+    pure (flatStar lhs #[], flatStar body #[], ex)
+  let mut P? : Option LenP := none
+  let mut nontriv := false
+  for x in L ++ R do
+    match x.getAppFn.constName? with
+    | some q =>
+      if q == ``HProp.hpure || q == ``HProp.hsingle then continue
+      unless x.getAppNumArgs == 2 do throwError "len: atom"
+      let some Q ← lenPOf q | throwError "len: no profile"
+      if !Q.trivial then nontriv := true
+      if let some P0 := P? then
+        unless P0.c == Q.c do throwError "len: cells"
+      else P? := some Q
+    | none => throwError "len: atom"
+  let some P := P? | throwError "len: none"
+  unless hasEx || nontriv do throwError "len: gate"
+  lenRhsTransform P
+  arIntroFacts
+  for x in L do
+    match x.getAppFn.constName? with
+    | some q =>
+      if q == ``HProp.hpure || q == ``HProp.hsingle then continue
+      let some lem ← lenAbsOf q | throwError "len: abs"
+      let inst ← withMainContext do lenBeta (mkAppN lem x.getAppArgs)
+      let _ ← arRwLhs [x] inst
+    | none => pure ()
+  let _ ← arIntroLhs
+  lenCells P
+  arIntroFacts
+  let some A ← lenJoinAll P | throwError "len: empty"
+  let s0 ← saveState
+  let lens? ← withMainContext do
+    let t ← instantiateMVars (← (← getMainGoal).getType)
+    let some (_, rhs) := entailHead? t | throwError "len: goal"
+    let (body, _) ← arOpen rhs
+    let Rs := (flatStar body #[]).filter lenIsSeg
+    let rp := pureProps body #[]
+    let aa := A.getAppArgs
+    let mkPc := fun (a : Expr) => ArPiece.mk false a.getAppArgs[2]! #[] #[] #[] 0 default .anonymous #[]
+    let okF := fun (acc : Array Expr) => do
+      return (← arSolve aa[2]! (acc.map mkPc) rp).isSome
+    let some acc ← lenWalk Rs aa[3]! aa[4]! #[] #[] okF | return none
+    arSolve aa[2]! (acc.map mkPc) rp
+  s0.restore
+  let some lens := lens? | throwError "len: no plan"
+  lenCut P A lens
+  arWitness
+  Sep.Xsimpl.xsimplDriver none
+  cleanAll
+  arCloseProps
+
+elab "xsearch_lenabs" : tactic => lenPass
+
 def arPass : TacticM Unit := do
   let (L, R) ← withMainContext do
     let t ← instantiateMVars (← (← getMainGoal).getType)
@@ -9803,6 +10556,9 @@ elab "xsearch_start" : tactic => do
   arCvCache.set #[]
   datDCache.set #[]
   datLCache.set #[]
+  lenPCache.set #[]
+  lenAbsCache.set #[]
+  lenConcCache.set #[]
 
 elab "xsearch_backtrack" : tactic => do
   let reset : Nat → TacticM Unit := fun tries => do
@@ -9908,6 +10664,10 @@ macro_rules
          try xsearch_dblalloc
          first
          | (xsearch_arith
+            first
+            | done
+            | xsearch_backtrack)
+         | (xsearch_lenabs
             first
             | done
             | xsearch_backtrack)

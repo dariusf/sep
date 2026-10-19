@@ -76,6 +76,16 @@ No parse errors or unsupported problems: the encoder covers every entailment div
 - [ ] S5. Quantified `shid_entl` families (reach ~55): RHS existentials whose witnesses live inside LHS predicates (unfold-then-witness), parity predicates `ls_even/ls_odd/ls_all` with disjunctive non-recursive wrappers (lsevenodd 18), elseg/olseg conversions (eolseg 8), tree/tseg joins with unknown-rooted segments (11), dll/lsrev conversions with existential RHS (7), ls with existential RHS (6). Analyse per family before briefing.
 - [ ] S6. onprob Harrsh trees (4): mutual tll/ptree inductions; timeouts, profile first.
 - [ ] S7. Refutation for arithmetic problems: extend the countermodel check to Int parameters so the 6 qf_shidlia sat problems fail fast instead of timing out.
+- [ ] Time passes (after every provable problem is proved; user 2026-10-20: proofs first, then optimise as in the T-steps of the previous climb). Rule per step: old divisions' time must not regress (table below); every accepted step records it.
+
+  | CSV | proved | old-division proved time | old total | all proved time | max ms |
+  |---|---|---|---|---|---|
+  | climb2-base | 516 | 16.5 s | 17.5 s | 17.2 s | 292 |
+  | s1 | 601 | 16.9 s | 17.8 s | 29.9 s | 294 |
+  | s2 | 679 | 16.8 s | 17.7 s | 53.7 s | 421 |
+  | s3 | 708 | 16.8 s | 17.8 s | 56.1 s | 423 |
+
+- [ ] T0. Profile the LIA proofs (shidlia 33 s over 158 proved, about 200 ms each): lemma building per predicate (B/F/Z/H/S/J/conversions/Bnd/J/T, 60–150 ms each) is rebuilt per problem by design (one-problem rule); cut it with cheaper proof terms (direct `Expr` construction instead of tactic scripts), lazy building of only the lemmas the plan uses, and skipping the countermodel check when the arithmetic pass has a verified plan.
 - [ ] T1. Cancellation at scale: Yolo Cancel100..400 grow about cubically (0.34/1.7/5.3/12.4 s); make xsimpl's cancellation and permutation proofs O(n log n) in atoms and memory-bounded, so Cancel500..800 run on 7 GB and all eight are under 5 s. Then the full-suite time.
 - [ ] After each step: refresh the family table (script in history 5), pick the next largest unproved family, analyse one problem by hand before briefing.
 
