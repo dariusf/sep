@@ -43,7 +43,7 @@ theorem bbbb (i : Nat) (hi : i < ll.length) :
   rewrite (occs := .pos [4]) [← List.take_append_drop i ll]
   rw [← List.map_take, ← List.flatten_length_sum, List.flatten_append]
   simp
-  rw [← List.getElem_cons_drop_succ_eq_drop hi, List.flatten_cons]
+  rw [← List.getElem_cons_drop hi, List.flatten_cons]
   simp
 
 theorem aaaa (i : Nat) (hi : i < ll.length) (j : Nat) :
@@ -51,6 +51,6 @@ theorem aaaa (i : Nat) (hi : i < ll.length) (j : Nat) :
   letI sum2 := (ll.map List.length |>.take (i + 1) |>.sum)
   sum1 ≤ j → j < sum2 → (ll.flatten)[j]? = (ll.get ⟨i, hi⟩)[j - sum1]? := by
   intro h1 h2
-  rw [← bbbb] ; unfold List.slice ; simp [List.getElem?_take, Nat.sub_lt_sub_right h1 h2, Nat.add_sub_of_le h1]
+  rw [← bbbb] ; unfold List.slice ; simp [Nat.sub_lt_sub_right h1 h2, Nat.add_sub_of_le h1]
 
 end list_slicing

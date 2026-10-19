@@ -74,7 +74,7 @@ example : emp ==> wp (do
   free p
   pure v
 ) (fun v => ⌈v = 0⌉) := by
-  dsimp only [wp]
+  dsimp only [wp, wp_bind, wp_pure]
 
   -- 1. Execute `alloc 42`
   -- extracts the `∀✶ p` and evaluates the `-✶` to move `p ↦ 42` to LHS

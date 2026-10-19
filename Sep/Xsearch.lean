@@ -633,7 +633,7 @@ partial def normProp (P : Expr) : MetaM (Expr × Option Expr) := do
     let (a', pa) ← normProp a
     let (b', pb) ← normProp b
     if pa.isNone && pb.isNone then return (P, none)
-    let prop := mkSort levelZero
+    let prop := mkSort Level.zero
     let fty := mkForall `x .default prop prop
     let rf := fun (x : Expr) => mkApp2 (mkConst ``Eq.refl [1]) prop x
     let h1 := mkAppN (mkConst ``congrArg [1, 1]) #[prop, fty, a, a', mkConst ``And, pa.getD (rf a)]
@@ -651,7 +651,7 @@ partial def norm (c : DistrCtx) (e : Expr) : MetaM (Expr × Option Expr) := do
     match pP with
     | none => return (e, none)
     | some pP =>
-      let prop := mkSort levelZero
+      let prop := mkSort Level.zero
       let f := mkApp (mkConst ``HProp.hpure) c.inst
       return (mkApp f P', some (mkAppN (mkConst ``congrArg [1, 1])
         #[prop, c.hty, e.appArg!, P', f, pP]))
@@ -713,7 +713,7 @@ partial def exNorm (c : DistrCtx) (e : Expr) : MetaM (Expr × Option Expr) := do
     | some pP =>
       let f := mkApp (mkConst ``HProp.hpure) c.inst
       return (mkApp f P', some (mkAppN (mkConst ``congrArg [1, 1])
-        #[mkSort levelZero, c.hty, e.appArg!, P', f, pP]))
+        #[mkSort Level.zero, c.hty, e.appArg!, P', f, pP]))
   if e.isAppOfArity ``HProp.hstar 3 then
     let f := e.appFn!.appFn!
     let a := e.appFn!.appArg!
@@ -785,11 +785,11 @@ def exNormTarget : TacticM Bool := do
   let some (R', pR) ← (try some <$> c.exNorm R catch _ => pure none) | return false
   if pL.isNone && pR.isNone then return true
   let t' := mkApp3 (mkConst ``HProp.himpl) inst L' R'
-  let fty := mkForall `x .default c.hty (mkSort levelZero)
+  let fty := mkForall `x .default c.hty (mkSort Level.zero)
   let f := mkApp (mkConst ``HProp.himpl) inst
   let h1 := mkAppN (mkConst ``congrArg [1, 1]) #[c.hty, fty, L, L', f, pL.getD (c.refl L)]
   let pf := mkAppN (mkConst ``congr [1, 1])
-    #[c.hty, mkSort levelZero, mkApp f L, mkApp f L', R, R', h1, pR.getD (c.refl R)]
+    #[c.hty, mkSort Level.zero, mkApp f L, mkApp f L', R, R', h1, pR.getD (c.refl R)]
   let g' ← g.replaceTargetEq t' pf
   replaceMainGoal [g']
   return true
@@ -872,11 +872,11 @@ def distrNative (g : MVarId) : TacticM Bool := g.withContext do
   let some (R', pR) ← (try some <$> c.norm R catch _ => pure none) | return false
   if pL.isNone && pR.isNone then return true
   let t' := mkApp3 (mkConst ``HProp.himpl) inst L' R'
-  let fty := mkForall `x .default c.hty (mkSort levelZero)
+  let fty := mkForall `x .default c.hty (mkSort Level.zero)
   let f := mkApp (mkConst ``HProp.himpl) inst
   let h1 := mkAppN (mkConst ``congrArg [1, 1]) #[c.hty, fty, L, L', f, pL.getD (c.refl L)]
   let pf := mkAppN (mkConst ``congr [1, 1])
-    #[c.hty, mkSort levelZero, mkApp f L, mkApp f L', R, R', h1, pR.getD (c.refl R)]
+    #[c.hty, mkSort Level.zero, mkApp f L, mkApp f L', R, R', h1, pR.getD (c.refl R)]
   let g' ← g.replaceTargetEq t' pf
   replaceMainGoal [g']
   return true
@@ -1700,7 +1700,7 @@ partial def empNorm (c : DistrCtx) (e : Expr) : MetaM (Expr × Option Expr) := d
     | some pP =>
       let f := mkApp (mkConst ``HProp.hpure) c.inst
       return (mkApp f P', some (mkAppN (mkConst ``congrArg [1, 1])
-        #[mkSort levelZero, c.hty, e.appArg!, P', f, pP]))
+        #[mkSort Level.zero, c.hty, e.appArg!, P', f, pP]))
   if e.isAppOfArity ``HProp.hstar 3 then
     let f := e.appFn!.appFn!
     let a := e.appFn!.appArg!
@@ -1759,11 +1759,11 @@ def indNormGoal (g : MVarId) : MetaM (Option MVarId) := g.withContext do
   let g1 ← if t1 == t then pure g else g.replaceTargetDefEq t1
   if pL.isNone && pR.isNone then return some g1
   let t' := mkApp3 (mkConst ``HProp.himpl) inst L' R'
-  let fty := mkForall `x .default c.hty (mkSort levelZero)
+  let fty := mkForall `x .default c.hty (mkSort Level.zero)
   let f := mkApp (mkConst ``HProp.himpl) inst
   let h1 := mkAppN (mkConst ``congrArg [1, 1]) #[c.hty, fty, L, L', f, pL.getD (c.refl L)]
   let pf := mkAppN (mkConst ``congr [1, 1])
-    #[c.hty, mkSort levelZero, mkApp f L, mkApp f L', R, R', h1, pR.getD (c.refl R)]
+    #[c.hty, mkSort Level.zero, mkApp f L, mkApp f L', R, R', h1, pR.getD (c.refl R)]
   return some (← g1.replaceTargetEq t' pf)
 
 def indSetup (F X aty : Expr) (post : Nat := 0) : TacticM Expr := do

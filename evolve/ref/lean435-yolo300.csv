@@ -1,0 +1,2 @@
+dir,file,outcome,ms,reason,source
+yolo,Cancel300.lean,proved,5505,,https://github.com/verse-lab/yolo/blob/main/SPLean/Experiments/cancel300.lean

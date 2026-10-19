@@ -469,7 +469,7 @@ partial def unifyClassLevels (e : Expr) : MetaM Bool := do
   | none => pure ()
   | some ls0 => for l in ls0 do
       if l.hasMVar then
-        _ ← isLevelDefEq l levelZero
+        _ ← isLevelDefEq l Level.zero
   return ok
 where
   isClassOp (n : Name) : Bool :=
@@ -860,7 +860,7 @@ def foldTemplate (lem : Name) (carrier : Expr) (op : NOp) (byOperand : Bool) :
   let fn ← instantiateMVars lhs.getAppFn
   let mut args := #[]
   for i in [0 : largs.size] do
-    if op.pos.contains i then args := args.push (mkSort levelZero)
+    if op.pos.contains i then args := args.push (mkSort Level.zero)
     else
       let a ← instantiateMVars largs[i]!
       if a.hasMVar then return none
@@ -888,11 +888,11 @@ def buildNCtx (entries : Array (Name × NOp × Name)) (carrier : Expr) (ent : NO
     if c == ``SepLogic.ex then some op else none) | return none
   let wandOp := entries.findSome? (fun (c, op, _) =>
     if c == ``SepLogic.wand then some op else none)
-  let mut lv0 := levelZero
-  let mut inst0? ← sepInstAt carrier u levelZero
+  let mut lv0 := Level.zero
+  let mut inst0? ← sepInstAt carrier u Level.zero
   if inst0?.isNone then
-    lv0 := levelOne
-    inst0? ← sepInstAt carrier u levelOne
+    lv0 := Level.one
+    inst0? ← sepInstAt carrier u Level.one
   let some inst0 := inst0? | return none
   let empE := mkAppN empFn empArgs
   return some {
@@ -944,7 +944,7 @@ def classNCtx? (t : Expr) : Option (NCtx × Expr × Expr) := do
   let (sc, l, r) ← matchEntails? t
   let [u, v] := sc.levels | none
   let op2 := fun (n : Name) => ({ name := n, arity := 4, pos := #[2, 3] } : NOp)
-  let hole := mkSort levelZero
+  let hole := mkSort Level.zero
   let c : NCtx := {
     carrier := sc.carrier,
     u := u,
@@ -1155,7 +1155,7 @@ def exLevel (c : NCtx) (a : Expr) (acc : SpineAcc) (nested : Bool) : MetaM (Opti
   let lv := (← instantiateLevelMVars lv).normalize
   if lv.hasMVar then return none
   let lvs := if acc.lvs.contains lv then acc.lvs else acc.lvs.push lv
-  return some { acc with lvs, nestedTypeEx := acc.nestedTypeEx || (nested && lv != levelZero) }
+  return some { acc with lvs, nestedTypeEx := acc.nestedTypeEx || (nested && lv != Level.zero) }
 
 mutual
 
@@ -1413,7 +1413,7 @@ partial def itemNorm (c : NCtx) (e : Expr) : MetaM (Expr × Option Expr) := do
     let q ← if pr.isAppOf ``Eq then mkAppM ``eq_self #[pr.appArg!] else mkAppM ``iff_self #[pr.appArg!]
     let args := e.getAppArgs
     let e' := mkAppN e.getAppFn (args.set! c.pureOp.pos[0]! (mkConst ``True))
-    let f ← withLocalDeclD `y (mkSort levelZero) fun y =>
+    let f ← withLocalDeclD `y (mkSort Level.zero) fun y =>
       mkLambdaFVars #[y] (mkAppN e.getAppFn (args.set! c.pureOp.pos[0]! y))
     return (e', some (← mkCongrArg f q))
   if !c.bad e then return (e, none)
@@ -1784,7 +1784,7 @@ partial def nativeGoal (g : MVarId) : MetaM (Option (List MVarId)) := g.withCont
   let lvs := accR.lvs
   let rHasEx := accR.hasEx
   let foreverA := accR.nestedTypeEx
-  let typeEx := lvs.any (· != levelZero)
+  let typeEx := lvs.any (· != Level.zero)
   let mut insts : Array (Level × Expr) := #[(c.lv0, c.inst0)]
   for lv in lvs do
     if insts.any (·.1 == lv) then continue

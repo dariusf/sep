@@ -210,6 +210,7 @@ def moduleAvailable (m : Name) : IO Bool := do
     return false
 
 def loadBaseEnv : IO Environment := do
+  unsafe Lean.enableInitializersExecution
   initSearchPath (← findSysroot)
   let mut avail := #[]
   for i in baseImports do
