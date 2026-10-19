@@ -8516,9 +8516,6 @@ def arWitness : TacticM Unit := do
     let some (lhs, rhs) := entailHead? t | throwError "ar: not an entailment"
     let L := (flatStar lhs #[]).filter (!·.isAppOf ``HProp.hpure)
     let R := (flatStar rhs #[]).filter (fun r => !r.isAppOf ``HProp.hpure && r.hasExprMVar)
-    if (← IO.getEnv "LEN_DBG").isSome then
-      IO.eprintln s!"WIT L={← L.mapM (fun e => do return toString (← ppExpr e))}"
-      IO.eprintln s!"WIT R={← R.mapM (fun e => do return toString (← ppExpr (← instantiateMVars e)))}"
     unless ← arAssign L R.toList #[] do throwError "ar: no witness"
   for w in ws do
     if (← instantiateMVars w).hasExprMVar then throwError "ar: witness open"
@@ -9639,7 +9636,6 @@ structure LenP where
   c : Expr
   phiLam : Expr
   lo : Nat
-  trivial : Bool
   branches : Array (Array (Bool × Name))
   members : Array Name
   recursive : Bool
@@ -9809,8 +9805,7 @@ def lenPOf (p : Name) : MetaM (Option LenP) := do
       let ms ← if rec_ then groupMembers p else pure #[p]
       let ms := if ms.isEmpty then #[p] else ms
       pure (some { pname := p, inst := inst, c := c, phiLam := phiLam, lo := m,
-                   trivial := m == 0 && per == 1, branches := brs, members := ms,
-                   recursive := rec_ : LenP }))
+                   branches := brs, members := ms, recursive := rec_ : LenP }))
     catch _ => pure none
   lenPCache.modify (·.push (p, r))
   return r
@@ -10274,13 +10269,18 @@ def lenRhsTransform (P : LenP) : TacticM Unit := withMainContext do
 
 partial def lenWalk (atoms : Array Expr) (cur tgt : Expr) (used : Array Nat) (acc : Array Expr)
     (okF : Array Expr → TacticM Bool) : TacticM (Option (Array Expr)) := do
+  let cu ← instantiateMVars cur
+  let mut order : Array Nat := #[]
   for j in [0 : atoms.size] do
+    if (← instantiateMVars atoms[j]!.getAppArgs[3]!) == cu then order := order.push j
+  for j in [0 : atoms.size] do
+    if !order.contains j then order := order.push j
+  for j in order do
     if used.contains j then continue
     let a := atoms[j]!
     let aa := a.getAppArgs
     let s ← saveState
     let hd ← instantiateMVars aa[3]!
-    let cu ← instantiateMVars cur
     let ok ← if hd == cu then pure true
       else if hd.isMVar then (try checkpointDefEq (isDefEq hd cu) catch _ => pure false)
       else pure false
@@ -10331,20 +10331,18 @@ def lenPass : TacticM Unit := do
       if ← isDefEq (← inferType w) (mkConst ``Nat) then ex := true
     pure (flatStar lhs #[], flatStar body #[], ex)
   let mut P? : Option LenP := none
-  let mut nontriv := false
   for x in L ++ R do
     match x.getAppFn.constName? with
     | some q =>
       if q == ``HProp.hpure || q == ``HProp.hsingle then continue
       unless x.getAppNumArgs == 2 do throwError "len: atom"
       let some Q ← lenPOf q | throwError "len: no profile"
-      if !Q.trivial then nontriv := true
       if let some P0 := P? then
         unless P0.c == Q.c do throwError "len: cells"
       else P? := some Q
     | none => throwError "len: atom"
   let some P := P? | throwError "len: none"
-  unless hasEx || nontriv do throwError "len: gate"
+  unless hasEx do throwError "len: gate"
   lenRhsTransform P
   arIntroFacts
   for x in L do
