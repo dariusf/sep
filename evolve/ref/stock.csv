@@ -1,0 +1,387 @@
+dir,file,outcome,ms,reason,source
+onprob_qf_shid_entl,acyc-tll_tll.hrs.smt2,proved,110,,https://github.com/sl-comp/bench/blob/main/onprob_qf_shid_entl/acyc-tll_tll.hrs.smt2
+onprob_qf_shid_entl,dlgrid-2.hrs.smt2,failed,6,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/onprob_qf_shid_entl/dlgrid-2.hrs.smt2
+onprob_qf_shid_entl,dlgrid-left-right.hrs.smt2,timeout,5001,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/onprob_qf_shid_entl/dlgrid-left-right.hrs.smt2
+onprob_qf_shid_entl,greater-ptree_leaf-tree.hrs.smt2,timeout,5003,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/onprob_qf_shid_entl/greater-ptree_leaf-tree.hrs.smt2
+onprob_qf_shid_entl,leaf-tree_greater-ptree.hrs.smt2,timeout,5003,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/onprob_qf_shid_entl/leaf-tree_greater-ptree.hrs.smt2
+onprob_qf_shid_entl,leaf-tree_ptree.hrs.smt2,timeout,5003,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/onprob_qf_shid_entl/leaf-tree_ptree.hrs.smt2
+onprob_qf_shid_entl,ptree_leaf-tree.hrs.smt2,timeout,5005,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/onprob_qf_shid_entl/ptree_leaf-tree.hrs.smt2
+onprob_qf_shid_entl,small-ptree_leaf-tree.hrs.smt2,failed,10,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/onprob_qf_shid_entl/small-ptree_leaf-tree.hrs.smt2
+onprob_qf_shid_entl,tll-parent_tll-parent.hrs.smt2,proved,20,,https://github.com/sl-comp/bench/blob/main/onprob_qf_shid_entl/tll-parent_tll-parent.hrs.smt2
+onprob_qf_shid_entl,tll_acyc-tll.hrs.smt2,failed,6,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/onprob_qf_shid_entl/tll_acyc-tll.hrs.smt2
+onprob_qf_shid_entl,treefragment-plus-tree_tree.hrs.smt2,proved,15,,https://github.com/sl-comp/bench/blob/main/onprob_qf_shid_entl/treefragment-plus-tree_tree.hrs.smt2
+qf_shidlia_entl,dll-entl-01.smt2,timeout,5004,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll-entl-01.smt2
+qf_shidlia_entl,dll-entl-02.smt2,timeout,5002,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll-entl-02.smt2
+qf_shidlia_entl,dll-entl-03.smt2,timeout,5002,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll-entl-03.smt2
+qf_shidlia_entl,dll-entl-04.smt2,timeout,5003,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll-entl-04.smt2
+qf_shidlia_entl,dll-entl-05.smt2,timeout,5002,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll-entl-05.smt2
+qf_shidlia_entl,dll-entl-06.smt2,timeout,5005,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll-entl-06.smt2
+qf_shidlia_entl,dll-entl-07.smt2,proved,57,,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll-entl-07.smt2
+qf_shidlia_entl,dll-entl-08.smt2,failed,344,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll-entl-08.smt2
+qf_shidlia_entl,dll-entl-09.smt2,proved,21,,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll-entl-09.smt2
+qf_shidlia_entl,dll-entl-10.smt2,failed,71,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll-entl-10.smt2
+qf_shidlia_entl,dll-entl-11.smt2,failed,10,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll-entl-11.smt2
+qf_shidlia_entl,dll-entl-12.smt2,failed,4644,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll-entl-12.smt2
+qf_shidlia_entl,dll-entl-13.smt2,timeout,5001,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll-entl-13.smt2
+qf_shidlia_entl,dll-entl-14.smt2,timeout,5003,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll-entl-14.smt2
+qf_shidlia_entl,dll-entl-15.smt2,timeout,5001,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll-entl-15.smt2
+qf_shidlia_entl,dll_len_append_dllnull_len_entails_dllnull_len.sb.smt2,failed,289,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_append_dllnull_len_entails_dllnull_len.sb.smt2
+qf_shidlia_entl,dll_len_append_dllnull_len_entails_dllnull_len_num-1.sb.smt2,failed,211,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_append_dllnull_len_entails_dllnull_len_num-1.sb.smt2
+qf_shidlia_entl,dll_len_append_dllnull_len_entails_dllnull_len_num-2.sb.smt2,failed,243,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_append_dllnull_len_entails_dllnull_len_num-2.sb.smt2
+qf_shidlia_entl,dll_len_append_dllnull_len_entails_dllnull_len_num-3.sb.smt2,failed,272,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_append_dllnull_len_entails_dllnull_len_num-3.sb.smt2
+qf_shidlia_entl,dll_len_append_tail_entails_dllnull.sb.smt2,failed,157,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_append_tail_entails_dllnull.sb.smt2
+qf_shidlia_entl,dll_len_append_tail_entails_dllnull_num-1.sb.smt2,failed,88,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_append_tail_entails_dllnull_num-1.sb.smt2
+qf_shidlia_entl,dll_len_append_tail_entails_dllnull_num-2.sb.smt2,failed,182,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_append_tail_entails_dllnull_num-2.sb.smt2
+qf_shidlia_entl,dll_len_entails_ls_len.sb.smt2,failed,123,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_entails_ls_len.sb.smt2
+qf_shidlia_entl,dll_len_entails_ls_len_num-1.sb.smt2,failed,602,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_entails_ls_len_num-1.sb.smt2
+qf_shidlia_entl,dll_len_entails_ls_len_num-2.sb.smt2,failed,1038,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_entails_ls_len_num-2.sb.smt2
+qf_shidlia_entl,dll_len_entails_lspre_len.sb.smt2,failed,142,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_entails_lspre_len.sb.smt2
+qf_shidlia_entl,dll_len_entails_lspre_len_num-1.sb.smt2,failed,103,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_entails_lspre_len_num-1.sb.smt2
+qf_shidlia_entl,dll_len_entails_lspre_len_num-2.sb.smt2,failed,177,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_entails_lspre_len_num-2.sb.smt2
+qf_shidlia_entl,dll_len_entails_lsrev_len.sb.smt2,failed,83,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_entails_lsrev_len.sb.smt2
+qf_shidlia_entl,dll_len_entails_lsrev_len_num-1.sb.smt2,failed,126,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_entails_lsrev_len_num-1.sb.smt2
+qf_shidlia_entl,dll_len_entails_lsrev_len_num-2.sb.smt2,failed,134,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_entails_lsrev_len_num-2.sb.smt2
+qf_shidlia_entl,dll_len_nil_tl_entails_dllnull_len.sb.smt2,proved,35,,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_nil_tl_entails_dllnull_len.sb.smt2
+qf_shidlia_entl,dll_len_nil_tl_entails_dllnull_len_num-1.sb.smt2,proved,36,,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_nil_tl_entails_dllnull_len_num-1.sb.smt2
+qf_shidlia_entl,dll_len_nil_tl_entails_dllnull_len_num-2.sb.smt2,proved,41,,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/dll_len_nil_tl_entails_dllnull_len_num-2.sb.smt2
+qf_shidlia_entl,ls-entl-01.smt2,failed,3735,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/ls-entl-01.smt2
+qf_shidlia_entl,ls-entl-02.smt2,failed,739,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/ls-entl-02.smt2
+qf_shidlia_entl,ls-entl-03.smt2,timeout,5004,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/ls-entl-03.smt2
+qf_shidlia_entl,ls-entl-04.smt2,failed,2383,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/ls-entl-04.smt2
+qf_shidlia_entl,ls-entl-05.smt2,failed,1377,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/ls-entl-05.smt2
+qf_shidlia_entl,ls-entl-06.smt2,failed,1390,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/ls-entl-06.smt2
+qf_shidlia_entl,ls-entl-07.smt2,failed,3981,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/ls-entl-07.smt2
+qf_shidlia_entl,ls_append_node.sb.smt2,failed,51,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/ls_append_node.sb.smt2
+qf_shidlia_entl,ls_combine_ls.sb.smt2,failed,524,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/ls_combine_ls.sb.smt2
+qf_shidlia_entl,sls_join_2.sb.smt2,failed,170,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/sls_join_2.sb.smt2
+qf_shidlia_entl,sls_join_2_known_bnd.sb.smt2,failed,842,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/sls_join_2_known_bnd.sb.smt2
+qf_shidlia_entl,sls_join_2_no_cond.sb.smt2,failed,93,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/sls_join_2_no_cond.sb.smt2
+qf_shidlia_entl,sls_join_2_unk_lower_bnd.sb.smt2,failed,149,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/sls_join_2_unk_lower_bnd.sb.smt2
+qf_shidlia_entl,sls_join_2_unk_upper_bnd.sb.smt2,failed,149,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/sls_join_2_unk_upper_bnd.sb.smt2
+qf_shidlia_entl,sls_join_3.sb.smt2,failed,751,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/sls_join_3.sb.smt2
+qf_shidlia_entl,sls_join_3_2_cond.sb.smt2,failed,760,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/sls_join_3_2_cond.sb.smt2
+qf_shidlia_entl,sls_join_3_no_cond.sb.smt2,failed,478,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/sls_join_3_no_cond.sb.smt2
+qf_shidlia_entl,sls_join_3_unk_lower_bnd.sb.smt2,failed,1105,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/sls_join_3_unk_lower_bnd.sb.smt2
+qf_shidlia_entl,sls_join_3_unk_upper_bnd.sb.smt2,failed,1099,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/sls_join_3_unk_upper_bnd.sb.smt2
+qf_shidlia_entl,sls_join_4_1_cond_unk_both.sb.smt2,timeout,5004,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/sls_join_4_1_cond_unk_both.sb.smt2
+qf_shidlia_entl,sls_join_4_1_cond_unk_lower_bnd.sb.smt2,timeout,5002,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/sls_join_4_1_cond_unk_lower_bnd.sb.smt2
+qf_shidlia_entl,sls_join_4_1_cond_unk_upper_bnd.sb.smt2,timeout,5001,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/sls_join_4_1_cond_unk_upper_bnd.sb.smt2
+qf_shidlia_entl,sls_join_4_2_cond_unk_lower_bnd.sb.smt2,failed,3850,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/sls_join_4_2_cond_unk_lower_bnd.sb.smt2
+qf_shidlia_entl,sls_join_4_2_cond_unk_upper_bnd.sb.smt2,timeout,5004,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/sls_join_4_2_cond_unk_upper_bnd.sb.smt2
+qf_shidlia_entl,sls_join_4_3_cond.sb.smt2,timeout,5005,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/sls_join_4_3_cond.sb.smt2
+qf_shidlia_entl,sls_join_4_no_cond.sb.smt2,failed,2817,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/sls_join_4_no_cond.sb.smt2
+qf_shidlia_entl,tseg_size_join_tree_size_entail_tree.sb.smt2,failed,547,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/qf_shidlia_entl/tseg_size_join_tree_size_entail_tree.sb.smt2
+qf_shlid_entl,dll-vc01.smt2,proved,21,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/dll-vc01.smt2
+qf_shlid_entl,dll-vc02.smt2,proved,20,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/dll-vc02.smt2
+qf_shlid_entl,dll-vc03.smt2,proved,26,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/dll-vc03.smt2
+qf_shlid_entl,dll-vc04.smt2,failed,6,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/dll-vc04.smt2
+qf_shlid_entl,dll-vc05.smt2,proved,25,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/dll-vc05.smt2
+qf_shlid_entl,dll-vc06.smt2,failed,6,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/dll-vc06.smt2
+qf_shlid_entl,dll-vc07.smt2,proved,67,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/dll-vc07.smt2
+qf_shlid_entl,dll-vc08.smt2,failed,5,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/dll-vc08.smt2
+qf_shlid_entl,dll-vc09.smt2,proved,57,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/dll-vc09.smt2
+qf_shlid_entl,dll-vc10.smt2,failed,5,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/dll-vc10.smt2
+qf_shlid_entl,dll-vc11.smt2,proved,26,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/dll-vc11.smt2
+qf_shlid_entl,dll-vc12.smt2,failed,6,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/dll-vc12.smt2
+qf_shlid_entl,dll-vc13.smt2,failed,5,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/dll-vc13.smt2
+qf_shlid_entl,dll-vc14.smt2,failed,5,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/dll-vc14.smt2
+qf_shlid_entl,dll-vc15.smt2,proved,16,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/dll-vc15.smt2
+qf_shlid_entl,dll-vc16.smt2,failed,5,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/dll-vc16.smt2
+qf_shlid_entl,dll-vc17.smt2,proved,98,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/dll-vc17.smt2
+qf_shlid_entl,lss-vc01.smt2,proved,16,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/lss-vc01.smt2
+qf_shlid_entl,lss-vc02.smt2,proved,25,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/lss-vc02.smt2
+qf_shlid_entl,lss-vc03.smt2,proved,57,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/lss-vc03.smt2
+qf_shlid_entl,nll-vc01.smt2,proved,26,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc01.smt2
+qf_shlid_entl,nll-vc02.smt2,proved,26,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc02.smt2
+qf_shlid_entl,nll-vc03.smt2,proved,31,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc03.smt2
+qf_shlid_entl,nll-vc04.smt2,proved,41,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc04.smt2
+qf_shlid_entl,nll-vc05.smt2,proved,26,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc05.smt2
+qf_shlid_entl,nll-vc06.smt2,failed,6,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc06.smt2
+qf_shlid_entl,nll-vc07.smt2,proved,20,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc07.smt2
+qf_shlid_entl,nll-vc08.smt2,proved,37,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc08.smt2
+qf_shlid_entl,nll-vc09.smt2,proved,31,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc09.smt2
+qf_shlid_entl,nll-vc10.smt2,proved,31,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc10.smt2
+qf_shlid_entl,nll-vc11.smt2,proved,15,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc11.smt2
+qf_shlid_entl,nll-vc12.smt2,proved,16,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc12.smt2
+qf_shlid_entl,nll-vc13.smt2,failed,5,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc13.smt2
+qf_shlid_entl,nll-vc14.smt2,failed,5,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc14.smt2
+qf_shlid_entl,nll-vc15.smt2,failed,6,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc15.smt2
+qf_shlid_entl,nll-vc16.smt2,failed,5,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc16.smt2
+qf_shlid_entl,nll-vc17.smt2,failed,5,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc17.smt2
+qf_shlid_entl,nll-vc18.smt2,failed,5,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc18.smt2
+qf_shlid_entl,nll-vc19.smt2,failed,6,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/nll-vc19.smt2
+qf_shlid_entl,skl2-vc01.smt2,proved,20,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl2-vc01.smt2
+qf_shlid_entl,skl2-vc02.smt2,proved,21,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl2-vc02.smt2
+qf_shlid_entl,skl2-vc03.smt2,proved,93,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl2-vc03.smt2
+qf_shlid_entl,skl2-vc04.smt2,proved,26,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl2-vc04.smt2
+qf_shlid_entl,skl2-vc05.smt2,failed,5,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl2-vc05.smt2
+qf_shlid_entl,skl2-vc06.smt2,failed,6,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl2-vc06.smt2
+qf_shlid_entl,skl2-vc07.smt2,failed,5,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl2-vc07.smt2
+qf_shlid_entl,skl3-vc01.smt2,proved,41,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl3-vc01.smt2
+qf_shlid_entl,skl3-vc02.smt2,failed,6,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl3-vc02.smt2
+qf_shlid_entl,skl3-vc03.smt2,proved,31,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl3-vc03.smt2
+qf_shlid_entl,skl3-vc04.smt2,proved,165,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl3-vc04.smt2
+qf_shlid_entl,skl3-vc05.smt2,proved,124,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl3-vc05.smt2
+qf_shlid_entl,skl3-vc06.smt2,proved,82,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl3-vc06.smt2
+qf_shlid_entl,skl3-vc07.smt2,proved,160,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl3-vc07.smt2
+qf_shlid_entl,skl3-vc08.smt2,proved,114,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl3-vc08.smt2
+qf_shlid_entl,skl3-vc09.smt2,proved,77,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl3-vc09.smt2
+qf_shlid_entl,skl3-vc10.smt2,proved,73,,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl3-vc10.smt2
+qf_shlid_entl,skl3-vc11.smt2,failed,15,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl3-vc11.smt2
+qf_shlid_entl,skl3-vc12.smt2,failed,6,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/skl3-vc12.smt2
+qf_shlid_entl,sll-vc01.smt2,failed,5,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/sll-vc01.smt2
+qf_shlid_entl,sll-vc02.smt2,failed,5,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/qf_shlid_entl/sll-vc02.smt2
+shid_entl,dll-entails-node-dll-rev.smt2,failed,5,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/shid_entl/dll-entails-node-dll-rev.smt2
+shid_entl,dll-entails-node-node-dll.smt2,failed,6,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/shid_entl/dll-entails-node-node-dll.smt2
+shid_entl,dll-spaghetti-existential.smt2,timeout,5004,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/shid_entl/dll-spaghetti-existential.smt2
+shid_entl,dll2-spaghetti-existential.smt2,timeout,5005,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/shid_entl/dll2-spaghetti-existential.smt2
+shid_entl,dll_concat_dllrev_get_last.sb.smt2,failed,395,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/dll_concat_dllrev_get_last.sb.smt2
+shid_entl,dll_entails_ls_node.sb.smt2,failed,31,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/dll_entails_ls_node.sb.smt2
+shid_entl,dll_entails_node_lsrev.sb.smt2,failed,31,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/dll_entails_node_lsrev.sb.smt2
+shid_entl,dllnull_entails_dll.sb.smt2,failed,21,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/dllnull_entails_dll.sb.smt2
+shid_entl,dllnull_entails_dllrev.sb.smt2,failed,21,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/dllnull_entails_dllrev.sb.smt2
+shid_entl,eolseg_03.sb.smt2,failed,1466,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/eolseg_03.sb.smt2
+shid_entl,eolseg_04.sb.smt2,failed,10,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shid_entl/eolseg_04.sb.smt2
+shid_entl,eolseg_08.sb.smt2,failed,109,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/eolseg_08.sb.smt2
+shid_entl,eolseg_10.sb.smt2,failed,1703,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/eolseg_10.sb.smt2
+shid_entl,eolseg_11.sb.smt2,failed,619,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/eolseg_11.sb.smt2
+shid_entl,eolseg_13.sb.smt2,failed,21,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/eolseg_13.sb.smt2
+shid_entl,eolseg_14.sb.smt2,failed,36,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/eolseg_14.sb.smt2
+shid_entl,eolseg_16.sb.smt2,failed,42,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/eolseg_16.sb.smt2
+shid_entl,ls2_entail_ls_02.sb.smt2,failed,898,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/ls2_entail_ls_02.sb.smt2
+shid_entl,ls2_entail_ls_03.sb.smt2,failed,2090,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/ls2_entail_ls_03.sb.smt2
+shid_entl,ls2_entail_ls_05.sb.smt2,failed,2983,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/ls2_entail_ls_05.sb.smt2
+shid_entl,ls2_entail_ls_06.sb.smt2,failed,4007,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/ls2_entail_ls_06.sb.smt2
+shid_entl,ls_entail_ls2_01.sb.smt2,failed,3515,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/ls_entail_ls2_01.sb.smt2
+shid_entl,ls_entail_ls2_03.sb.smt2,timeout,5003,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/shid_entl/ls_entail_ls2_03.sb.smt2
+shid_entl,ls_even_split_ls_even.sb.smt2,proved,10,,https://github.com/sl-comp/bench/blob/main/shid_entl/ls_even_split_ls_even.sb.smt2
+shid_entl,ls_lsrev_concat_entail_split_1.sb.smt2,proved,21,,https://github.com/sl-comp/bench/blob/main/shid_entl/ls_lsrev_concat_entail_split_1.sb.smt2
+shid_entl,ls_lsrev_concat_entail_split_2.sb.smt2,proved,26,,https://github.com/sl-comp/bench/blob/main/shid_entl/ls_lsrev_concat_entail_split_2.sb.smt2
+shid_entl,ls_lsrev_concat_entail_split_3.sb.smt2,proved,10,,https://github.com/sl-comp/bench/blob/main/shid_entl/ls_lsrev_concat_entail_split_3.sb.smt2
+shid_entl,ls_lsrev_concat_entail_split_4.sb.smt2,proved,26,,https://github.com/sl-comp/bench/blob/main/shid_entl/ls_lsrev_concat_entail_split_4.sb.smt2
+shid_entl,ls_lsrev_node_concat_entail_split_1.sb.smt2,failed,282,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/ls_lsrev_node_concat_entail_split_1.sb.smt2
+shid_entl,ls_lsrev_node_concat_entail_split_2.sb.smt2,proved,21,,https://github.com/sl-comp/bench/blob/main/shid_entl/ls_lsrev_node_concat_entail_split_2.sb.smt2
+shid_entl,ls_lsrev_node_concat_entail_split_3.sb.smt2,failed,52,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/ls_lsrev_node_concat_entail_split_3.sb.smt2
+shid_entl,ls_lsrev_node_concat_entail_split_4.sb.smt2,failed,41,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/ls_lsrev_node_concat_entail_split_4.sb.smt2
+shid_entl,ls_odd_split_ls_even_node.sb.smt2,failed,26,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/ls_odd_split_ls_even_node.sb.smt2
+shid_entl,ls_odd_split_ls_even_odd.sb.smt2,proved,5,,https://github.com/sl-comp/bench/blob/main/shid_entl/ls_odd_split_ls_even_odd.sb.smt2
+shid_entl,ls_split_ls.sb.smt2,proved,5,,https://github.com/sl-comp/bench/blob/main/shid_entl/ls_split_ls.sb.smt2
+shid_entl,lsevenodd_05.sb.smt2,failed,10,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_05.sb.smt2
+shid_entl,lsevenodd_06.sb.smt2,failed,93,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_06.sb.smt2
+shid_entl,lsevenodd_07.sb.smt2,failed,93,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_07.sb.smt2
+shid_entl,lsevenodd_08.sb.smt2,failed,10,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_08.sb.smt2
+shid_entl,lsevenodd_10.sb.smt2,failed,15,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_10.sb.smt2
+shid_entl,lsevenodd_12.sb.smt2,failed,103,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_12.sb.smt2
+shid_entl,lsevenodd_13.sb.smt2,failed,108,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_13.sb.smt2
+shid_entl,lsevenodd_17.sb.smt2,failed,11,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_17.sb.smt2
+shid_entl,lsevenodd_18.sb.smt2,failed,67,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_18.sb.smt2
+shid_entl,lsevenodd_19.sb.smt2,failed,10,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_19.sb.smt2
+shid_entl,lsevenodd_20.sb.smt2,failed,93,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_20.sb.smt2
+shid_entl,lsevenodd_ls2_03.sb.smt2,timeout,5002,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_ls2_03.sb.smt2
+shid_entl,lsevenodd_ls2_04.sb.smt2,failed,2173,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_ls2_04.sb.smt2
+shid_entl,lsevenodd_ls2_07.sb.smt2,timeout,5002,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_ls2_07.sb.smt2
+shid_entl,lsevenodd_ls2_08.sb.smt2,timeout,5003,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_ls2_08.sb.smt2
+shid_entl,lsevenodd_ls2_10.sb.smt2,timeout,5002,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_ls2_10.sb.smt2
+shid_entl,lsevenodd_ls2_11.sb.smt2,timeout,5003,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_ls2_11.sb.smt2
+shid_entl,lsevenodd_ls2_12.sb.smt2,timeout,5005,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/shid_entl/lsevenodd_ls2_12.sb.smt2
+shid_entl,lsleftright_03.sb.smt2,failed,10,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/lsleftright_03.sb.smt2
+shid_entl,node-dll-rev-dll-entails-dll.smt2,proved,36,,https://github.com/sl-comp/bench/blob/main/shid_entl/node-dll-rev-dll-entails-dll.smt2
+shid_entl,node-node-dll-entails-dll.smt2,proved,11,,https://github.com/sl-comp/bench/blob/main/shid_entl/node-node-dll-entails-dll.smt2
+shid_entl,node-tll-tll-entails-tll.smt2,proved,15,,https://github.com/sl-comp/bench/blob/main/shid_entl/node-tll-tll-entails-tll.smt2
+shid_entl,tll-entails-node-tll-tll.smt2,failed,5,xsearch: countermodel,https://github.com/sl-comp/bench/blob/main/shid_entl/tll-entails-node-tll-tll.smt2
+shid_entl,tll-ravioli-existential.smt2,timeout,5003,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/shid_entl/tll-ravioli-existential.smt2
+shid_entl,tree_2_entail_tseg_2_unk-1.sb.smt2,timeout,5003,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/shid_entl/tree_2_entail_tseg_2_unk-1.sb.smt2
+shid_entl,tree_2_entail_tseg_2_unk-2.sb.smt2,timeout,5004,exceeded 5000 ms,https://github.com/sl-comp/bench/blob/main/shid_entl/tree_2_entail_tseg_2_unk-2.sb.smt2
+shid_entl,tree_2_entail_tseg_2_unk-3.sb.smt2,failed,329,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/tree_2_entail_tseg_2_unk-3.sb.smt2
+shid_entl,tree_entail_tseg_unk-1.sb.smt2,proved,31,,https://github.com/sl-comp/bench/blob/main/shid_entl/tree_entail_tseg_unk-1.sb.smt2
+shid_entl,tree_entail_tseg_unk-2.sb.smt2,failed,31,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/tree_entail_tseg_unk-2.sb.smt2
+shid_entl,tree_split_tseg-1.sb.smt2,proved,10,,https://github.com/sl-comp/bench/blob/main/shid_entl/tree_split_tseg-1.sb.smt2
+shid_entl,tree_split_tseg-2.sb.smt2,proved,11,,https://github.com/sl-comp/bench/blob/main/shid_entl/tree_split_tseg-2.sb.smt2
+shid_entl,tseg_join_2_entail_tree_unk.sb.smt2,failed,714,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/tseg_join_2_entail_tree_unk.sb.smt2
+shid_entl,tseg_join_2_entail_unk_tseg-1.sb.smt2,failed,36,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/tseg_join_2_entail_unk_tseg-1.sb.smt2
+shid_entl,tseg_join_2_entail_unk_tseg-2.sb.smt2,failed,36,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/tseg_join_2_entail_unk_tseg-2.sb.smt2
+shid_entl,tseg_join_tree_entail_unk_tree-1.sb.smt2,failed,15,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/tseg_join_tree_entail_unk_tree-1.sb.smt2
+shid_entl,tseg_join_tree_entail_unk_tree-2.sb.smt2,failed,10,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/tseg_join_tree_entail_unk_tree-2.sb.smt2
+shid_entl,tseg_join_tree_entail_unk_tseg-1.sb.smt2,proved,77,,https://github.com/sl-comp/bench/blob/main/shid_entl/tseg_join_tree_entail_unk_tseg-1.sb.smt2
+shid_entl,tseg_join_tree_entail_unk_tseg-2.sb.smt2,failed,11,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shid_entl/tseg_join_tree_entail_unk_tseg-2.sb.smt2
+shidlia_entl,dll_len_append_tail_entails_dllnull_num-3.sb.smt2,failed,242,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_append_tail_entails_dllnull_num-3.sb.smt2
+shidlia_entl,dll_len_concat_dllrev_len_get_last-1.sb.smt2,failed,395,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_concat_dllrev_len_get_last-1.sb.smt2
+shidlia_entl,dll_len_concat_dllrev_len_get_last-2.sb.smt2,failed,565,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_concat_dllrev_len_get_last-2.sb.smt2
+shidlia_entl,dll_len_concat_dllrev_len_get_last.sb.smt2,failed,489,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_concat_dllrev_len_get_last.sb.smt2
+shidlia_entl,dll_len_concat_dllrev_len_get_last_num-1.sb.smt2,failed,436,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_concat_dllrev_len_get_last_num-1.sb.smt2
+shidlia_entl,dll_len_concat_dllrev_len_get_last_num-2.sb.smt2,failed,406,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_concat_dllrev_len_get_last_num-2.sb.smt2
+shidlia_entl,dll_len_entails_ls_len_node.sb.smt2,failed,118,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_entails_ls_len_node.sb.smt2
+shidlia_entl,dll_len_entails_ls_len_node_num-1.sb.smt2,failed,62,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_entails_ls_len_node_num-1.sb.smt2
+shidlia_entl,dll_len_entails_ls_len_node_num-2.sb.smt2,failed,159,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_entails_ls_len_node_num-2.sb.smt2
+shidlia_entl,dll_len_entails_node_lsrev_len.sb.smt2,failed,78,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_entails_node_lsrev_len.sb.smt2
+shidlia_entl,dll_len_entails_node_lsrev_len_num-1.sb.smt2,failed,77,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_entails_node_lsrev_len_num-1.sb.smt2
+shidlia_entl,dll_len_entails_node_lsrev_len_num-2.sb.smt2,failed,144,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_entails_node_lsrev_len_num-2.sb.smt2
+shidlia_entl,dll_len_get_1_hd_4_lasts.sb.smt2,failed,36,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_get_1_hd_4_lasts.sb.smt2
+shidlia_entl,dll_len_get_1_last.sb.smt2,failed,51,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_get_1_last.sb.smt2
+shidlia_entl,dll_len_get_2_hd_3_lasts.sb.smt2,failed,36,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_get_2_hd_3_lasts.sb.smt2
+shidlia_entl,dll_len_get_2_lasts.sb.smt2,failed,46,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_get_2_lasts.sb.smt2
+shidlia_entl,dll_len_get_3_hd_2_lasts.sb.smt2,failed,36,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_get_3_hd_2_lasts.sb.smt2
+shidlia_entl,dll_len_get_3_lasts.sb.smt2,failed,26,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_get_3_lasts.sb.smt2
+shidlia_entl,dll_len_get_4_hd_1_last.sb.smt2,failed,36,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_get_4_hd_1_last.sb.smt2
+shidlia_entl,dll_len_get_4_lasts.sb.smt2,failed,31,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_get_4_lasts.sb.smt2
+shidlia_entl,dll_len_get_5_lasts.sb.smt2,failed,36,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_get_5_lasts.sb.smt2
+shidlia_entl,dll_len_split.sb.smt2,failed,31,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_split.sb.smt2
+shidlia_entl,dll_len_split_dll_dllrev.sb.smt2,failed,31,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_split_dll_dllrev.sb.smt2
+shidlia_entl,dll_len_split_num-1.sb.smt2,failed,31,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_split_num-1.sb.smt2
+shidlia_entl,dll_len_split_num-2.sb.smt2,failed,164,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_len_split_num-2.sb.smt2
+shidlia_entl,dll_ubnd_len_get_1_hd_4_lasts.sb.smt2,failed,47,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_ubnd_len_get_1_hd_4_lasts.sb.smt2
+shidlia_entl,dll_ubnd_len_get_1_last.sb.smt2,failed,77,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_ubnd_len_get_1_last.sb.smt2
+shidlia_entl,dll_ubnd_len_get_2_hd_3_lasts.sb.smt2,failed,41,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_ubnd_len_get_2_hd_3_lasts.sb.smt2
+shidlia_entl,dll_ubnd_len_get_2_lasts.sb.smt2,failed,26,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_ubnd_len_get_2_lasts.sb.smt2
+shidlia_entl,dll_ubnd_len_get_3_hd_2_lasts.sb.smt2,failed,41,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_ubnd_len_get_3_hd_2_lasts.sb.smt2
+shidlia_entl,dll_ubnd_len_get_3_lasts.sb.smt2,failed,31,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_ubnd_len_get_3_lasts.sb.smt2
+shidlia_entl,dll_ubnd_len_get_4_hd_1_last.sb.smt2,failed,46,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_ubnd_len_get_4_hd_1_last.sb.smt2
+shidlia_entl,dll_ubnd_len_get_4_lasts.sb.smt2,failed,36,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_ubnd_len_get_4_lasts.sb.smt2
+shidlia_entl,dll_ubnd_len_get_5_lasts.sb.smt2,failed,41,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dll_ubnd_len_get_5_lasts.sb.smt2
+shidlia_entl,dllnull_len_entails_dll_len.sb.smt2,failed,57,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_entails_dll_len.sb.smt2
+shidlia_entl,dllnull_len_entails_dll_len_num-1.sb.smt2,failed,581,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_entails_dll_len_num-1.sb.smt2
+shidlia_entl,dllnull_len_entails_dll_len_num-2.sb.smt2,failed,647,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_entails_dll_len_num-2.sb.smt2
+shidlia_entl,dllnull_len_entails_dllrev_len.sb.smt2,failed,67,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_entails_dllrev_len.sb.smt2
+shidlia_entl,dllnull_len_entails_dllrev_len_num-1.sb.smt2,failed,46,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_entails_dllrev_len_num-1.sb.smt2
+shidlia_entl,dllnull_len_entails_dllrev_len_num-2.sb.smt2,failed,118,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_entails_dllrev_len_num-2.sb.smt2
+shidlia_entl,dllnull_len_split_dll_dllrev.sb.smt2,failed,309,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dll_dllrev.sb.smt2
+shidlia_entl,dllnull_len_split_dll_dllrev_num-1.sb.smt2,failed,216,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dll_dllrev_num-1.sb.smt2
+shidlia_entl,dllnull_len_split_dll_dllrev_num-2.sb.smt2,failed,323,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dll_dllrev_num-2.sb.smt2
+shidlia_entl,dllnull_len_split_dll_dllrev_num-3.sb.smt2,failed,154,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dll_dllrev_num-3.sb.smt2
+shidlia_entl,dllnull_len_split_dll_dllrev_num-4.sb.smt2,failed,242,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dll_dllrev_num-4.sb.smt2
+shidlia_entl,dllnull_len_split_dll_dllrev_num-5.sb.smt2,failed,185,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dll_dllrev_num-5.sb.smt2
+shidlia_entl,dllnull_len_split_dll_len_last-1.sb.smt2,failed,41,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dll_len_last-1.sb.smt2
+shidlia_entl,dllnull_len_split_dll_len_last-2.sb.smt2,failed,92,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dll_len_last-2.sb.smt2
+shidlia_entl,dllnull_len_split_dll_node_dllrev.sb.smt2,failed,144,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dll_node_dllrev.sb.smt2
+shidlia_entl,dllnull_len_split_dll_node_dllrev_num-1.sb.smt2,failed,82,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dll_node_dllrev_num-1.sb.smt2
+shidlia_entl,dllnull_len_split_dll_node_dllrev_num-2.sb.smt2,failed,143,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dll_node_dllrev_num-2.sb.smt2
+shidlia_entl,dllnull_len_split_dll_node_dllrev_num-3.sb.smt2,failed,72,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dll_node_dllrev_num-3.sb.smt2
+shidlia_entl,dllnull_len_split_dll_node_dllrev_num-4.sb.smt2,failed,118,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dll_node_dllrev_num-4.sb.smt2
+shidlia_entl,dllnull_len_split_dll_node_dllrev_num-5.sb.smt2,failed,87,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dll_node_dllrev_num-5.sb.smt2
+shidlia_entl,dllnull_len_split_dllrev_dll.sb.smt2,failed,196,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrev_dll.sb.smt2
+shidlia_entl,dllnull_len_split_dllrev_dll_node.sb.smt2,failed,123,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrev_dll_node.sb.smt2
+shidlia_entl,dllnull_len_split_dllrev_dll_node_num-1.sb.smt2,failed,62,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrev_dll_node_num-1.sb.smt2
+shidlia_entl,dllnull_len_split_dllrev_dll_node_num-2.sb.smt2,failed,123,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrev_dll_node_num-2.sb.smt2
+shidlia_entl,dllnull_len_split_dllrev_dll_node_num-3.sb.smt2,failed,57,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrev_dll_node_num-3.sb.smt2
+shidlia_entl,dllnull_len_split_dllrev_dll_node_num-4.sb.smt2,failed,87,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrev_dll_node_num-4.sb.smt2
+shidlia_entl,dllnull_len_split_dllrev_dll_node_num-5.sb.smt2,failed,67,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrev_dll_node_num-5.sb.smt2
+shidlia_entl,dllnull_len_split_dllrev_dll_num-1.sb.smt2,failed,134,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrev_dll_num-1.sb.smt2
+shidlia_entl,dllnull_len_split_dllrev_dll_num-2.sb.smt2,failed,195,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrev_dll_num-2.sb.smt2
+shidlia_entl,dllnull_len_split_dllrev_dll_num-3.sb.smt2,failed,108,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrev_dll_num-3.sb.smt2
+shidlia_entl,dllnull_len_split_dllrev_dll_num-4.sb.smt2,failed,164,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrev_dll_num-4.sb.smt2
+shidlia_entl,dllnull_len_split_dllrev_dll_num-5.sb.smt2,failed,134,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrev_dll_num-5.sb.smt2
+shidlia_entl,dllnull_len_split_dllrev_len_last-1.sb.smt2,failed,36,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrev_len_last-1.sb.smt2
+shidlia_entl,dllnull_len_split_dllrev_len_last-2.sb.smt2,failed,67,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrev_len_last-2.sb.smt2
+shidlia_entl,dllnull_len_split_dllrevs.sb.smt2,failed,207,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrevs.sb.smt2
+shidlia_entl,dllnull_len_split_dllrevs_num-1.sb.smt2,failed,129,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrevs_num-1.sb.smt2
+shidlia_entl,dllnull_len_split_dllrevs_num-2.sb.smt2,failed,206,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrevs_num-2.sb.smt2
+shidlia_entl,dllnull_len_split_dllrevs_num-3.sb.smt2,failed,104,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrevs_num-3.sb.smt2
+shidlia_entl,dllnull_len_split_dllrevs_num-4.sb.smt2,failed,222,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrevs_num-4.sb.smt2
+shidlia_entl,dllnull_len_split_dllrevs_num-5.sb.smt2,failed,129,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dllrevs_num-5.sb.smt2
+shidlia_entl,dllnull_len_split_dlls.sb.smt2,failed,279,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dlls.sb.smt2
+shidlia_entl,dllnull_len_split_dlls_num-1.sb.smt2,failed,206,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dlls_num-1.sb.smt2
+shidlia_entl,dllnull_len_split_dlls_num-2.sb.smt2,failed,284,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dlls_num-2.sb.smt2
+shidlia_entl,dllnull_len_split_dlls_num-3.sb.smt2,failed,144,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dlls_num-3.sb.smt2
+shidlia_entl,dllnull_len_split_dlls_num-4.sb.smt2,failed,217,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dlls_num-4.sb.smt2
+shidlia_entl,dllnull_len_split_dlls_num-5.sb.smt2,failed,176,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_dlls_num-5.sb.smt2
+shidlia_entl,dllnull_len_split_hd_dll_len-1.sb.smt2,failed,41,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_hd_dll_len-1.sb.smt2
+shidlia_entl,dllnull_len_split_hd_dll_len-2.sb.smt2,failed,62,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_hd_dll_len-2.sb.smt2
+shidlia_entl,dllnull_len_split_hd_dllrev_len-1.sb.smt2,failed,41,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_hd_dllrev_len-1.sb.smt2
+shidlia_entl,dllnull_len_split_hd_dllrev_len-2.sb.smt2,failed,78,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllnull_len_split_hd_dllrev_len-2.sb.smt2
+shidlia_entl,dllrev_len_concat_dll_len_get_first.sb.smt2,failed,397,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllrev_len_concat_dll_len_get_first.sb.smt2
+shidlia_entl,dllrev_len_concat_dll_len_get_first_last.sb.smt2,failed,1100,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllrev_len_concat_dll_len_get_first_last.sb.smt2
+shidlia_entl,dllrev_len_concat_dll_len_get_first_num-1.sb.smt2,failed,366,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllrev_len_concat_dll_len_get_first_num-1.sb.smt2
+shidlia_entl,dllrev_len_concat_dll_len_get_first_num-2.sb.smt2,failed,341,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllrev_len_concat_dll_len_get_first_num-2.sb.smt2
+shidlia_entl,dllrev_len_concat_dll_len_get_last-1.sb.smt2,failed,666,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllrev_len_concat_dll_len_get_last-1.sb.smt2
+shidlia_entl,dllrev_len_concat_dll_len_get_last-2.sb.smt2,failed,516,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/dllrev_len_concat_dll_len_get_last-2.sb.smt2
+shidlia_entl,ls_dlen_get_last.sb.smt2,failed,26,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_dlen_get_last.sb.smt2
+shidlia_entl,ls_dlen_get_last_unk_rem.sb.smt2,failed,10,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_dlen_get_last_unk_rem.sb.smt2
+shidlia_entl,ls_dlen_get_two_lasts.sb.smt2,failed,16,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_dlen_get_two_lasts.sb.smt2
+shidlia_entl,ls_dlen_get_two_lasts_unk_rem.sb.smt2,failed,15,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_dlen_get_two_lasts_unk_rem.sb.smt2
+shidlia_entl,ls_dlen_split.sb.smt2,failed,150,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_dlen_split.sb.smt2
+shidlia_entl,ls_dlen_split_mid_node.sb.smt2,failed,47,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_dlen_split_mid_node.sb.smt2
+shidlia_entl,ls_dlen_split_mid_node_unk_hd.sb.smt2,failed,10,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_dlen_split_mid_node_unk_hd.sb.smt2
+shidlia_entl,ls_dlen_split_mid_node_unk_hd_tl.sb.smt2,failed,11,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_dlen_split_mid_node_unk_hd_tl.sb.smt2
+shidlia_entl,ls_dlen_split_mid_node_unk_tl.sb.smt2,failed,10,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_dlen_split_mid_node_unk_tl.sb.smt2
+shidlia_entl,ls_dlen_split_unk_hd.sb.smt2,failed,16,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_dlen_split_unk_hd.sb.smt2
+shidlia_entl,ls_dlen_split_unk_hd_tl.sb.smt2,proved,10,,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_dlen_split_unk_hd_tl.sb.smt2
+shidlia_entl,ls_dlen_split_unk_tl.sb.smt2,failed,16,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_dlen_split_unk_tl.sb.smt2
+shidlia_entl,ls_dlen_triple_split.sb.smt2,failed,790,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_dlen_triple_split.sb.smt2
+shidlia_entl,ls_dlen_triple_split_unk_hd.sb.smt2,failed,26,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_dlen_triple_split_unk_hd.sb.smt2
+shidlia_entl,ls_dlen_triple_split_unk_hd_tl.sb.smt2,failed,31,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_dlen_triple_split_unk_hd_tl.sb.smt2
+shidlia_entl,ls_dlen_triple_split_unk_mid.sb.smt2,failed,25,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_dlen_triple_split_unk_mid.sb.smt2
+shidlia_entl,ls_dlen_triple_split_unk_tl.sb.smt2,failed,26,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_dlen_triple_split_unk_tl.sb.smt2
+shidlia_entl,ls_len_get_1_hd_4_lasts.sb.smt2,failed,26,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_get_1_hd_4_lasts.sb.smt2
+shidlia_entl,ls_len_get_2_hd_3_lasts.sb.smt2,failed,26,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_get_2_hd_3_lasts.sb.smt2
+shidlia_entl,ls_len_get_2_lasts.sb.smt2,failed,16,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_get_2_lasts.sb.smt2
+shidlia_entl,ls_len_get_3_hd_2_lasts.sb.smt2,failed,26,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_get_3_hd_2_lasts.sb.smt2
+shidlia_entl,ls_len_get_3_lasts.sb.smt2,failed,20,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_get_3_lasts.sb.smt2
+shidlia_entl,ls_len_get_4_hd_1_lasts.sb.smt2,failed,26,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_get_4_hd_1_lasts.sb.smt2
+shidlia_entl,ls_len_get_4_lasts.sb.smt2,failed,21,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_get_4_lasts.sb.smt2
+shidlia_entl,ls_len_get_5_hd.sb.smt2,failed,26,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_get_5_hd.sb.smt2
+shidlia_entl,ls_len_get_5_lasts.sb.smt2,failed,26,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_get_5_lasts.sb.smt2
+shidlia_entl,ls_len_get_6_lasts.sb.smt2,failed,26,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_get_6_lasts.sb.smt2
+shidlia_entl,ls_len_get_last.sb.smt2,failed,26,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_get_last.sb.smt2
+shidlia_entl,ls_len_get_last_unk_rem.sb.smt2,failed,10,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_get_last_unk_rem.sb.smt2
+shidlia_entl,ls_len_get_two_lasts_unk_rem.sb.smt2,failed,16,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_get_two_lasts_unk_rem.sb.smt2
+shidlia_entl,ls_len_split.sb.smt2,failed,149,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_split.sb.smt2
+shidlia_entl,ls_len_split_mid_node.sb.smt2,failed,52,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_split_mid_node.sb.smt2
+shidlia_entl,ls_len_split_mid_node_unk_hd.sb.smt2,failed,10,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_split_mid_node_unk_hd.sb.smt2
+shidlia_entl,ls_len_split_mid_node_unk_hd_tl.sb.smt2,failed,11,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_split_mid_node_unk_hd_tl.sb.smt2
+shidlia_entl,ls_len_split_mid_node_unk_tl.sb.smt2,failed,10,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_split_mid_node_unk_tl.sb.smt2
+shidlia_entl,ls_len_split_unk_hd.sb.smt2,failed,16,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_split_unk_hd.sb.smt2
+shidlia_entl,ls_len_split_unk_hd_tl.sb.smt2,proved,10,,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_split_unk_hd_tl.sb.smt2
+shidlia_entl,ls_len_split_unk_tl.sb.smt2,failed,16,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_split_unk_tl.sb.smt2
+shidlia_entl,ls_len_triple_split.sb.smt2,failed,788,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_triple_split.sb.smt2
+shidlia_entl,ls_len_triple_split_unk_hd.sb.smt2,failed,31,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_triple_split_unk_hd.sb.smt2
+shidlia_entl,ls_len_triple_split_unk_hd_tl.sb.smt2,failed,30,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_triple_split_unk_hd_tl.sb.smt2
+shidlia_entl,ls_len_triple_split_unk_mid.sb.smt2,failed,26,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_triple_split_unk_mid.sb.smt2
+shidlia_entl,ls_len_triple_split_unk_tl.sb.smt2,failed,26,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_len_triple_split_unk_tl.sb.smt2
+shidlia_entl,ls_plen_get_last.sb.smt2,failed,26,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_plen_get_last.sb.smt2
+shidlia_entl,ls_plen_get_last_unk_rem.sb.smt2,failed,10,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_plen_get_last_unk_rem.sb.smt2
+shidlia_entl,ls_plen_get_two_lasts.sb.smt2,failed,16,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_plen_get_two_lasts.sb.smt2
+shidlia_entl,ls_plen_get_two_lasts_unk_rem.sb.smt2,failed,15,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_plen_get_two_lasts_unk_rem.sb.smt2
+shidlia_entl,ls_plen_split.sb.smt2,failed,149,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_plen_split.sb.smt2
+shidlia_entl,ls_plen_split_mid_node.sb.smt2,failed,51,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_plen_split_mid_node.sb.smt2
+shidlia_entl,ls_plen_split_mid_node_unk_hd.sb.smt2,failed,11,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_plen_split_mid_node_unk_hd.sb.smt2
+shidlia_entl,ls_plen_split_mid_node_unk_hd_tl.sb.smt2,failed,10,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_plen_split_mid_node_unk_hd_tl.sb.smt2
+shidlia_entl,ls_plen_split_mid_node_unk_tl.sb.smt2,failed,10,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_plen_split_mid_node_unk_tl.sb.smt2
+shidlia_entl,ls_plen_split_unk_hd.sb.smt2,failed,16,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_plen_split_unk_hd.sb.smt2
+shidlia_entl,ls_plen_split_unk_hd_tl.sb.smt2,proved,10,,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_plen_split_unk_hd_tl.sb.smt2
+shidlia_entl,ls_plen_split_unk_tl.sb.smt2,failed,16,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_plen_split_unk_tl.sb.smt2
+shidlia_entl,ls_plen_triple_split.sb.smt2,failed,786,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_plen_triple_split.sb.smt2
+shidlia_entl,ls_plen_triple_split_unk_hd.sb.smt2,failed,31,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_plen_triple_split_unk_hd.sb.smt2
+shidlia_entl,ls_plen_triple_split_unk_hd_tl.sb.smt2,failed,31,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_plen_triple_split_unk_hd_tl.sb.smt2
+shidlia_entl,ls_plen_triple_split_unk_mid.sb.smt2,failed,25,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_plen_triple_split_unk_mid.sb.smt2
+shidlia_entl,ls_plen_triple_split_unk_tl.sb.smt2,failed,26,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_plen_triple_split_unk_tl.sb.smt2
+shidlia_entl,ls_ubnd_dlen_get_last.sb.smt2,failed,26,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_ubnd_dlen_get_last.sb.smt2
+shidlia_entl,ls_ubnd_len_get_1_hd_4_lasts.sb.smt2,failed,31,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_ubnd_len_get_1_hd_4_lasts.sb.smt2
+shidlia_entl,ls_ubnd_len_get_2_hd_3_lasts.sb.smt2,failed,31,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_ubnd_len_get_2_hd_3_lasts.sb.smt2
+shidlia_entl,ls_ubnd_len_get_2_lasts.sb.smt2,failed,20,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_ubnd_len_get_2_lasts.sb.smt2
+shidlia_entl,ls_ubnd_len_get_3_hd_2_lasts.sb.smt2,failed,31,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_ubnd_len_get_3_hd_2_lasts.sb.smt2
+shidlia_entl,ls_ubnd_len_get_3_lasts.sb.smt2,failed,26,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_ubnd_len_get_3_lasts.sb.smt2
+shidlia_entl,ls_ubnd_len_get_4_hd_1_lasts.sb.smt2,failed,31,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_ubnd_len_get_4_hd_1_lasts.sb.smt2
+shidlia_entl,ls_ubnd_len_get_4_lasts.sb.smt2,failed,26,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_ubnd_len_get_4_lasts.sb.smt2
+shidlia_entl,ls_ubnd_len_get_5_hd.sb.smt2,failed,26,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_ubnd_len_get_5_hd.sb.smt2
+shidlia_entl,ls_ubnd_len_get_5_lasts.sb.smt2,failed,30,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_ubnd_len_get_5_lasts.sb.smt2
+shidlia_entl,ls_ubnd_len_get_6_lasts.sb.smt2,failed,37,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_ubnd_len_get_6_lasts.sb.smt2
+shidlia_entl,ls_ubnd_len_get_last.sb.smt2,failed,25,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/ls_ubnd_len_get_last.sb.smt2
+shidlia_entl,sls_get_last_node.sb.smt2,failed,72,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/sls_get_last_node.sb.smt2
+shidlia_entl,sls_get_last_node_ls.sb.smt2,failed,36,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/sls_get_last_node_ls.sb.smt2
+shidlia_entl,sls_get_last_node_sls-1.sb.smt2,failed,16,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/sls_get_last_node_sls-1.sb.smt2
+shidlia_entl,sls_get_last_node_sls-2.sb.smt2,failed,15,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/sls_get_last_node_sls-2.sb.smt2
+shidlia_entl,sls_join_2_get_last-1.sb.smt2,failed,26,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/sls_join_2_get_last-1.sb.smt2
+shidlia_entl,sls_join_2_get_last-2.sb.smt2,failed,26,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/sls_join_2_get_last-2.sb.smt2
+shidlia_entl,sls_join_3_get_last-1.sb.smt2,failed,26,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/sls_join_3_get_last-1.sb.smt2
+shidlia_entl,sls_join_3_get_last-2.sb.smt2,failed,25,xsearch: size gap,https://github.com/sl-comp/bench/blob/main/shidlia_entl/sls_join_3_get_last-2.sb.smt2
+shidlia_entl,tree_size_entail_tseg-1.sb.smt2,failed,160,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/tree_size_entail_tseg-1.sb.smt2
+shidlia_entl,tree_size_entail_tseg-2.sb.smt2,failed,159,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/tree_size_entail_tseg-2.sb.smt2
+shidlia_entl,tree_size_split-1.sb.smt2,failed,36,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/tree_size_split-1.sb.smt2
+shidlia_entl,tree_size_split-2.sb.smt2,failed,31,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/tree_size_split-2.sb.smt2
+shidlia_entl,tree_tseg_mix_entail_tree_tseg_mix-1.sb.smt2,failed,406,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/tree_tseg_mix_entail_tree_tseg_mix-1.sb.smt2
+shidlia_entl,tree_tseg_mix_entail_tree_tseg_mix-2.sb.smt2,failed,31,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/tree_tseg_mix_entail_tree_tseg_mix-2.sb.smt2
+shidlia_entl,tree_tseg_mix_entail_tree_tseg_mix-3.sb.smt2,failed,31,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/tree_tseg_mix_entail_tree_tseg_mix-3.sb.smt2
+shidlia_entl,tseg_size_join_tree_size_entail_tree_unk-1.sb.smt2,failed,1526,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/tseg_size_join_tree_size_entail_tree_unk-1.sb.smt2
+shidlia_entl,tseg_size_join_tree_size_entail_tree_unk-2.sb.smt2,failed,25,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/tseg_size_join_tree_size_entail_tree_unk-2.sb.smt2
+shidlia_entl,tseg_size_split-1.sb.smt2,failed,36,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/tseg_size_split-1.sb.smt2
+shidlia_entl,tseg_size_split-2.sb.smt2,failed,57,xsearch: no alternative succeeded,https://github.com/sl-comp/bench/blob/main/shidlia_entl/tseg_size_split-2.sb.smt2
