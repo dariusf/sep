@@ -16,7 +16,7 @@ namespace Sep.Xsimpl
 
 variable [Params]
 
-instance instSepLogicHProp [Params] : SepLogic HProp where
+instance instSepLogicHProp : SepLogic HProp where
   star := HProp.hstar
   emp := HProp.hempty
   spure := HProp.hpure

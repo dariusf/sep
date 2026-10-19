@@ -120,8 +120,8 @@ theorem lookup_sdiff [DecidableEq α] (m1 m2 : Finmap fun _ : α => β) (a : α)
     have hmem : (a ∈ AList.toFinmap l) ↔ (a ∈ l.entries.keys) := by
       rw [mem_def, AList.toFinmap_entries]; rfl
     by_cases ha : a ∈ l.entries.keys
-    · rw [if_pos ha, if_pos (hmem.mpr ha)]
-    · rw [if_neg ha, if_neg (fun h => ha (hmem.mp h))]
+    · rw [ite_eq_left ha, ite_eq_left (hmem.mpr ha)]
+    · rw [ite_eq_right ha, ite_eq_right (fun h => ha (hmem.mp h))]
 
 theorem lookup_sdiff_of_mem [DecidableEq α] {m1 m2 : Finmap fun _ : α => β} {a : α}
     (h : a ∈ m2) :

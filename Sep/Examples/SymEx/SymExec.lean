@@ -106,6 +106,11 @@ def wp {A : Type} (c : Cmd A) (Q : A → HProp) : HProp :=
   | Cmd.write p v => ∃✶ v0, (p ↦ v0) ✶ ((p ↦ v) -✶ Q ())
   | Cmd.free p => ∃✶ v0, (p ↦ v0) ✶ Q ()
 
+theorem wp_bind {A B : Type} (m : Cmd B) (f : B → Cmd A) (Q : A → HProp) :
+    wp (m >>= f) Q = wp m (fun x => wp (f x) Q) := rfl
+
+theorem wp_pure {A : Type} (a : A) (Q : A → HProp) : wp (pure a : Cmd A) Q = Q a := rfl
+
 syntax "xsimpl_symexec_steps" : tactic
 macro_rules
   | `(tactic| xsimpl_symexec_steps) => `(tactic| (
@@ -118,7 +123,7 @@ macro_rules
 syntax "sym_exec" : tactic
 macro_rules
   | `(tactic| sym_exec) => `(tactic| (
-      dsimp only [wp]
+      dsimp only [wp, wp_bind, wp_pure]
       xsimpl_core_with xsimpl_symexec_step
       all_goals (
         try xsimpl_clean
@@ -129,7 +134,7 @@ macro_rules
 syntax "sym_exec_abduce" : tactic
 macro_rules
   | `(tactic| sym_exec_abduce) => `(tactic| (
-      dsimp only [wp]
+      dsimp only [wp, wp_bind, wp_pure]
       xsimpl_core_with xsimpl_symexec_steps
       try xsimpl_close_frames
       try xsimpl_normalize

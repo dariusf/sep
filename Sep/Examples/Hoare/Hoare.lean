@@ -132,6 +132,13 @@ theorem hoare_ret {A : Type} (a : A) (P : HProp) (Q : A → HProp) :
   dsimp [hoare, wp] at *
   apply H
 
+theorem hoare_of_bind_ret {A : Type} (c : Cmd A) (P : HProp) (Q : A → HProp) :
+  hoare P (Cmd.bind c (fun x => pure x)) Q →
+  hoare P c Q := by
+  intro H
+  dsimp [hoare, wp] at *
+  exact H
+
 elab "hoare_step" : tactic => withMainContext do
   evalTactic (← `(tactic| (
     first
@@ -140,6 +147,12 @@ elab "hoare_step" : tactic => withMainContext do
     | apply hoare_bind_write
     | apply hoare_bind_free
     | apply hoare_bind_ret
+    | (apply hoare_of_bind_ret
+       first
+       | apply hoare_bind_alloc
+       | apply hoare_bind_read
+       | apply hoare_bind_write
+       | apply hoare_bind_free)
   )))
 
   -- After read/write/free, the first subgoal is the frame solver:
