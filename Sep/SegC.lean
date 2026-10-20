@@ -447,4 +447,1061 @@ theorem wseg_conc_free_m {α σ M : Type} (P : α → HProp) (c : σ → σ → 
       rw [hst, hen] at h
       exact HProp.himpl_trans (HProp.himpl_frame_r h) (h1 a s' w)
 
+noncomputable def pNthK {α : Type} (l : List α) (n : Nat) (d : α) : α :=
+  List.rec (motive := fun _ => Nat → α) (fun _ => d)
+    (fun a _ ih n => Nat.rec (motive := fun _ => α) a (fun k _ => ih k) n) l n
+
+noncomputable def pLenK {α : Type} (l : List α) : Nat := List.rec (motive := fun _ => Nat) 0 (fun _ _ ih => ih + 1) l
+
+omit [Params] in
+theorem pLenK_eq {α : Type} (l : List α) : pLenK l = l.length := by
+  induction l with
+  | nil => rfl
+  | cons a l ih =>
+    show pLenK l + 1 = _
+    rw [ih, List.length_cons]
+
+omit [Params] in
+theorem pNthK_getD {α : Type} (l : List α) (n : Nat) (d : α) : pNthK l n d = l.getD n d := by
+  induction l generalizing n with
+  | nil => rfl
+  | cons a l ih =>
+    cases n with
+    | zero => rfl
+    | succ k => exact ih k
+
+noncomputable def pItem (C : Nat → Nat → HProp) (X : Nat → Nat → Nat → HProp) (it : Option Nat) (x y : Nat) : HProp :=
+  Option.rec (motive := fun _ => HProp) (C x y) (fun j => X j x y) it
+
+noncomputable def pChain (C : Nat → Nat → HProp) (X : Nat → Nat → Nat → HProp) (f : Nat → Nat)
+    (b : List (Option Nat)) : Nat → Nat → Nat → HProp :=
+  List.rec (motive := fun _ => Nat → Nat → Nat → HProp) (fun _ x y => ⌈x = y⌉)
+    (fun it r ih i x y => List.rec (motive := fun _ => HProp) (pItem C X it x y)
+      (fun _ _ _ => pItem C X it x (f i) ✶ ih (i + 1) (f i) y) r) b
+
+def pF (C : Nat → Nat → HProp) (B : List (List (List (Option Nat))))
+    (X : Nat × Nat × Nat → HProp) (a : Nat × Nat × Nat) : HProp :=
+  fun h => ∃ b ∈ pNthK B a.1 [], ∃ f : Nat → Nat, pChain C (fun j x y => X (j, x, y)) f b 0 a.2.1 a.2.2 h
+
+def pG (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (a : Nat × Nat × Nat) : HProp :=
+  fun h => ∀ X : Nat × Nat × Nat → HProp, (∀ b, pF C B X b ==> X b) → X a h
+
+theorem pItem_mono (C : Nat → Nat → HProp) {X Y : Nat → Nat → Nat → HProp}
+    (hXY : ∀ j x y, X j x y ==> Y j x y) : ∀ (it : Option Nat) (x y : Nat), pItem C X it x y ==> pItem C Y it x y
+  | none, _, _ => HProp.himpl_refl _
+  | some j, x, y => hXY j x y
+
+theorem pChain_mono (C : Nat → Nat → HProp) {X Y : Nat → Nat → Nat → HProp} (f : Nat → Nat)
+    (hXY : ∀ j x y, X j x y ==> Y j x y) :
+    ∀ (b : List (Option Nat)) (i x y : Nat), pChain C X f b i x y ==> pChain C Y f b i x y
+  | [], _, _, _ => HProp.himpl_refl _
+  | [it], _, x, y => pItem_mono C hXY it x y
+  | it :: it2 :: r, i, x, y =>
+    HProp.himpl_frame_lr (pItem_mono C hXY it x (f i)) (pChain_mono C f hXY (it2 :: r) (i + 1) (f i) y)
+
+theorem pF_mono (C : Nat → Nat → HProp) (B : List (List (List (Option Nat))))
+    {X Y : Nat × Nat × Nat → HProp} (hXY : ∀ a, X a ==> Y a) (a : Nat × Nat × Nat) :
+    pF C B X a ==> pF C B Y a := by
+  intro h ⟨b, hb, f, hh⟩
+  exact ⟨b, hb, f, pChain_mono C f (fun j x y => hXY (j, x, y)) b 0 a.2.1 a.2.2 h hh⟩
+
+theorem pG_induct (C : Nat → Nat → HProp) (B : List (List (List (Option Nat))))
+    (X : Nat × Nat × Nat → HProp) (hX : ∀ b, pF C B X b ==> X b) (a : Nat × Nat × Nat) :
+    pG C B a ==> X a := fun _ hh => hh X hX
+
+theorem pG_pre (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (a : Nat × Nat × Nat) :
+    pF C B (pG C B) a ==> pG C B a := by
+  intro h hh X hX
+  exact hX a h (pF_mono C B (fun b => pG_induct C B X hX b) a h hh)
+
+theorem pF_intro {C : Nat → Nat → HProp} {B : List (List (List (Option Nat)))}
+    {X : Nat × Nat × Nat → HProp} {j x y : Nat} {b : List (Option Nat)} (hb : b ∈ pNthK B j [])
+    (f : Nat → Nat) : pChain C (fun j x y => X (j, x, y)) f b 0 x y ==> pF C B X (j, x, y) :=
+  fun _ hh => ⟨b, hb, f, hh⟩
+
+theorem pG_intro {C : Nat → Nat → HProp} {B : List (List (List (Option Nat)))}
+    {j x y : Nat} {b : List (Option Nat)} (hb : b ∈ pNthK B j []) (f : Nat → Nat) {H : HProp}
+    (h : H ==> pChain C (fun j x y => pG C B (j, x, y)) f b 0 x y) : H ==> pG C B (j, x, y) :=
+  HProp.himpl_trans h (HProp.himpl_trans (pF_intro hb f) (pG_pre C B (j, x, y)))
+
+theorem pF_elim {C : Nat → Nat → HProp} {B : List (List (List (Option Nat)))}
+    {X : Nat × Nat × Nat → HProp} {j x y : Nat} {T : HProp}
+    (H : ∀ b ∈ pNthK B j [], ∀ f : Nat → Nat, pChain C (fun j x y => X (j, x, y)) f b 0 x y ==> T) :
+    pF C B X (j, x, y) ==> T := by
+  intro h ⟨b, hb, f, hh⟩
+  exact H b hb f h hh
+
+omit [Params] in
+theorem pAll_nil {α : Type} {P : α → Prop} : ∀ b ∈ ([] : List α), P b := by
+  intro b hb
+  cases hb
+
+omit [Params] in
+theorem pAll_cons {α : Type} {P : α → Prop} {a : α} {l : List α} (ha : P a) (hl : ∀ b ∈ l, P b) :
+    ∀ b ∈ a :: l, P b := by
+  intro b hb
+  cases hb with
+  | head => exact ha
+  | tail _ h => exact hl b h
+
+def pCell (C : Nat → Nat → HProp) (s s' : Nat) (w : Int) : HProp :=
+  ∃✶ u, C s u ✶ ⌈s' = u ∧ w = 1⌉
+
+def pLenC (S : Nat → Nat → Prop) : List (Option Nat) → Nat → Prop
+  | [], k => k = 0
+  | none :: r, k => ∃ k', k = k' + 1 ∧ pLenC S r k'
+  | some j :: r, k => ∃ k1 k2, k = k1 + k2 ∧ S j k1 ∧ pLenC S r k2
+
+def pLen (B : List (List (List (Option Nat)))) (i k : Nat) : Prop :=
+  ∀ S : Nat → Nat → Prop, (∀ i k, (∃ b ∈ pNthK B i [], pLenC S b k) → S i k) → S i k
+
+omit [Params] in
+theorem pLenC_mono {S T : Nat → Nat → Prop} (hST : ∀ i k, S i k → T i k) :
+    ∀ (b : List (Option Nat)) (k : Nat), pLenC S b k → pLenC T b k
+  | [], _, h => h
+  | none :: r, _, ⟨k', hk, h⟩ => ⟨k', hk, pLenC_mono hST r k' h⟩
+  | some j :: r, _, ⟨k1, k2, hk, h1, h2⟩ => ⟨k1, k2, hk, hST j k1 h1, pLenC_mono hST r k2 h2⟩
+
+omit [Params] in
+theorem pLen_intro (B : List (List (List (Option Nat)))) (i k : Nat)
+    (h : ∃ b ∈ pNthK B i [], pLenC (pLen B) b k) : pLen B i k := by
+  intro S hS
+  obtain ⟨b, hb, hl⟩ := h
+  exact hS i k ⟨b, hb, pLenC_mono (fun j k' hj => hj S hS) b k hl⟩
+
+theorem pKN_intro {W : Nat → Int → HProp} {P : Nat → Prop} {h : Heap} (k : Nat) (n : Int)
+    (hw : W k n h) (hp : P k) : (∃✶ k, ∃✶ n, W k n ✶ ⌈P k⌉) h :=
+  HProp.hexists_intro k _ (HProp.hexists_intro n _ ((HProp.hstar_hpure_r (P k) (W k n) h).2 ⟨hw, hp⟩))
+
+theorem pKN_elim {W : Nat → Int → HProp} {P : Nat → Prop} {h : Heap}
+    (hh : (∃✶ k, ∃✶ n, W k n ✶ ⌈P k⌉) h) : ∃ k n, W k n h ∧ P k := by
+  obtain ⟨k, hh⟩ := HProp.hexists_elim hh
+  obtain ⟨n, hh⟩ := HProp.hexists_elim hh
+  exact ⟨k, n, (HProp.hstar_hpure_r (P k) (W k n) h).1 hh⟩
+
+theorem pCell_seg (C : Nat → Nat → HProp) (x u : Nat) : C x u ==> wseg (pCell C) 1 1 x u := by
+  refine HProp.himpl_trans ?_ (wseg_cell (pCell C) x u 1)
+  intro h hh
+  exact HProp.hexists_intro u _ ((HProp.hstar_hpure_r _ _ h).2 ⟨hh, rfl, rfl⟩)
+
+theorem pItem_abs (C : Nat → Nat → HProp) (S : Nat → Nat → Prop) (M : Nat → Nat → Nat → HProp)
+    (hM : ∀ j x y, M j x y ==> ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈S j k⌉) :
+    ∀ (it : Option Nat) (x y : Nat),
+      pItem C M it x y ==> ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈pLenC S [it] k⌉
+  | none, x, y => by
+    intro h hh
+    exact pKN_intro 1 1 (pCell_seg C x y h hh) ⟨0, rfl, rfl⟩
+  | some j, x, y => by
+    intro h hh
+    obtain ⟨k, n, hw, hk⟩ := pKN_elim (hM j x y h hh)
+    exact pKN_intro k n hw ⟨k, 0, rfl, hk, rfl⟩
+
+omit [Params] in
+theorem pLenC_cons (S : Nat → Nat → Prop) (it : Option Nat) (r : List (Option Nat)) (k1 k2 : Nat)
+    (h1 : pLenC S [it] k1) (h2 : pLenC S r k2) : pLenC S (it :: r) (k1 + k2) := by
+  cases it with
+  | none =>
+    obtain ⟨k', hk, hz⟩ := h1
+    have hz' : k' = 0 := hz
+    exact ⟨k2, by omega, h2⟩
+  | some j =>
+    obtain ⟨a, b, hk, hj, hz⟩ := h1
+    have hz' : b = 0 := hz
+    exact ⟨a, k2, by omega, hj, h2⟩
+
+theorem pChain_abs (C : Nat → Nat → HProp) (S : Nat → Nat → Prop) (M : Nat → Nat → Nat → HProp)
+    (hM : ∀ j x y, M j x y ==> ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈S j k⌉) (f : Nat → Nat) :
+    ∀ (b : List (Option Nat)) (i x y : Nat),
+      pChain C M f b i x y ==> ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈pLenC S b k⌉
+  | [], _, x, y => by
+    intro h hh
+    obtain ⟨hxy, he⟩ := HProp.hpure_elim_hempty hh
+    exact pKN_intro 0 0 (wseg_nil (pCell C) 0 x y hxy rfl h he) (show pLenC S [] 0 from rfl)
+  | [it], _, x, y => pItem_abs C S M hM it x y
+  | it :: it2 :: r, i, x, y => by
+    intro h hh
+    obtain ⟨h1, h2, m1, m2, hd, he⟩ := HProp.hstar_elim hh
+    obtain ⟨k1, n1, hw1, hk1⟩ := pKN_elim (pItem_abs C S M hM it x (f i) h1 m1)
+    obtain ⟨k2, n2, hw2, hk2⟩ := pKN_elim (pChain_abs C S M hM f (it2 :: r) (i + 1) (f i) y h2 m2)
+    have := wseg_join (pCell C) k1 k2 n1 n2 x (f i) y h (he ▸ HProp.hstar_intro hw1 hw2 hd)
+    exact pKN_intro (k1 + k2) (n1 + n2) this (pLenC_cons S it (it2 :: r) k1 k2 hk1 hk2)
+
+theorem pAbs (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (j x y : Nat) :
+    pG C B (j, x, y) ==> ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈pLen B j k⌉ := by
+  refine pG_induct C B (fun a => ∃✶ k, ∃✶ n, wseg (pCell C) k n a.2.1 a.2.2 ✶ ⌈pLen B a.1 k⌉) ?_ (j, x, y)
+  intro c h ⟨b, hb, f, hh⟩
+  obtain ⟨k, n, hw, hk⟩ := pKN_elim (pChain_abs C (pLen B)
+    (fun j x y => ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈pLen B j k⌉)
+    (fun j x y => HProp.himpl_refl _) f b 0 c.2.1 c.2.2 h hh)
+  exact pKN_intro k n hw (pLen_intro B c.1 k ⟨b, hb, hk⟩)
+
+theorem pChain_congr (C : Nat → Nat → HProp) (X : Nat → Nat → Nat → HProp) (f g : Nat → Nat) :
+    ∀ (b : List (Option Nat)) (i x y : Nat), (∀ l, i ≤ l → f l = g l) →
+      pChain C X f b i x y = pChain C X g b i x y
+  | [], _, _, _, _ => rfl
+  | [_], _, _, _, _ => rfl
+  | it :: it2 :: r, i, x, y, h => by
+    show pItem C X it x (f i) ✶ pChain C X f (it2 :: r) (i + 1) (f i) y =
+      pItem C X it x (g i) ✶ pChain C X g (it2 :: r) (i + 1) (g i) y
+    rw [h i (Nat.le_refl i), pChain_congr C X f g (it2 :: r) (i + 1) (g i) y
+      (fun l hl => h l (by omega))]
+
+theorem pItem_conc (C : Nat → Nat → HProp) (S : Nat → Nat → Prop) (M : Nat → Nat → Nat → HProp)
+    (hM : ∀ j k, S j k → ∀ n x y, wseg (pCell C) k n x y ==> M j x y) :
+    ∀ (it : Option Nat) (k : Nat), pLenC S [it] k → ∀ n x y, wseg (pCell C) k n x y ==> pItem C M it x y
+  | none, k, ⟨k', hk, hz⟩, n, x, y => by
+    have hz' : k' = 0 := hz
+    subst hz' hk
+    intro h hh
+    obtain ⟨u, hh⟩ := HProp.hexists_elim (wseg_uncell (pCell C) x y n h hh)
+    obtain ⟨h1, h2, m1, m2, hd, he⟩ := HProp.hstar_elim hh
+    obtain ⟨⟨hyu, _⟩, he2⟩ := HProp.hpure_elim m2
+    subst he2 hyu
+    rw [he, Finmap.union_empty]
+    exact m1
+  | some j, k, ⟨k1, k2, hk, hj, hz⟩, n, x, y => by
+    have hz' : k2 = 0 := hz
+    subst hz'
+    rw [Nat.add_zero] at hk
+    subst hk
+    exact hM j _ hj n x y
+
+theorem pChain_conc (C : Nat → Nat → HProp) (S : Nat → Nat → Prop) (M : Nat → Nat → Nat → HProp)
+    (hM : ∀ j k, S j k → ∀ n x y, wseg (pCell C) k n x y ==> M j x y) :
+    ∀ (b : List (Option Nat)) (i k : Nat), pLenC S b k → ∀ n x y,
+      wseg (pCell C) k n x y ==> fun h => ∃ f : Nat → Nat, pChain C M f b i x y h
+  | [], _, k, hk, n, x, y => by
+    have hk' : k = 0 := hk
+    subst hk'
+    intro h hh
+    obtain ⟨⟨hxy, _⟩, he⟩ := HProp.hpure_elim_hempty hh
+    exact ⟨id, HProp.hpure_intro_hempty he hxy⟩
+  | [it], _, k, hk, n, x, y => by
+    intro h hh
+    exact ⟨id, pItem_conc C S M hM it k hk n x y h hh⟩
+  | it :: it2 :: r, i, k, hk, n, x, y => by
+    have hsplit : ∃ k1 k2, k = k1 + k2 ∧ pLenC S [it] k1 ∧ pLenC S (it2 :: r) k2 := by
+      cases it with
+      | none =>
+        obtain ⟨k', hk', hr⟩ := hk
+        exact ⟨1, k', by omega, ⟨0, rfl, rfl⟩, hr⟩
+      | some j =>
+        obtain ⟨k1, k2, hk', hj, hr⟩ := hk
+        exact ⟨k1, k2, hk', ⟨k1, 0, rfl, hj, rfl⟩, hr⟩
+    obtain ⟨k1, k2, hk12, h1, h2⟩ := hsplit
+    subst hk12
+    intro h hh
+    obtain ⟨t, hh⟩ := HProp.hexists_elim (wseg_split (pCell C) k1 k2 n x y h hh)
+    obtain ⟨m, hh⟩ := HProp.hexists_elim hh
+    obtain ⟨ha, hb, ma, mb, hd, he⟩ := HProp.hstar_elim hh
+    obtain ⟨f', hf'⟩ := pChain_conc C S M hM (it2 :: r) (i + 1) k2 h2 (n - m) t y hb mb
+    refine ⟨fun l => if l = i then t else f' l, ?_⟩
+    show (pItem C M it x (if i = i then t else f' i) ✶
+      pChain C M (fun l => if l = i then t else f' l) (it2 :: r) (i + 1) (if i = i then t else f' i) y) h
+    rw [ite_eq_left rfl, pChain_congr C M (fun l => if l = i then t else f' l) f' (it2 :: r) (i + 1) t y
+      (fun l hl => ite_eq_right (by omega))]
+    exact he ▸ HProp.hstar_intro (pItem_conc C S M hM it k1 h1 m x t ha ma) hf' hd
+
+theorem pConc (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (j k : Nat) (hk : pLen B j k)
+    (n : Int) (x y : Nat) : wseg (pCell C) k n x y ==> pG C B (j, x, y) := by
+  refine hk (fun j k => ∀ n x y, wseg (pCell C) k n x y ==> pG C B (j, x, y)) ?_ n x y
+  intro i k ⟨b, hb, hl⟩ n x y h hh
+  obtain ⟨f, hf⟩ := pChain_conc C _ (fun j x y => pG C B (j, x, y)) (fun j k hj => hj) b 0 k hl n x y h hh
+  exact pG_pre C B (i, x, y) h ⟨b, hb, f, hf⟩
+
+theorem pInv (C : Nat → Nat → HProp) (k : Nat) (n : Int) (s t : Nat) :
+    ∀ h, wseg (pCell C) k n s t h → n = (k : Int) ∧ (k = 0 → s = t) := by
+  intro h hh
+  have := wseg_inv (pCell C) (fun _ _ w => w = 1) (fun k s t n => n = (k : Int) ∧ (k = 0 → s = t))
+    (fun s s' w h hc => by
+      obtain ⟨u, hc⟩ := HProp.hexists_elim hc
+      obtain ⟨_, _, _, m2, _, _⟩ := HProp.hstar_elim hc
+      exact (HProp.hpure_elim m2).1.2)
+    (fun s => ⟨rfl, fun _ => rfl⟩)
+    (fun k s s' t w m hw hi => ⟨by rw [hi.1, hw]; push_cast; rfl, fun h => absurd h (Nat.succ_ne_zero k)⟩)
+    k n s t h hh
+  exact this
+
+def pNth {α : Type} : List α → Nat → α → α
+  | [], _, d => d
+  | a :: _, 0, _ => a
+  | _ :: l, n + 1, d => pNth l n d
+
+def pMemB (x : Nat) : List Nat → Bool
+  | [] => false
+  | r :: rs => Nat.beq x r || pMemB x rs
+
+omit [Params] in
+theorem pNth_eq {α : Type} : ∀ (l : List α) (n : Nat) (d : α), pNth l n d = l.getD n d
+  | [], _, _ => rfl
+  | _ :: _, 0, _ => rfl
+  | _ :: l, n + 1, d => pNth_eq l n d
+
+omit [Params] in
+theorem pble (a b : Nat) : Nat.ble a b = decide (a ≤ b) :=
+  Bool.eq_iff_iff.mpr (by rw [Nat.ble_eq, decide_eq_true_eq])
+
+omit [Params] in
+theorem pblt (a b : Nat) : Nat.blt a b = decide (a < b) :=
+  Bool.eq_iff_iff.mpr (by rw [Nat.blt_eq, decide_eq_true_eq])
+
+omit [Params] in
+theorem pbeq (a b : Nat) : Nat.beq a b = (a == b) :=
+  Bool.eq_iff_iff.mpr (by rw [Nat.beq_eq, beq_iff_eq])
+
+omit [Params] in
+theorem pMemB_eq (x : Nat) : ∀ l : List Nat, pMemB x l = l.contains x
+  | [] => rfl
+  | r :: rs => by
+    show (Nat.beq x r || pMemB x rs) = (r :: rs).contains x
+    rw [pMemB_eq x rs, List.contains_cons, pbeq]
+
+def inS (m p : Nat) (rs : List Nat) (n : Nat) : Bool := Nat.ble m n && pMemB ((n - m) % p) rs
+
+def slinR (d : Int) : List Nat → Prop
+  | [] => False
+  | [r] => d = (r : Int)
+  | r :: r2 :: rs => d = (r : Int) ∨ slinR d (r2 :: rs)
+
+def phiI (m p : Nat) (rs : List Nat) (n : Int) : Prop :=
+  match p with
+  | 1 => (m : Int) ≤ n
+  | _ => (m : Int) ≤ n ∧ slinR ((n - (m : Int)) % (p : Int)) rs
+
+omit [Params] in
+theorem slinR_iff (d : Int) : ∀ rs : List Nat, slinR d rs ↔ ∃ r ∈ rs, d = (r : Int)
+  | [] => by simp [slinR]
+  | [r] => by simp [slinR]
+  | r :: r2 :: rs => by
+    show (d = (r : Int) ∨ slinR d (r2 :: rs)) ↔ _
+    rw [slinR_iff d (r2 :: rs)]
+    simp
+
+omit [Params] in
+theorem sub_mod_cast (k m p : Nat) (h : m ≤ k) : ((k : Int) - (m : Int)) % (p : Int) = (((k - m) % p : Nat) : Int) := by
+  rw [Int.natCast_emod, Int.ofNat_sub h]
+
+omit [Params] in
+theorem phiI_of_inS {m p : Nat} {rs : List Nat} {k : Nat} (h : inS m p rs k = true) : phiI m p rs (k : Int) := by
+  simp only [inS, pMemB_eq, pble, Bool.and_eq_true, decide_eq_true_eq, List.contains_iff_mem] at h
+  obtain ⟨hmk, hr⟩ := h
+  have hle : (m : Int) ≤ (k : Int) := Int.ofNat_le.mpr hmk
+  match p, hr with
+  | 0, hr =>
+    refine ⟨hle, ?_⟩
+    rw [sub_mod_cast k m 0 hmk, slinR_iff]
+    exact ⟨_, hr, rfl⟩
+  | 1, _ => exact hle
+  | p + 2, hr =>
+    refine ⟨hle, ?_⟩
+    rw [sub_mod_cast k m (p + 2) hmk, slinR_iff]
+    exact ⟨_, hr, rfl⟩
+
+omit [Params] in
+theorem inS_of_phiI {m p : Nat} {rs : List Nat} {k : Nat} (h1 : p = 1 → 0 ∈ rs) (h : phiI m p rs (k : Int)) :
+    inS m p rs k = true := by
+  simp only [inS, pMemB_eq, pble, Bool.and_eq_true, decide_eq_true_eq, List.contains_iff_mem]
+  match p, h with
+  | 0, ⟨hle, hs⟩ =>
+    have hmk : m ≤ k := Int.ofNat_le.mp hle
+    rw [sub_mod_cast k m 0 hmk, slinR_iff] at hs
+    obtain ⟨r, hr, he⟩ := hs
+    exact ⟨hmk, (Int.ofNat_inj.mp he) ▸ hr⟩
+  | 1, hle =>
+    have hmk : m ≤ k := Int.ofNat_le.mp hle
+    exact ⟨hmk, by rw [Nat.mod_one]; exact h1 rfl⟩
+  | p + 2, ⟨hle, hs⟩ =>
+    have hmk : m ≤ k := Int.ofNat_le.mp hle
+    rw [sub_mod_cast k m (p + 2) hmk, slinR_iff] at hs
+    obtain ⟨r, hr, he⟩ := hs
+    exact ⟨hmk, (Int.ofNat_inj.mp he) ▸ hr⟩
+
+
+def pDflt : Nat × Nat × List Nat := (0, 1, [])
+
+def pSet (prof : List (Nat × Nat × List Nat)) (q n : Nat) : Prop :=
+  inS (prof.getD q pDflt).1 (prof.getD q pDflt).2.1 (prof.getD q pDflt).2.2 n = true
+
+def pStepA (prof : List (Nat × Nat × List Nat)) (pj : Nat) : Option Nat → List Nat × Nat → List Nat × Nat
+  | none, st => (st.1.map (fun a => (a + 1) % pj), st.2 + 1)
+  | some q, st =>
+    (st.1.flatMap (fun a => (pNth prof q pDflt).2.2.flatMap (fun r => (List.range pj).map
+      (fun t => (a + (pNth prof q pDflt).1 + r + (pNth prof q pDflt).2.1 * t) % pj))),
+     st.2 + (pNth prof q pDflt).1)
+
+def pRunA (prof : List (Nat × Nat × List Nat)) (pj : Nat) :
+    List (Option Nat) → List Nat × Nat → List Nat × Nat
+  | [], st => st
+  | it :: r, st => pRunA prof pj r (pStepA prof pj it st)
+
+def pBrA (prof : List (Nat × Nat × List Nat)) (m p : Nat) (rs : List Nat) (b : List (Option Nat)) : Bool :=
+  Nat.ble m (pRunA prof p b ([0], 0)).2 &&
+    ((Nat.beq p 1 && pMemB 0 rs) || (pRunA prof p b ([0], 0)).1.all (fun a => pMemB ((a + p - m % p) % p) rs))
+
+def pChkA (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat)) : Bool :=
+  (List.range B.length).all (fun j =>
+    Nat.blt (0) ((pNth prof j pDflt).2.1) &&
+      (pNth B j []).all (pBrA prof (pNth prof j pDflt).1 (pNth prof j pDflt).2.1 (pNth prof j pDflt).2.2))
+
+omit [Params] in
+theorem mod_succ_eq (s p : Nat) : (s + 1) % p = (s % p + 1) % p := by
+  rw [Nat.add_mod s 1, Nat.add_mod (s % p) 1, Nat.mod_mod]
+
+omit [Params] in
+theorem mod_step_eq (s k mq pq pj : Nat) (hk : mq ≤ k) :
+    (s + k) % pj = (s % pj + mq + (k - mq) % pq + pq * ((k - mq) / pq % pj)) % pj := by
+  have h1 := Nat.mod_add_div s pj
+  have h2 := Nat.mod_add_div (k - mq) pq
+  have h3 : pq * ((k - mq) / pq) = pq * ((k - mq) / pq % pj) + pj * (pq * ((k - mq) / pq / pj)) := by
+    conv => lhs; rw [← Nat.mod_add_div ((k - mq) / pq) pj]
+    rw [Nat.mul_add, Nat.mul_left_comm]
+  have e : s + k = (s % pj + mq + (k - mq) % pq + pq * ((k - mq) / pq % pj)) +
+      pj * (s / pj + pq * ((k - mq) / pq / pj)) := by
+    rw [Nat.mul_add]
+    omega
+  rw [e, Nat.add_mul_mod_self_left]
+
+omit [Params] in
+theorem sub_mod_eq (k m p : Nat) (hp : 0 < p) (h : m ≤ k) : (k - m) % p = (k % p + p - m % p) % p := by
+  have ha := Nat.mod_lt (k - m) hp
+  have hb := Nat.mod_lt m hp
+  have hk : k % p = ((k - m) % p + m % p) % p := by
+    rw [← Nat.add_mod, Nat.sub_add_cancel h]
+  rw [hk]
+  generalize (k - m) % p = a at *
+  generalize m % p = b at *
+  by_cases hc : a + b < p
+  · rw [Nat.mod_eq_of_lt hc, show a + b + p - b = a + p by omega, Nat.add_mod_right, Nat.mod_eq_of_lt ha]
+  · rw [Nat.mod_eq_sub_mod (Nat.le_of_not_lt hc), Nat.mod_eq_of_lt (show a + b - p < p by omega),
+      show a + b - p + p - b = a by omega, Nat.mod_eq_of_lt ha]
+
+omit [Params] in
+theorem pRunA_sound (prof : List (Nat × Nat × List Nat)) (pj : Nat) (hp : 0 < pj) :
+    ∀ (b : List (Option Nat)) (st : List Nat × Nat) (s k : Nat), s % pj ∈ st.1 → st.2 ≤ s →
+      pLenC (pSet prof) b k →
+      (s + k) % pj ∈ (pRunA prof pj b st).1 ∧ (pRunA prof pj b st).2 ≤ s + k
+  | [], st, s, k, h1, h2, hk => by
+    have hk' : k = 0 := hk
+    subst hk'
+    exact ⟨h1, h2⟩
+  | none :: r, st, s, k, h1, h2, ⟨k', hk, hr⟩ => by
+    have := pRunA_sound prof pj hp r (pStepA prof pj none st) (s + 1) k'
+      (by
+        show (s + 1) % pj ∈ st.1.map (fun a => (a + 1) % pj)
+        rw [mod_succ_eq]
+        exact List.mem_map_of_mem h1)
+      (by show st.2 + 1 ≤ s + 1; omega) hr
+    rw [show s + k = s + 1 + k' by omega]
+    exact this
+  | some q :: r, st, s, k, h1, h2, ⟨k1, k2, hk, hq, hr⟩ => by
+    have hq' := hq
+    simp only [pSet, inS, pMemB_eq, pble, Bool.and_eq_true, decide_eq_true_eq, List.contains_iff_mem] at hq'
+    obtain ⟨hmq, hrq⟩ := hq'
+    have := pRunA_sound prof pj hp r (pStepA prof pj (some q) st) (s + k1) k2
+      (by
+        show (s + k1) % pj ∈ st.1.flatMap _
+        simp only [pNth_eq]
+        rw [List.mem_flatMap]
+        refine ⟨s % pj, h1, ?_⟩
+        rw [List.mem_flatMap]
+        refine ⟨_, hrq, ?_⟩
+        rw [List.mem_map]
+        exact ⟨_, List.mem_range.mpr (Nat.mod_lt _ hp), (mod_step_eq s k1 _ _ pj hmq).symm⟩)
+      (by show st.2 + (pNth prof q pDflt).1 ≤ s + k1; rw [pNth_eq]; omega) hr
+    rw [show s + k = s + k1 + k2 by omega]
+    exact this
+
+omit [Params] in
+theorem pBrA_sound (prof : List (Nat × Nat × List Nat)) (m p : Nat) (rs : List Nat) (hp : 0 < p)
+    (b : List (Option Nat)) (hb : pBrA prof m p rs b = true) (k : Nat) (hk : pLenC (pSet prof) b k) :
+    inS m p rs k = true := by
+  simp only [pBrA, pMemB_eq, pble, pbeq, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq, beq_iff_eq,
+    List.all_eq_true] at hb
+  obtain ⟨hm, hall⟩ := hb
+  have := pRunA_sound prof p hp b ([0], 0) 0 k (by simp) (Nat.le_refl 0) hk
+  rw [Nat.zero_add] at this
+  have hmk : m ≤ k := Nat.le_trans hm this.2
+  simp only [inS, pMemB_eq, pble, Bool.and_eq_true, decide_eq_true_eq]
+  rcases hall with ⟨hp1, h0⟩ | hall
+  · subst hp1
+    exact ⟨hmk, by rw [Nat.mod_one]; exact h0⟩
+  · have hc := hall _ this.1
+    exact ⟨hmk, by rw [sub_mod_eq k m p hp hmk]; exact hc⟩
+
+omit [Params] in
+theorem pChkA_sound (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat))
+    (h : pChkA B prof = true) (j k : Nat) (hk : pLen B j k) : pSet prof j k := by
+  refine hk (pSet prof) ?_
+  intro i n ⟨b, hb, hl⟩
+  rw [pNthK_getD] at hb
+  have hi : i < B.length := by
+    by_contra hc
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (Nat.le_of_not_lt hc)] at hb
+    cases hb
+  simp only [pChkA, pNth_eq, pblt, List.all_eq_true, Bool.and_eq_true, decide_eq_true_eq] at h
+  obtain ⟨hp, hall⟩ := h i (List.mem_range.mpr hi)
+  exact pBrA_sound prof _ _ _ hp b (hall b hb) n hl
+
+
+def inSp (prof : List (Nat × Nat × List Nat)) (q n : Nat) : Bool :=
+  inS (pNth prof q pDflt).1 (pNth prof q pDflt).2.1 (pNth prof q pDflt).2.2 n
+
+def pWalk (ok : Nat → Nat → Bool) : List (Option Nat) → List (Option Nat) → Option (Nat × Option Nat)
+  | [], [] => some (0, none)
+  | none :: r, ls => (pWalk ok r ls).map (fun dh => (dh.1 + 1, dh.2))
+  | some q :: r, some c :: ls => if ok q c then (pWalk ok r ls).map (fun dh => (dh.1 + c, dh.2)) else none
+  | some q :: r, none :: ls => match pWalk ok r ls with
+    | some (d, none) => some (d, some q)
+    | _ => none
+  | _, _ => none
+
+omit [Params] in
+theorem pWalk_sound (ok : Nat → Nat → Bool) (S : Nat → Nat → Prop) (hok : ∀ q c, ok q c = true → S q c) :
+    ∀ (b ls : List (Option Nat)) (d : Nat) (h : Option Nat), pWalk ok b ls = some (d, h) →
+      (h = none → pLenC S b d) ∧ (∀ q0 v, h = some q0 → S q0 v → pLenC S b (d + v))
+  | [], [], d, h, e => by
+    simp only [pWalk, Option.some.injEq, Prod.mk.injEq] at e
+    obtain ⟨rfl, rfl⟩ := e
+    exact ⟨fun _ => rfl, fun _ _ hc => by cases hc⟩
+  | [], _ :: _, _, _, e => by simp [pWalk] at e
+  | none :: r, ls, d, h, e => by
+    simp only [pWalk, Option.map_eq_some_iff] at e
+    obtain ⟨⟨d', h'⟩, e1, e2⟩ := e
+    simp only [Prod.mk.injEq] at e2
+    obtain ⟨rfl, rfl⟩ := e2
+    have ih := pWalk_sound ok S hok r ls d' h' e1
+    exact ⟨fun hn => ⟨d', rfl, ih.1 hn⟩,
+      fun q0 v hq hs => ⟨d' + v, by omega, ih.2 q0 v hq hs⟩⟩
+  | some q :: r, some c :: ls, d, h, e => by
+    simp only [pWalk] at e
+    split at e
+    · rename_i hc
+      simp only [Option.map_eq_some_iff] at e
+      obtain ⟨⟨d', h'⟩, e1, e2⟩ := e
+      simp only [Prod.mk.injEq] at e2
+      obtain ⟨rfl, rfl⟩ := e2
+      have ih := pWalk_sound ok S hok r ls d' h' e1
+      exact ⟨fun hn => ⟨c, d', by omega, hok q c hc, ih.1 hn⟩,
+        fun q0 v hq hs => ⟨c, d' + v, by omega, hok q c hc, ih.2 q0 v hq hs⟩⟩
+    · cases e
+  | some q :: r, none :: ls, d, h, e => by
+    simp only [pWalk] at e
+    split at e
+    · rename_i d' e1
+      simp only [Option.some.injEq, Prod.mk.injEq] at e
+      obtain ⟨hd, hh⟩ := e
+      subst hd hh
+      have ih := pWalk_sound ok S hok r ls d' none e1
+      refine ⟨fun hc => (by cases hc), fun q0 v hq hs => ?_⟩
+      cases hq
+      exact ⟨v, d', by omega, hs, ih.1 rfl⟩
+    · cases e
+  | some _ :: _, [], _, _, e => by simp [pWalk] at e
+
+
+def pSmallOk (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat)) (rk : List Nat)
+    (R j n : Nat) (e : Nat × Nat × List (Option Nat)) : Bool :=
+  Nat.beq e.1 n && Nat.blt (e.2.1) ((pNth B j []).length) &&
+    match pWalk (fun q c => Nat.blt (q) (R) && inSp prof q c && Nat.blt (c * R + pNth rk q 0) (n * R + pNth rk j 0))
+      (pNth (pNth B j []) e.2.1 []) e.2.2 with
+    | some (d, none) => Nat.beq d n
+    | _ => false
+
+def pBigOk (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat)) (rk : List Nat)
+    (R N j sp : Nat) (e : Nat × Nat × Nat × List (Option Nat)) : Bool :=
+  Nat.blt (e.2.1) ((pNth B j []).length) &&
+    match pWalk (fun q c => Nat.blt (q) (R) && inSp prof q c && Nat.blt (c) (N))
+      (pNth (pNth B j []) e.2.1 []) e.2.2.2 with
+    | some (d, some q0) =>
+      Nat.blt (q0) (R) && Nat.blt (0) ((pNth prof q0 pDflt).2.1) && Nat.ble (N) (e.2.2.1) &&
+      Nat.blt (e.2.2.1) (N + sp) && Nat.ble ((pNth prof j pDflt).1) (e.2.2.1) &&
+      Nat.beq ((e.2.2.1 - (pNth prof j pDflt).1) % sp) e.1 &&
+      Nat.ble (d + (pNth prof q0 pDflt).1) (N) &&
+      (Nat.blt (0) (d) || Nat.blt (pNth rk q0 0) (pNth rk j 0)) &&
+      (List.range (pNth prof q0 pDflt).2.1).all (fun t => pMemB
+        ((e.2.2.1 + sp * t - d - (pNth prof q0 pDflt).1) % (pNth prof q0 pDflt).2.1) (pNth prof q0 pDflt).2.2)
+    | _ => false
+
+def pChkC (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat)) (rk : List Nat) (N : Nat)
+    (sps : List Nat)
+    (cert : List (List (Nat × Nat × List (Option Nat)) × List (Nat × Nat × Nat × List (Option Nat)))) : Bool :=
+  (List.range B.length).all (fun j =>
+    Nat.blt (pNth rk j 0) (B.length) && Nat.blt (0) ((pNth prof j pDflt).2.1) &&
+    (!Nat.beq (pNth prof j pDflt).2.1 1 || pMemB 0 (pNth prof j pDflt).2.2) &&
+    (List.range N).all (fun n => !inSp prof j n || (pNth cert j ([], [])).1.any (pSmallOk B prof rk B.length j n)) &&
+    Nat.blt (0) (pNth sps j 1) && Nat.beq (pNth sps j 1 % (pNth prof j pDflt).2.1) 0 &&
+    (List.range (pNth sps j 1)).all (fun r => !pMemB (r % (pNth prof j pDflt).2.1) (pNth prof j pDflt).2.2 ||
+      (pNth cert j ([], [])).2.any (fun e => Nat.beq e.1 r && pBigOk B prof rk B.length N j (pNth sps j 1) e)))
+
+omit [Params] in
+theorem cls_ge (n n0 m p : Nat) (hm : m ≤ n0) (hmn : m ≤ n)
+    (hr : (n - m) % p = (n0 - m) % p) (hlt : n0 < n + p) : n0 ≤ n ∧ (n - n0) % p = 0 := by
+  have h1 := Nat.mod_add_div (n - m) p
+  have h2 := Nat.mod_add_div (n0 - m) p
+  have hq : (n0 - m) / p ≤ (n - m) / p := by
+    by_contra hc
+    have hc' : (n - m) / p + 1 ≤ (n0 - m) / p := by omega
+    have := Nat.mul_le_mul_left p hc'
+    rw [Nat.mul_add, Nat.mul_one] at this
+    omega
+  have hle : n0 ≤ n := by
+    have := Nat.mul_le_mul_left p hq
+    omega
+  refine ⟨hle, ?_⟩
+  have e : n - n0 = p * ((n - m) / p - (n0 - m) / p) := by
+    rw [Nat.mul_sub]
+    omega
+  rw [e, Nat.mul_mod_right]
+
+omit [Params] in
+theorem mod_shift (X p t pq : Nat) : (X + p * t) % pq = (X + p * (t % pq)) % pq := by
+  have h : p * t = p * (t % pq) + pq * (p * (t / pq)) := by
+    conv => lhs; rw [← Nat.mod_add_div t pq]
+    rw [Nat.mul_add, Nat.mul_left_comm]
+  rw [h, ← Nat.add_assoc, Nat.add_mul_mod_self_left]
+
+omit [Params] in
+theorem mul_lt_of_lt (a b R r : Nat) (hab : a < b) (hr : r < R) (s : Nat) : a * R + r < b * R + s := by
+  have : (a + 1) * R ≤ b * R := Nat.mul_le_mul_right R hab
+  rw [Nat.succ_mul] at this
+  omega
+
+omit [Params] in
+theorem pChkC_sound (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat)) (rk : List Nat)
+    (N : Nat) (sps : List Nat)
+    (cert : List (List (Nat × Nat × List (Option Nat)) × List (Nat × Nat × Nat × List (Option Nat))))
+    (hc : pChkC B prof rk N sps cert = true) :
+    ∀ μ j n, n * B.length + rk.getD j 0 = μ → j < B.length → inSp prof j n = true → pLen B j n := by
+  intro μ
+  induction μ using Nat.strongRecOn with
+  | _ μ ih =>
+  intro j n hμ hj hin
+  have hc' := hc
+  simp only [pChkC, pNth_eq, pMemB_eq, pblt, pbeq, List.all_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hc'
+  obtain ⟨⟨⟨⟨⟨⟨hrk, hp⟩, _⟩, hsm⟩, hsp⟩, hdvd⟩, hbg⟩ := hc' j (List.mem_range.mpr hj)
+  have hrkq : ∀ q, q < B.length → rk.getD q 0 < B.length := fun q hq =>
+    (((((((hc' q (List.mem_range.mpr hq)).1).1).1).1).1).1)
+  have hmem : ∀ bi, bi < (B.getD j []).length → (B.getD j []).getD bi [] ∈ pNthK B j [] := by
+    intro bi hbi
+    rw [pNthK_getD]
+    generalize B.getD j [] = L at hbi ⊢
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hbi, Option.getD_some]
+    exact List.getElem_mem hbi
+  by_cases hn : n < N
+  · have h0 := hsm n (List.mem_range.mpr hn)
+    rw [hin, Bool.not_true, Bool.false_or] at h0
+    obtain ⟨e, _, he⟩ := List.any_eq_true.mp h0
+    simp only [pSmallOk, pNth_eq, pblt, pbeq, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at he
+    obtain ⟨⟨he1, hbi⟩, hw⟩ := he
+    split at hw
+    · rename_i d hwe
+      simp only [beq_iff_eq] at hw
+      subst hw
+      have := (pWalk_sound _ (pLen B) (fun q c hq => by
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at hq
+        obtain ⟨⟨hqR, hqin⟩, hlt⟩ := hq
+        exact ih _ (by omega) q c rfl hqR hqin) _ _ _ _ hwe).1 rfl
+      exact pLen_intro B j d ⟨_, hmem _ hbi, this⟩
+    · cases hw
+  · have hNn : N ≤ n := Nat.le_of_not_lt hn
+    have hin' := hin
+    simp only [inSp, inS, pNth_eq, pMemB_eq, pble, Bool.and_eq_true, decide_eq_true_eq, List.contains_iff_mem] at hin'
+    obtain ⟨hmn, hrs⟩ := hin'
+    have hdvd' : (prof.getD j pDflt).2.1 ∣ sps.getD j 1 := Nat.dvd_of_mod_eq_zero (by simpa using hdvd)
+    have hmm : (n - (prof.getD j pDflt).1) % sps.getD j 1 % (prof.getD j pDflt).2.1 =
+        (n - (prof.getD j pDflt).1) % (prof.getD j pDflt).2.1 := Nat.mod_mod_of_dvd _ hdvd'
+    have := hbg ((n - (prof.getD j pDflt).1) % sps.getD j 1) (List.mem_range.mpr (Nat.mod_lt _ hsp))
+    rw [hmm, List.contains_iff_mem.mpr hrs, Bool.not_true, Bool.false_or] at this
+    simp only [List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at this
+    obtain ⟨e, _, he1, he⟩ := this
+    simp only [pBigOk, pNth_eq, pMemB_eq, pble, pblt, pbeq, Bool.and_eq_true, decide_eq_true_eq] at he
+    obtain ⟨hbi, hw⟩ := he
+    split at hw
+    · rename_i d q0 hwe
+      simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq, Bool.or_eq_true, List.all_eq_true,
+        List.contains_iff_mem] at hw
+      obtain ⟨⟨⟨⟨⟨⟨⟨⟨hq0, hpq⟩, hN0⟩, hn0⟩, hm0⟩, hr0⟩, hdN⟩, hmeas⟩, hall⟩ := hw
+      obtain ⟨hle0, hdiv⟩ := cls_ge n e.2.2.1 _ (sps.getD j 1) hm0 hmn (by rw [hr0, he1]) (by omega)
+      have hv : inSp prof q0 (n - d) = true := by
+        simp only [inSp, inS, pNth_eq, pMemB_eq, pble, Bool.and_eq_true, decide_eq_true_eq, List.contains_iff_mem]
+        refine ⟨by omega, ?_⟩
+        have hn' : n = e.2.2.1 + (sps.getD j 1) * ((n - e.2.2.1) / (sps.getD j 1)) := by
+          have := Nat.mod_add_div (n - e.2.2.1) (sps.getD j 1)
+          omega
+        have key := hall _ (List.mem_range.mpr (Nat.mod_lt ((n - e.2.2.1) / (sps.getD j 1)) hpq))
+        have h1 : n - d - (prof.getD q0 pDflt).1 = (e.2.2.1 - d - (prof.getD q0 pDflt).1) +
+            (sps.getD j 1) * ((n - e.2.2.1) / (sps.getD j 1)) := by omega
+        have h2 : e.2.2.1 + (sps.getD j 1) * ((n - e.2.2.1) / (sps.getD j 1) %
+            (prof.getD q0 pDflt).2.1) - d - (prof.getD q0 pDflt).1 = (e.2.2.1 - d - (prof.getD q0 pDflt).1) +
+            (sps.getD j 1) * ((n - e.2.2.1) / (sps.getD j 1) % (prof.getD q0 pDflt).2.1) := by
+          omega
+        rw [h1, mod_shift, ← h2]
+        exact key
+      have hIH := ih ((n - d) * B.length + rk.getD q0 0) (by
+        rw [← hμ]
+        by_cases hd : 0 < d
+        · have hdn : d ≤ n := by omega
+          exact mul_lt_of_lt _ _ _ _ (by omega) (hrkq q0 hq0) _
+        · have hr : rk.getD q0 0 < rk.getD j 0 := by
+            rcases hmeas with h | h
+            · exact absurd h hd
+            · exact h
+          have : n - d = n := by omega
+          rw [this]
+          omega) q0 (n - d) rfl hq0 hv
+      have := (pWalk_sound _ (pLen B) (fun q c hq => by
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at hq
+        obtain ⟨⟨hqR, hqin⟩, hlt⟩ := hq
+        exact ih _ (by rw [← hμ]; exact mul_lt_of_lt _ _ _ _ (by omega) (hrkq q hqR) _) q c rfl hqR hqin)
+        _ _ _ _ hwe).2 q0 (n - d) rfl hIH
+      rw [show d + (n - d) = n by omega] at this
+      exact pLen_intro B j n ⟨_, hmem _ hbi, this⟩
+    · cases hw
+
+
+noncomputable def pAppK {α : Type} (l1 l2 : List α) : List α :=
+  List.rec (motive := fun _ => List α) l2 (fun a _ ih => a :: ih) l1
+
+noncomputable def pMapK {α β : Type} (f : α → β) (l : List α) : List β :=
+  List.rec (motive := fun _ => List β) [] (fun a _ ih => f a :: ih) l
+
+noncomputable def pFlatMapK {α β : Type} (f : α → List β) (l : List α) : List β :=
+  List.rec (motive := fun _ => List β) [] (fun a _ ih => pAppK (f a) ih) l
+
+noncomputable def pRangeK (n : Nat) : List Nat :=
+  Nat.rec (motive := fun _ => List Nat) [] (fun k ih => pAppK ih [k]) n
+
+noncomputable def pAllK {α : Type} (p : α → Bool) (l : List α) : Bool :=
+  List.rec (motive := fun _ => Bool) true (fun a _ ih => p a && ih) l
+
+noncomputable def pAnyK {α : Type} (p : α → Bool) (l : List α) : Bool :=
+  List.rec (motive := fun _ => Bool) false (fun a _ ih => p a || ih) l
+
+noncomputable def pAllLtK (n : Nat) (p : Nat → Bool) : Bool :=
+  Nat.rec (motive := fun _ => Bool) true (fun k ih => ih && p k) n
+
+
+noncomputable def pMemK (x : Nat) (l : List Nat) : Bool :=
+  List.rec (motive := fun _ => Bool) false (fun r _ ih => Nat.beq x r || ih) l
+
+noncomputable def inSK (m p : Nat) (rs : List Nat) (n : Nat) : Bool := Nat.ble m n && pMemK ((n - m) % p) rs
+
+noncomputable def inSpK (prof : List (Nat × Nat × List Nat)) (q n : Nat) : Bool :=
+  inSK (pNthK prof q pDflt).1 (pNthK prof q pDflt).2.1 (pNthK prof q pDflt).2.2 n
+
+noncomputable def pStepAK (prof : List (Nat × Nat × List Nat)) (pj : Nat) (it : Option Nat)
+    (st : List Nat × Nat) : List Nat × Nat :=
+  Option.rec (motive := fun _ => List Nat × Nat) (pMapK (fun a => (a + 1) % pj) st.1, st.2 + 1)
+    (fun q => (pFlatMapK (fun a => pFlatMapK (fun r => pMapK
+      (fun t => (a + (pNthK prof q pDflt).1 + r + (pNthK prof q pDflt).2.1 * t) % pj) (pRangeK pj))
+      (pNthK prof q pDflt).2.2) st.1, st.2 + (pNthK prof q pDflt).1)) it
+
+noncomputable def pRunAK (prof : List (Nat × Nat × List Nat)) (pj : Nat) (b : List (Option Nat))
+    (st : List Nat × Nat) : List Nat × Nat :=
+  List.rec (motive := fun _ => List Nat × Nat → List Nat × Nat) (fun st => st)
+    (fun it _ ih st => ih (pStepAK prof pj it st)) b st
+
+noncomputable def pBrAK (prof : List (Nat × Nat × List Nat)) (m p : Nat) (rs : List Nat) (b : List (Option Nat)) :
+    Bool :=
+  Nat.ble m (pRunAK prof p b ([0], 0)).2 &&
+    ((Nat.beq p 1 && pMemK 0 rs) || pAllK (fun a => pMemK ((a + p - m % p) % p) rs) (pRunAK prof p b ([0], 0)).1)
+
+noncomputable def pChkAK (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat)) : Bool :=
+  pAllLtK B.length (fun j =>
+    Nat.blt 0 (pNthK prof j pDflt).2.1 &&
+      pAllK (pBrAK prof (pNthK prof j pDflt).1 (pNthK prof j pDflt).2.1 (pNthK prof j pDflt).2.2) (pNthK B j []))
+
+noncomputable def pWalkK (ok : Nat → Nat → Bool) (b ls : List (Option Nat)) : Option (Nat × Option Nat) :=
+  List.rec (motive := fun _ => List (Option Nat) → Option (Nat × Option Nat))
+    (fun ls => List.rec (motive := fun _ => Option (Nat × Option Nat)) (some (0, none)) (fun _ _ _ => none) ls)
+    (fun it _ ih ls => Option.rec (motive := fun _ => Option (Nat × Option Nat))
+      (Option.rec (motive := fun _ => Option (Nat × Option Nat)) none
+        (fun dh => some (dh.1 + 1, dh.2)) (ih ls))
+      (fun q => List.rec (motive := fun _ => Option (Nat × Option Nat)) none
+        (fun l ls' _ => Option.rec (motive := fun _ => Option (Nat × Option Nat))
+          (Option.rec (motive := fun _ => Option (Nat × Option Nat)) none
+            (fun dh => Option.rec (motive := fun _ => Option (Nat × Option Nat)) (some (dh.1, some q))
+              (fun _ => none) dh.2) (ih ls'))
+          (fun c => Bool.rec (motive := fun _ => Option (Nat × Option Nat)) none
+            (Option.rec (motive := fun _ => Option (Nat × Option Nat)) none
+              (fun dh => some (dh.1 + c, dh.2)) (ih ls')) (ok q c)) l) ls) it) b ls
+
+
+noncomputable def pSmallOkK (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat)) (rk : List Nat)
+    (R j n : Nat) (e : Nat × Nat × List (Option Nat)) : Bool :=
+  Nat.beq e.1 n && Nat.blt e.2.1 (pLenK (pNthK B j [])) &&
+    Option.rec (motive := fun _ => Bool) false
+      (fun dh => Option.rec (motive := fun _ => Bool) (Nat.beq dh.1 n) (fun _ => false) dh.2)
+      (pWalkK (fun q c => Nat.blt q R && inSpK prof q c && Nat.blt (c * R + pNthK rk q 0) (n * R + pNthK rk j 0))
+        (pNthK (pNthK B j []) e.2.1 []) e.2.2)
+
+noncomputable def pBigOkK (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat)) (rk : List Nat)
+    (R N j sp : Nat) (e : Nat × Nat × Nat × List (Option Nat)) : Bool :=
+  Nat.blt e.2.1 (pLenK (pNthK B j [])) &&
+    Option.rec (motive := fun _ => Bool) false
+      (fun dh => Option.rec (motive := fun _ => Bool) false (fun q0 =>
+        Nat.blt q0 R && Nat.blt 0 (pNthK prof q0 pDflt).2.1 && Nat.ble N e.2.2.1 &&
+        Nat.blt e.2.2.1 (N + sp) && Nat.ble (pNthK prof j pDflt).1 e.2.2.1 &&
+        Nat.beq ((e.2.2.1 - (pNthK prof j pDflt).1) % sp) e.1 &&
+        Nat.ble (dh.1 + (pNthK prof q0 pDflt).1) N &&
+        (Nat.blt 0 dh.1 || Nat.blt (pNthK rk q0 0) (pNthK rk j 0)) &&
+        pAllLtK (pNthK prof q0 pDflt).2.1 (fun t => pMemK
+          ((e.2.2.1 + sp * t - dh.1 - (pNthK prof q0 pDflt).1) % (pNthK prof q0 pDflt).2.1) (pNthK prof q0 pDflt).2.2))
+        dh.2)
+      (pWalkK (fun q c => Nat.blt q R && inSpK prof q c && Nat.blt c N) (pNthK (pNthK B j []) e.2.1 []) e.2.2.2)
+
+noncomputable def pChkCK (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat)) (rk : List Nat)
+    (N : Nat) (sps : List Nat)
+    (cert : List (List (Nat × Nat × List (Option Nat)) × List (Nat × Nat × Nat × List (Option Nat)))) : Bool :=
+  pAllLtK (pLenK B) (fun j =>
+    Nat.blt (pNthK rk j 0) (pLenK B) && Nat.blt 0 (pNthK prof j pDflt).2.1 &&
+    (!Nat.beq (pNthK prof j pDflt).2.1 1 || pMemK 0 (pNthK prof j pDflt).2.2) &&
+    pAllLtK N (fun n => !inSpK prof j n || pAnyK (pSmallOkK B prof rk (pLenK B) j n) (pNthK cert j ([], [])).1) &&
+    Nat.blt 0 (pNthK sps j 1) && Nat.beq (pNthK sps j 1 % (pNthK prof j pDflt).2.1) 0 &&
+    pAllLtK (pNthK sps j 1) (fun r => !pMemK (r % (pNthK prof j pDflt).2.1) (pNthK prof j pDflt).2.2 ||
+      pAnyK (fun e => Nat.beq e.1 r && pBigOkK B prof rk (pLenK B) N j (pNthK sps j 1) e) (pNthK cert j ([], [])).2))
+
+omit [Params] in
+theorem pAppK_eq {α : Type} (l1 l2 : List α) : pAppK l1 l2 = l1 ++ l2 := by
+  induction l1 with
+  | nil => rfl
+  | cons a l ih => exact congrArg (a :: ·) ih
+
+omit [Params] in
+theorem pMapK_eq {α β : Type} (f : α → β) (l : List α) : pMapK f l = l.map f := by
+  induction l with
+  | nil => rfl
+  | cons a l ih => exact congrArg (f a :: ·) ih
+
+omit [Params] in
+theorem pFlatMapK_eq {α β : Type} (f : α → List β) (l : List α) : pFlatMapK f l = l.flatMap f := by
+  induction l with
+  | nil => rfl
+  | cons a l ih =>
+    show pAppK (f a) (pFlatMapK f l) = _
+    rw [pAppK_eq, ih, List.flatMap_cons]
+
+omit [Params] in
+theorem pRangeK_eq (n : Nat) : pRangeK n = List.range n := by
+  induction n with
+  | zero => rfl
+  | succ k ih =>
+    show pAppK (pRangeK k) [k] = _
+    rw [pAppK_eq, ih, List.range_succ]
+
+omit [Params] in
+theorem pAllK_eq {α : Type} (p : α → Bool) (l : List α) : pAllK p l = l.all p := by
+  induction l with
+  | nil => rfl
+  | cons a l ih =>
+    show (p a && pAllK p l) = _
+    rw [ih, List.all_cons]
+
+omit [Params] in
+theorem pAnyK_eq {α : Type} (p : α → Bool) (l : List α) : pAnyK p l = l.any p := by
+  induction l with
+  | nil => rfl
+  | cons a l ih =>
+    show (p a || pAnyK p l) = _
+    rw [ih, List.any_cons]
+
+omit [Params] in
+theorem pAllLtK_eq (n : Nat) (p : Nat → Bool) : pAllLtK n p = (List.range n).all p := by
+  induction n with
+  | zero => rfl
+  | succ k ih =>
+    show (pAllLtK k p && p k) = _
+    rw [ih, List.range_succ, List.all_append, List.all_cons, List.all_nil, Bool.and_true]
+
+omit [Params] in
+theorem pNthK_eq {α : Type} (l : List α) (n : Nat) (d : α) : pNthK l n d = pNth l n d := by
+  rw [pNthK_getD, pNth_eq]
+
+omit [Params] in
+theorem pMemK_eq (x : Nat) (l : List Nat) : pMemK x l = pMemB x l := by
+  induction l with
+  | nil => rfl
+  | cons r l ih =>
+    show (Nat.beq x r || pMemK x l) = (Nat.beq x r || pMemB x l)
+    rw [ih]
+
+omit [Params] in
+theorem inSpK_eq (prof : List (Nat × Nat × List Nat)) (q n : Nat) : inSpK prof q n = inSp prof q n := by
+  simp only [inSpK, inSK, inSp, inS, pNthK_eq, pMemK_eq]
+
+omit [Params] in
+theorem pStepAK_eq (prof : List (Nat × Nat × List Nat)) (pj : Nat) (it : Option Nat) (st : List Nat × Nat) :
+    pStepAK prof pj it st = pStepA prof pj it st := by
+  cases it with
+  | none => simp only [pStepAK, pStepA, pMapK_eq]
+  | some q => simp only [pStepAK, pStepA, pMapK_eq, pFlatMapK_eq, pRangeK_eq, pNthK_eq]
+
+omit [Params] in
+theorem pRunAK_eq (prof : List (Nat × Nat × List Nat)) (pj : Nat) (b : List (Option Nat)) (st : List Nat × Nat) :
+    pRunAK prof pj b st = pRunA prof pj b st := by
+  induction b generalizing st with
+  | nil => rfl
+  | cons it r ih =>
+    show pRunAK prof pj r (pStepAK prof pj it st) = pRunA prof pj r (pStepA prof pj it st)
+    rw [ih, pStepAK_eq]
+
+omit [Params] in
+theorem pBrAK_eq (prof : List (Nat × Nat × List Nat)) (m p : Nat) (rs : List Nat) :
+    pBrAK prof m p rs = pBrA prof m p rs := by
+  funext b
+  simp only [pBrAK, pBrA, pAllK_eq, pMemK_eq, pRunAK_eq]
+
+omit [Params] in
+theorem pChkAK_eq (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat)) :
+    pChkAK B prof = pChkA B prof := by
+  simp only [pChkAK, pChkA, pBrAK_eq, pAllLtK_eq, pAllK_eq, pNthK_eq]
+
+omit [Params] in
+theorem pWalkK_eq (ok : Nat → Nat → Bool) (b ls : List (Option Nat)) : pWalkK ok b ls = pWalk ok b ls := by
+  induction b generalizing ls with
+  | nil => cases ls <;> rfl
+  | cons it r ih =>
+    cases it with
+    | none =>
+      show Option.rec (motive := fun _ => Option (Nat × Option Nat)) none (fun dh => some (dh.1 + 1, dh.2)) (pWalkK ok r ls) = _
+      rw [ih]
+      simp only [pWalk]
+      cases pWalk ok r ls <;> rfl
+    | some q =>
+      cases ls with
+      | nil => rfl
+      | cons l ls' =>
+        cases l with
+        | none =>
+          show Option.rec (motive := fun _ => Option (Nat × Option Nat)) none (fun dh => Option.rec (motive := fun _ => Option (Nat × Option Nat)) (some (dh.1, some q)) (fun _ => none) dh.2)
+            (pWalkK ok r ls') = _
+          rw [ih]
+          simp only [pWalk]
+          rcases pWalk ok r ls' with _ | ⟨d, _ | x⟩ <;> rfl
+        | some c =>
+          show Bool.rec (motive := fun _ => Option (Nat × Option Nat)) none (Option.rec (motive := fun _ => Option (Nat × Option Nat)) none (fun dh => some (dh.1 + c, dh.2)) (pWalkK ok r ls'))
+            (ok q c) = _
+          rw [ih]
+          simp only [pWalk]
+          cases ok q c <;> cases pWalk ok r ls' <;> rfl
+
+omit [Params] in
+theorem pChkCK_eq (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat)) (rk : List Nat)
+    (N : Nat) (sps : List Nat)
+    (cert : List (List (Nat × Nat × List (Option Nat)) × List (Nat × Nat × Nat × List (Option Nat)))) :
+    pChkCK B prof rk N sps cert = pChkC B prof rk N sps cert := by
+  have hs : ∀ R j n, pSmallOkK B prof rk R j n = pSmallOk B prof rk R j n := by
+    intro R j n
+    funext e
+    simp only [pSmallOkK, pSmallOk, pLenK_eq, pNthK_eq, inSpK_eq, pWalkK_eq]
+    rcases pWalk _ _ _ with _ | ⟨d, _ | x⟩ <;> rfl
+  have hb : ∀ R j sp, pBigOkK B prof rk R N j sp = pBigOk B prof rk R N j sp := by
+    intro R j sp
+    funext e
+    simp only [pBigOkK, pBigOk, pLenK_eq, pNthK_eq, inSpK_eq, pWalkK_eq, pAllLtK_eq, pMemK_eq]
+    rcases pWalk _ _ _ with _ | ⟨d, _ | x⟩ <;> rfl
+  simp only [pChkCK, pChkC, pLenK_eq, pNthK_eq, pAllLtK_eq, pAnyK_eq, pMemK_eq, inSpK_eq, hs, hb]
+
+omit [Params] in
+theorem pMem {α : Type} (l : List α) (i : Nat) (d : α) (hi : Nat.blt i (pLenK l) = true) : pNthK l i d ∈ l := by
+  rw [Nat.blt_eq, pLenK_eq] at hi
+  rw [pNthK_getD, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi, Option.getD_some]
+  exact List.getElem_mem hi
+
+def pAllIdx (P : Nat → Prop) : Nat → Nat → Prop
+  | _, 0 => True
+  | i, n + 1 => P i ∧ pAllIdx P (i + 1) n
+
+omit [Params] in
+theorem pAllIdx_lt (P : Nat → Prop) : ∀ i n, pAllIdx P i n → ∀ j, i ≤ j → j < i + n → P j
+  | _, 0, _, _, h1, h2 => absurd h2 (by omega)
+  | i, n + 1, ⟨hp, hr⟩, j, h1, h2 => by
+    by_cases hj : j = i
+    · exact hj ▸ hp
+    · exact pAllIdx_lt P (i + 1) n hr j (by omega) (by omega)
+
+def pNone : Nat → Nat → HProp := fun _ _ => ⌈False⌉
+
+theorem pG_conc (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (Ms : List (Nat → Nat → HProp))
+    (H : pAllIdx (fun j => ∀ b ∈ pNthK B j [], ∀ (f : Nat → Nat) (x y : Nat),
+      pChain C (fun j x y => (pNthK Ms j pNone) x y) f b 0 x y ==> (pNthK Ms j pNone) x y) 0 (pLenK B))
+    (j x y : Nat) : pG C B (j, x, y) ==> (pNthK Ms j pNone) x y := by
+  refine pG_induct C B (fun a => (pNthK Ms a.1 pNone) a.2.1 a.2.2) ?_ (j, x, y)
+  intro c h ⟨b, hb, f, hh⟩
+  have hi : c.1 < B.length := by
+    by_contra hc
+    rw [pNthK_getD, List.getD_eq_getElem?_getD, List.getElem?_eq_none (Nat.le_of_not_lt hc)] at hb
+    cases hb
+  exact pAllIdx_lt _ 0 (pLenK B) H c.1 (Nat.zero_le _) (by rw [pLenK_eq]; omega) b hb f c.2.1 c.2.2 h hh
+
+theorem pEqSymm (a b : Nat) : (⌈a = b⌉ : HProp) ==> ⌈b = a⌉ := by
+  intro h hh
+  obtain ⟨he, hh⟩ := HProp.hpure_elim_hempty hh
+  exact HProp.hpure_intro_hempty hh he.symm
+
+theorem pAbsPhi (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat))
+    (hA : pChkAK B prof = true) (j m p : Nat) (rs : List Nat) (hpr : pNthK prof j pDflt = (m, p, rs)) (x y : Nat) :
+    pG C B (j, x, y) ==> ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈phiI m p rs (k : Int)⌉ := by
+  rw [pChkAK_eq] at hA
+  rw [pNthK_getD] at hpr
+  refine HProp.himpl_trans (pAbs C B j x y) ?_
+  intro h hh
+  obtain ⟨k, n, hw, hk⟩ := pKN_elim hh
+  have hs := pChkA_sound B prof hA j k hk
+  simp only [pSet, hpr] at hs
+  exact pKN_intro k n hw (phiI_of_inS hs)
+
+theorem pConcPhi (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat))
+    (rk : List Nat) (N : Nat) (sps : List Nat)
+    (cert : List (List (Nat × Nat × List (Option Nat)) × List (Nat × Nat × Nat × List (Option Nat))))
+    (hC : pChkCK B prof rk N sps cert = true) (j m p : Nat) (rs : List Nat) (hj : Nat.blt j (pLenK B) = true)
+    (hpr : pNthK prof j pDflt = (m, p, rs)) (k : Nat) (n : Int) (x y : Nat) (hk : phiI m p rs (k : Int)) :
+    wseg (pCell C) k n x y ==> pG C B (j, x, y) := by
+  rw [pChkCK_eq] at hC
+  rw [pNthK_getD] at hpr
+  rw [Nat.blt_eq, pLenK_eq] at hj
+  have hc' := hC
+  simp only [pChkC, pNth_eq, pMemB_eq, pblt, pbeq, List.all_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hc'
+  obtain ⟨⟨⟨⟨⟨⟨_, _⟩, h1⟩, _⟩, _⟩, _⟩, _⟩ := hc' j (List.mem_range.mpr hj)
+  rw [hpr] at h1
+  have hin : inS m p rs k = true := inS_of_phiI (fun hp1 => by
+    subst hp1
+    simpa using h1) hk
+  have hin' : inSp prof j k = true := by simp only [inSp, pNth_eq, hpr]; exact hin
+  exact pConc C B j k (pChkC_sound B prof rk N sps cert hC _ j k rfl hj hin') n x y
+
+theorem pDrop (P : Prop) : (⌈P⌉ : HProp) ==> emp := by
+  intro h hh
+  exact (HProp.hpure_elim_hempty hh).2
+
+theorem pDup (P : Prop) : (⌈P⌉ : HProp) ==> ⌈P⌉ ✶ ⌈P⌉ := by
+  intro h hh
+  obtain ⟨hp, he⟩ := HProp.hpure_elim_hempty hh
+  exact (HProp.hstar_hpure_l P _ h).2 ⟨hp, HProp.hpure_intro_hempty he hp⟩
+
+theorem pDupNe (a b : Nat) : (⌈a ≠ b⌉ : HProp) ==> ⌈a ≠ b⌉ ✶ ⌈b ≠ a⌉ := by
+  intro h hh
+  obtain ⟨hp, he⟩ := HProp.hpure_elim_hempty hh
+  exact (HProp.hstar_hpure_l _ _ h).2 ⟨hp, HProp.hpure_intro_hempty he (Ne.symm hp)⟩
+
+theorem pAbsLe (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat))
+    (hA : pChkAK B prof = true) (j m : Nat) (rs : List Nat) (hpr : pNthK prof j pDflt = (m, 1, rs)) (x y : Nat) :
+    pG C B (j, x, y) ==> ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈m ≤ k⌉ := by
+  rw [pChkAK_eq] at hA
+  rw [pNthK_getD] at hpr
+  refine HProp.himpl_trans (pAbs C B j x y) ?_
+  intro h hh
+  obtain ⟨k, n, hw, hk⟩ := pKN_elim hh
+  have hs := pChkA_sound B prof hA j k hk
+  simp only [pSet, hpr, inS, pble, Bool.and_eq_true, decide_eq_true_eq] at hs
+  exact pKN_intro k n hw hs.1
+
+theorem pConcLe (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat))
+    (rk : List Nat) (N : Nat) (sps : List Nat)
+    (cert : List (List (Nat × Nat × List (Option Nat)) × List (Nat × Nat × Nat × List (Option Nat))))
+    (hC : pChkCK B prof rk N sps cert = true) (j m : Nat) (rs : List Nat) (hj : Nat.blt j (pLenK B) = true)
+    (hpr : pNthK prof j pDflt = (m, 1, rs)) (k : Nat) (n : Int) (x y : Nat) (hk : m ≤ k) :
+    wseg (pCell C) k n x y ==> pG C B (j, x, y) :=
+  pConcPhi C B prof rk N sps cert hC j m 1 rs hj hpr k n x y (Int.ofNat_le.mpr hk)
+
 end Sep
