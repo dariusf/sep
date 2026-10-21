@@ -1768,6 +1768,7 @@ abbrev CmHeap := Array (Int × Int)
 structure CmSt where
   cells : Array (Expr × Expr) := #[]
   pures : Array Expr := #[]
+  chunks : Array Expr := #[]
   deriving Inhabited
 
 def cmFresh : IO Expr := do
@@ -1847,13 +1848,13 @@ partial def cmDisjs (e : Expr) : Array Expr :=
   else #[e]
 
 partial def cmGen (tbl : Array (Name × Nat × Expr)) (lv depth : Nat) (e : Expr)
-    (sts : Array CmSt) : MetaM (Option (Array CmSt)) := do
+    (sts : Array CmSt) (fold : Bool := false) : MetaM (Option (Array CmSt)) := do
   if sts.isEmpty then return some sts
   if depth > 40 then return none
   match e.getAppFnArgs with
   | (``HProp.hstar, #[_, a, b]) =>
-      match ← cmGen tbl lv depth a sts with
-      | some s1 => cmGen tbl lv depth b s1
+      match ← cmGen tbl lv depth a sts fold with
+      | some s1 => cmGen tbl lv depth b s1 fold
       | none => return none
   | (``HProp.hempty, #[_]) => return some sts
   | (``HProp.hpure, #[_, p]) => return some (sts.map fun s => { s with pures := s.pures.push p })
@@ -1861,16 +1862,17 @@ partial def cmGen (tbl : Array (Name × Nat × Expr)) (lv depth : Nat) (e : Expr
       return some (sts.map fun s => { s with cells := s.cells.push (a, v) })
   | (``HProp.hexists, #[_, _, j]) =>
       match j with
-      | .lam _ _ b _ => cmGen tbl lv depth (b.instantiate1 (← cmFresh)) sts
+      | .lam _ _ b _ => cmGen tbl lv depth (b.instantiate1 (← cmFresh)) sts fold
       | _ => return none
   | _ =>
     if cmOr e then
       let mut out := #[]
       for d in cmDisjs e do
-        match ← cmGen tbl lv (depth + 1) d sts with
+        match ← cmGen tbl lv (depth + 1) d sts fold with
         | some s => out := out ++ s
         | none => return none
       return some (out.extract 0 48)
+    if fold then return some (sts.map fun s => { s with chunks := s.chunks.push e })
     match cmUnfold tbl e with
     | none => return none
     | some body =>
@@ -1889,6 +1891,251 @@ partial def cmGen (tbl : Array (Name × Nat × Expr)) (lv depth : Nat) (e : Expr
         | some s => out := out ++ s
         | none => return none
       return some (out.extract 0 48)
+
+structure CmLin where
+  m : Std.HashMap FVarId Int := {}
+  k : Int := 0
+  deriving Inhabited
+
+def CmLin.add (a b : CmLin) : CmLin :=
+  { m := b.m.fold (fun m f c => let v := m.getD f 0 + c; if v == 0 then m.erase f else m.insert f v) a.m,
+    k := a.k + b.k }
+
+def CmLin.scale (c : Int) (a : CmLin) : CmLin :=
+  if c == 0 then {} else { m := a.m.fold (fun m f v => m.insert f (c * v)) {}, k := c * a.k }
+
+def CmLin.subst (a : CmLin) (f : FVarId) (r : CmLin) : CmLin :=
+  match a.m[f]? with
+  | some c => ({ a with m := a.m.erase f } : CmLin).add (r.scale c)
+  | none => a
+
+partial def cmLinE (e : Expr) : Option CmLin :=
+  match e with
+  | .fvar f => some { m := ({} : Std.HashMap FVarId Int).insert f 1 }
+  | .lit (.natVal n) => some { k := n }
+  | .mdata _ b => cmLinE b
+  | _ =>
+    match e.getAppFnArgs with
+    | (``OfNat.ofNat, #[_, n, _]) => cmLinE n
+    | (``Nat.cast, #[_, _, a]) => cmLinE a
+    | (``NatCast.natCast, #[_, _, a]) => cmLinE a
+    | (``Int.ofNat, #[a]) => cmLinE a
+    | (``HAdd.hAdd, #[_, _, _, _, a, b]) => do return (← cmLinE a).add (← cmLinE b)
+    | (``HSub.hSub, #[t, _, _, _, a, b]) =>
+        if t.isConstOf ``Int then do return (← cmLinE a).add ((← cmLinE b).scale (-1)) else none
+    | (``Neg.neg, #[t, _, a]) => if t.isConstOf ``Int then (cmLinE a).map (·.scale (-1)) else none
+    | _ => none
+
+partial def cmLinEqs (p : Expr) (acc : Array CmLin) : Array CmLin :=
+  match p.getAppFnArgs with
+  | (``And, #[a, b]) => cmLinEqs b (cmLinEqs a acc)
+  | (``Eq, #[t, a, b]) =>
+    if t.isConstOf ``Int || t.isConstOf ``Nat then
+      match cmLinE a, cmLinE b with
+      | some u, some v => acc.push (u.add (v.scale (-1)))
+      | _, _ => acc
+    else acc
+  | _ => acc
+
+def cmElim (eqs : Array CmLin) (isSlot : FVarId → Bool) : Array (FVarId × CmLin) := Id.run do
+  let mut eqs := eqs
+  let mut sol : Array (FVarId × CmLin) := #[]
+  for pass in [0 : 2] do
+    let mut changed := true
+    while changed do
+      changed := false
+      for i in [0 : eqs.size] do
+        let e := eqs[i]!
+        let pick := e.m.toList.find? (fun (f, c) => (c == 1 || c == -1) && (pass == 1 || !isSlot f))
+        if let some (f, c) := pick then
+          let r := ({ e with m := e.m.erase f } : CmLin).scale (-c)
+          eqs := (eqs.eraseIdx! i).map (·.subst f r)
+          sol := (sol.map fun (g, s) => (g, s.subst f r)).push (f, r)
+          changed := true
+          break
+  return sol
+
+partial def cmSzOpen (e : Expr) (n : Nat) (acc : Array Expr) : Array Expr × Nat :=
+  match e.getAppFnArgs with
+  | (``HProp.hstar, #[_, a, b]) =>
+    let (acc, n) := cmSzOpen a n acc
+    cmSzOpen b n acc
+  | (``HProp.hexists, #[_, _, .lam _ _ b _]) =>
+    cmSzOpen (b.instantiate1 (mkFVar ⟨.num `_xcmsz n⟩)) (n + 1) acc
+  | _ => (acc.push e, n)
+
+def cmSzLin (known : Array (Name × Option (Nat × Int × Int))) (self : Name) (a : Nat) (r : Expr) :
+    Option (Nat × Int × Int) := Id.run do
+  let slots := (List.range a).toArray.map (fun i => (⟨.num `_xcmslot i⟩ : FVarId))
+  let isSlot := fun (f : FVarId) => slots.contains f
+  let brs := cmDisjs r
+  for j in [0 : a] do
+    let mut eqns : Array (Int × Int × Int) := #[]
+    let mut ok := true
+    for br in brs do
+      let (its, _) := cmSzOpen br 0 #[]
+      let mut eqs : Array CmLin := #[]
+      let mut cells : Int := 0
+      let mut calls : Array (Option (Nat × Int × Int) × Array Expr) := #[]
+      for it in its do
+        match it.getAppFnArgs with
+        | (``HProp.hpure, #[_, p]) => eqs := cmLinEqs p eqs
+        | (``HProp.hsingle, _) => cells := cells + 1
+        | (``HProp.hempty, _) => pure ()
+        | _ =>
+          match it.getAppFn.constName? with
+          | some nm =>
+            if nm == self then calls := calls.push (none, it.getAppArgs)
+            else match known.find? (·.1 == nm) with
+              | some (_, some l) => calls := calls.push (some l, it.getAppArgs)
+              | _ => ok := false
+          | none => ok := false
+      unless ok do break
+      let sol := cmElim eqs isSlot
+      let ap := fun (v : CmLin) => sol.foldl (fun acc (f, s) => acc.subst f s) v
+      let mut sym : Std.HashMap FVarId (Int × Int × Int) := {}
+      let mut cst : Int × Int × Int := (0, 0, cells)
+      for (sm, args) in calls do
+        let jj := match sm with
+          | some (jq, _, _) => jq
+          | none => j
+        let some t0 := args[jj]? >>= cmLinE | ok := false; break
+        let t := ap t0
+        match sm with
+        | none =>
+          for (f, v) in t.m.toList do
+            let (p1, p2, p3) := sym.getD f (0, 0, 0)
+            sym := sym.insert f (p1 + v, p2, p3)
+          cst := (cst.1 + t.k, cst.2.1 + 1, cst.2.2)
+        | some (_, cq, dq) =>
+          for (f, v) in t.m.toList do
+            let (p1, p2, p3) := sym.getD f (0, 0, 0)
+            sym := sym.insert f (p1, p2, p3 + cq * v)
+          cst := (cst.1, cst.2.1, cst.2.2 + cq * t.k + dq)
+      unless ok do break
+      let tj := ap { m := ({} : Std.HashMap FVarId Int).insert slots[j]! 1 }
+      for (f, v) in tj.m.toList do
+        let (p1, p2, p3) := sym.getD f (0, 0, 0)
+        sym := sym.insert f (p1 - v, p2, p3)
+      cst := (cst.1 - tj.k, cst.2.1 - 1, cst.2.2)
+      eqns := eqns.push cst
+      for (_, q) in sym.toList do
+        eqns := eqns.push q
+    unless ok do continue
+    let some (a1, b1, g1) := eqns.find? (fun (p, q, _) => p != 0 || q != 0) | continue
+    let some (a2, b2, g2) := eqns.find? (fun (p, q, _) => a1 * q - p * b1 != 0) | continue
+    let det := a1 * b2 - a2 * b1
+    let cn := b1 * g2 - b2 * g1
+    let dn := a2 * g1 - a1 * g2
+    if cn % det != 0 || dn % det != 0 then continue
+    let c := cn / det
+    let d := dn / det
+    if eqns.all (fun (p, q, g) => p * c + q * d + g == 0) then return some (j, c, d)
+  return none
+
+structure CmSz where
+  minC : Nat
+  lin : Option (Nat × Int × Int)
+
+initialize cmSzCache : IO.Ref (Array (Name × CmSz)) ← IO.mkRef #[]
+
+partial def cmMinE (tbl : Array (Name × Nat)) (e : Expr) : Nat :=
+  match e.getAppFnArgs with
+  | (``HProp.hstar, #[_, a, b]) => cmMinE tbl a + cmMinE tbl b
+  | (``HProp.hsingle, #[_, _, _]) => 1
+  | (``HProp.hexists, #[_, _, .lam _ _ b _]) => cmMinE tbl b
+  | _ =>
+    if cmOr e then (cmDisjs e).foldl (fun m d => min m (cmMinE tbl d)) (cmMinE tbl (cmDisjs e)[0]!)
+    else match e.getAppFn.constName? with
+      | some nm => ((tbl.find? (·.1 == nm)).map (·.2)).getD 0
+      | none => 0
+
+def cmSzTable : MetaM (Array (Name × CmSz)) := do
+  let tbl ← cmTable
+  let c ← cmSzCache.get
+  if tbl.all (fun (n, _, _) => c.any (·.1 == n)) then return c
+  let bodies := tbl.map fun (n, a, r) =>
+    (n, a, r.instantiateRev ((List.range a).toArray.map (fun i => mkFVar ⟨.num `_xcmslot i⟩)))
+  let inf := 1000000
+  let mut mins : Array (Name × Nat) := tbl.map (fun (n, _, _) => (n, inf))
+  for _ in [0 : tbl.size + 1] do
+    mins := bodies.map (fun (n, _, r) => (n, min inf (cmMinE mins r)))
+  let mut lins : Array (Name × Option (Nat × Int × Int)) := tbl.map (fun (n, _, _) => (n, none))
+  for _ in [0 : tbl.size] do
+    for i in [0 : bodies.size] do
+      if lins[i]!.2.isSome then continue
+      let (n, a, r) := bodies[i]!
+      lins := lins.set! i (n, cmSzLin lins n a r)
+  let res := (List.range tbl.size).toArray.map fun i =>
+    (tbl[i]!.1, ({ minC := if mins[i]!.2 ≥ inf then 0 else mins[i]!.2, lin := lins[i]!.2 } : CmSz))
+  cmSzCache.set res
+  return res
+
+def cmDetermine (eqs : Array CmLin) : Std.HashMap FVarId Int := Id.run do
+  let mut env : Std.HashMap FVarId Int := {}
+  let mut changed := true
+  while changed do
+    changed := false
+    for e in eqs do
+      let unk := e.m.toList.filter (fun (f, _) => !env.contains f)
+      if let [(f, c)] := unk then
+        if c == 1 || c == -1 then
+          let rest := e.m.fold (fun acc g v => if g == f then acc else acc + v * env.getD g 0) e.k
+          env := env.insert f (-c * rest)
+          changed := true
+  return env
+
+def cmSzAtom (szs : Array (Name × CmSz)) (val : Expr → Option Int) (e : Expr) : Nat × Option Nat :=
+  match e.getAppFn.constName? >>= fun nm => szs.find? (·.1 == nm) with
+  | some (_, s) =>
+    let ex := match s.lin with
+      | some (j, c, d) => (e.getAppArgs[j]? >>= val).bind fun v =>
+          let z := c * v + d
+          if z ≥ 0 then some z.toNat else none
+      | none => none
+    match ex with
+    | some z => (z, some z)
+    | none => (s.minC, none)
+  | none => (0, none)
+
+partial def cmSzE (szs : Array (Name × CmSz)) (val : Expr → Option Int) (e : Expr) : Nat × Option Nat :=
+  match e.getAppFnArgs with
+  | (``HProp.hstar, #[_, a, b]) =>
+    let (l1, h1) := cmSzE szs val a
+    let (l2, h2) := cmSzE szs val b
+    (l1 + l2, do return (← h1) + (← h2))
+  | (``HProp.hsingle, _) => (1, some 1)
+  | (``HProp.hempty, _) => (0, some 0)
+  | (``HProp.hpure, _) => (0, some 0)
+  | (``HProp.hexists, #[_, _, .lam _ _ b _]) => cmSzE szs val (b.instantiate1 (mkFVar ⟨.num `_xcmszx 0⟩))
+  | _ =>
+    if cmOr e then
+      let rs := (cmDisjs e).map (cmSzE szs val)
+      (rs.foldl (fun m r => min m r.1) rs[0]!.1,
+        rs.foldl (fun acc r => do return max (← acc) (← r.2)) (some 0))
+    else cmSzAtom szs val e
+
+def cmFoot (szs : Array (Name × CmSz)) (facts : Array Expr) (st : CmSt) (rhs : Expr) : Bool := Id.run do
+  let env := cmDetermine ((st.pures ++ facts).foldl (fun acc p => cmLinEqs p acc) #[])
+  let val := fun (e : Expr) => (cmLinE e).bind fun l =>
+    if l.m.toList.all (fun (f, _) => env.contains f) then
+      some (l.m.fold (fun acc f c => acc + c * env.getD f 0) l.k)
+    else none
+  let ra := (Sep.Xsimpl.parseHstar rhs).filterMap (fun a =>
+    if a.getAppFn.constName? == some ``HProp.hsingle then a.getAppArgs[1]? else none)
+  if (List.range ra.length).any (fun i => (ra.drop (i + 1)).contains ra[i]!) then return true
+  let mut ll := st.cells.size
+  let mut lh : Option Nat := some st.cells.size
+  for ch in st.chunks do
+    let (l, h) := cmSzAtom szs val ch
+    ll := ll + l
+    lh := do return (← lh) + (← h)
+  let (rl, rh) := cmSzE szs val rhs
+  if let some h := lh then
+    if rl > h then return true
+  if let some h := rh then
+    if ll > h then return true
+  return false
 
 partial def cmFVars (e : Expr) (acc : Array FVarId) : Array FVarId :=
   match e with
@@ -3434,15 +3681,31 @@ def normGoals : TacticM Unit := do
   setGoals acc
   evalTactic (← `(tactic| xsearch_pure))
 
-def cmFind : TacticM Bool := withMainContext do
+def cmFact (t : Expr) : Bool :=
+  match t.getAppFnArgs with
+  | (``Eq, #[ty, _, _]) | (``Ne, #[ty, _, _]) => ty.isConstOf ``Nat || ty.isConstOf ``Int
+  | (``LE.le, _) | (``LT.lt, _) | (``GE.ge, _) | (``GT.gt, _) | (``Not, _) | (``And, _) | (``Or, _)
+  | (``False, _) => true
+  | _ => t.isForall && !t.bindingBody!.hasLooseBVars
+
+def cmPureModel (facts : Array Expr) : MetaM Bool := do
+  let mut vars : Array FVarId := #[]
+  for f in facts.foldl (fun acc p => cmFVars p acc) #[] do
+    let ty ← instantiateMVars (← f.getType)
+    if ty.isConstOf ``Nat || ty.isConstOf ``Int then vars := vars.push f
+  let st : CmSt := { pures := facts }
+  let some pre := cmPrep vars st (cmBase vars st) | return false
+  return (cmSolveM pre pre.base.size none #[]).isSome
+
+def cmFind (unfold : Bool := true) : TacticM Bool := withMainContext do
   let t ← instantiateMVars (← (← getMainGoal).getType)
   let some (lhs, rhs) := entailHead? t | return false
   unless t.getAppFn.constName? == some ``HProp.himpl do return false
   if t.hasExprMVar then return false
-  unless ← isDefEq (mkApp (mkConst ``Params.val) t.getAppArgs[0]!) (mkConst ``Int) do
-    return false
   let mut vars : Array FVarId := #[]
   let mut ptrs : Array Expr := #[]
+  let mut facts : Array Expr := #[]
+  let mut closed := true
   for d in ← getLCtx do
     if d.isImplementationDetail then continue
     let ty ← instantiateMVars d.type
@@ -3450,8 +3713,17 @@ def cmFind : TacticM Bool := withMainContext do
       vars := vars.push d.fvarId
       ptrs := ptrs.push d.toExpr
     else if ty.isConstOf ``Int then vars := vars.push d.fvarId
-    else return false
+    else
+      closed := false
+      if ← isProp ty then facts := facts.push ty
   let tbl ← cmTable
+  let szs ← cmSzTable
+  for st in (← cmGen tbl 0 0 lhs #[{}] true).getD #[] do
+    if cmFoot szs facts st rhs then
+      if ← cmPureModel (st.pures ++ facts.filter cmFact) then return true
+  unless unfold && closed do return false
+  unless ← isDefEq (mkApp (mkConst ``Params.val) t.getAppArgs[0]!) (mkConst ``Int) do
+    return false
   let off := min 8 (tbl.foldl (fun a (_, _, r) => cmMaxOff r a) (cmMaxOff t 0))
   let items := cmItems lhs
   let pidx := (List.range items.size).toArray.filter (fun i => (cmUnfold tbl items[i]!).isSome)
@@ -3549,22 +3821,6 @@ def cmNeg (p : Expr) : MetaM (Option (Array Expr)) := do
   | (``GT.gt, #[t, _, a, b]) => if num t then return some #[← mkAppM ``LE.le #[a, b]] else return none
   | _ => return none
 
-def cmFact (t : Expr) : Bool :=
-  match t.getAppFnArgs with
-  | (``Eq, #[ty, _, _]) | (``Ne, #[ty, _, _]) => ty.isConstOf ``Nat || ty.isConstOf ``Int
-  | (``LE.le, _) | (``LT.lt, _) | (``GE.ge, _) | (``GT.gt, _) | (``Not, _) | (``And, _) | (``Or, _)
-  | (``False, _) => true
-  | _ => t.isForall && !t.bindingBody!.hasLooseBVars
-
-def cmPureModel (facts : Array Expr) : MetaM Bool := do
-  let mut vars : Array FVarId := #[]
-  for f in facts.foldl (fun acc p => cmFVars p acc) #[] do
-    let ty ← instantiateMVars (← f.getType)
-    if ty.isConstOf ``Nat || ty.isConstOf ``Int then vars := vars.push f
-  let st : CmSt := { pures := facts }
-  let some pre := cmPrep vars st (cmBase vars st) | return false
-  return (cmSolveM pre pre.base.size none #[]).isSome
-
 partial def cmPureRefuted (p : Expr) : MetaM Bool := do
   let p ← instantiateMVars p
   if let some (a, b) := p.and? then return (← cmPureRefuted a) || (← cmPureRefuted b)
@@ -3597,8 +3853,6 @@ def stmtRefuted (xs : Array Expr) (lhs rhs : Expr) : TacticM Bool := do
   s.restore
   return r
 
-initialize cmPending : IO.Ref Bool ← IO.mkRef false
-
 def goalRefuted : TacticM Bool := withMainContext do
   let t ← instantiateMVars (← (← getMainGoal).getType)
   let some (lhs, rhs) := entailHead? t | return false
@@ -3619,69 +3873,6 @@ def goalRefuted : TacticM Bool := withMainContext do
   for p in ps do
     L ← mkAppM ``HProp.hstar #[← mkAppOptM ``HProp.hpure #[inst, p], L]
   stmtRefuted (vs.filter fun v => L.containsFVar v.fvarId! || rhs.containsFVar v.fvarId!) L rhs
-
-def cmCheckPending : TacticM Unit := do
-  if ← cmPending.get then
-    cmPending.set false
-    if ← goalRefuted then throwError "xsearch: countermodel"
-
-initialize minCellCache : IO.Ref (Array (Name × Nat)) ← IO.mkRef #[]
-
-partial def minCellsE (tbl : Array (Name × Nat)) (e : Expr) : Nat :=
-  match e.getAppFnArgs with
-  | (``HProp.hstar, #[_, a, b]) => minCellsE tbl a + minCellsE tbl b
-  | (``HProp.hsingle, #[_, _, _]) => 1
-  | (``HProp.hexists, #[_, _, .lam _ _ b _]) => minCellsE tbl b
-  | _ =>
-    if (isHorConst e || e.getAppFn.constName? == some ``hdisj) && e.getAppNumArgs ≥ 2 then
-      let xs := e.getAppArgs
-      min (minCellsE tbl xs[xs.size - 2]!) (minCellsE tbl xs[xs.size - 1]!)
-    else match e.getAppFn.constName? with
-      | some nm => ((tbl.find? (·.1 == nm)).map (·.2)).getD 0
-      | none => 0
-
-def minCellsTbl : MetaM (Array (Name × Nat)) := do
-  let entries := xsearchUnfoldExt.getState (← getEnv)
-  let c ← minCellCache.get
-  if entries.all (fun e => c.any (·.1 == e.headFn)) then return c
-  let mut bodies : Array (Name × Expr) := #[]
-  for e in entries do
-    if bodies.any (·.1 == e.headFn) then continue
-    let mut b := (← getConstInfo e.lemmaName).type
-    while b.isForall do b := b.bindingBody!
-    match b.eq? with
-    | some (_, l, r) =>
-        if l.getAppFn.constName? == some e.headFn then bodies := bodies.push (e.headFn, r)
-        else bodies := bodies.push (e.headFn, mkConst `none)
-    | none => bodies := bodies.push (e.headFn, mkConst `none)
-  let inf := 1000000
-  let mut tbl := bodies.map (fun (n, _) => (n, inf))
-  for _ in [0 : bodies.size + 1] do
-    tbl := bodies.map (fun (n, r) => (n, min inf (minCellsE tbl r)))
-  let res := tbl.map (fun (n, v) => (n, if v ≥ inf then 0 else v))
-  minCellCache.set (res ++ c.filter (fun e => !res.any (·.1 == e.1)))
-  minCellCache.get
-
-def exactCells? (atoms : List Expr) : Option Nat :=
-  atoms.foldl (fun acc a => acc.bind fun n =>
-    match a.getAppFn.constName? with
-    | some ``HProp.hsingle => some (n + 1)
-    | some ``HProp.hpure => some n
-    | some ``HProp.hempty => some n
-    | _ => none) (some 0)
-
-def sizeGap (lhs rhs : Expr) : MetaM Bool := do
-  let el := exactCells? (Sep.Xsimpl.parseHstar lhs)
-  let er := exactCells? (Sep.Xsimpl.parseHstar rhs)
-  let tbl ← minCellsTbl
-  let ra := (Sep.Xsimpl.parseHstar rhs).filterMap (fun a =>
-    if a.getAppFn.constName? == some ``HProp.hsingle then a.getAppArgs[1]? else none)
-  if (List.range ra.length).any (fun i => (ra.drop (i + 1)).contains ra[i]!) then return true
-  if let some n := el then
-    if minCellsE tbl rhs > n then return true
-  if let some m := er then
-    if minCellsE tbl lhs > m then return true
-  return false
 
 partial def indReflConj (P : Expr) : MetaM Expr := do
   match P.getAppFnArgs with
@@ -3849,8 +4040,7 @@ partial def branchGoal (fuel : Nat) : TacticM Unit := do
   let g ← getMainGoal
   let t ← instantiateMVars (← g.getType)
   let some (lhs, rhs) := entailHead? t | throwError "xsearch: not an entailment"
-  if ← sizeGap lhs rhs then throwError "xsearch: size gap"
-  cmCheckPending
+  if ← cmFind false then throwError "xsearch: countermodel"
   let entries := xsearchUnfoldExt.getState (← getEnv)
   let heads := entries.map (·.headFn)
   let mut alts : Array (Bool × TacticM Unit) := #[]
@@ -3956,14 +4146,11 @@ partial def branchGoal (fuel : Nat) : TacticM Unit := do
     try
       searchNodes.modify (fun n => n - 1)
       alt
-      cmPending.set sliced
       searchSolve (fuel - 1)
-      cmPending.set false
       if isF then forcedDepth.modify (fun k => k - 1)
       if sliced then searchDeadline.set oldDl
       return
     catch _ =>
-      cmPending.set false
       if isF then forcedDepth.modify (fun k => k - 1)
       if sliced then searchDeadline.set oldDl
       s.restore
@@ -9513,10 +9700,9 @@ elab "xsearch_start" : tactic => do
   forcedDepth.set 0
   lemBuilding.set false
   invCache.set #[]
-  cmPending.set false
   flatPredCache.set #[]
   invDCache.set #[]
-  minCellCache.set #[]
+  cmSzCache.set #[]
   recPredCache.set #[]
   wgPCache.set #[]
   wgPGCache.set #[]
@@ -9532,34 +9718,6 @@ elab "xsearch_backtrack" : tactic => do
 elab "xsearch_cmodel" : tactic => do
   if ← (try cmFind catch _ => pure false) then
     throwError "xsearch: countermodel"
-
-def fastHopeless : TacticM Bool := withMainContext do
-  let entries := xsearchUnfoldExt.getState (← getEnv)
-  let allFns := entries.map (·.headFn)
-  let t ← instantiateMVars (← (← getMainGoal).getType)
-  if t.hasMVar then return false
-  let some (lhs, rhs) := entailHead? t | return false
-  let L0 := Sep.Xsimpl.parseHstar lhs
-  let R0 := Sep.Xsimpl.parseHstar rhs
-  if L0.length + R0.length < 8 then return false
-  unless (L0 ++ R0).all (fun e => match e.getAppFn.constName? with
-      | some n => allFns.contains n
-      | none => false) do return false
-  let mut L := L0
-  let mut R : List Expr := []
-  for r in R0 do
-    if L.contains r then L := L.erase r else R := R ++ [r]
-  if R.isEmpty || L.isEmpty then return false
-  for (mine, other) in [(L, R), (R, L)] do
-    for x in mine do
-      let some hd := x.getAppFn.constName? | return false
-      let (bh, sg) ← bodySig entries hd
-      unless bh do return false
-      if ← other.anyM (fun r => liftM (horPartner entries sg r)) then return false
-  return true
-
-elab "xsearch_fastgate" : tactic => do
-  if ← fastHopeless then throwError "xsearch: fast path hopeless"
 
 def hasPredAtom : TacticM Bool := withMainContext do
   let entries := xsearchUnfoldExt.getState (← getEnv)
@@ -9579,8 +9737,7 @@ elab_rules : tactic
 
 elab "xsearch_witness" : tactic => do
   witEnum (do evalTactic (← `(tactic| first
-    | (xsearch_fastgate
-       xsimpl_core_with xsearch_unfold_step
+    | (xsimpl_core_with xsearch_unfold_step
        all_goals (try xsimpl_clean)
        xsearch_pure
        done)
@@ -9646,8 +9803,7 @@ def witCaseTuples : TacticM (Array (Array Expr)) := withMainContext do
 
 def witCaseEngine : TacticM Unit := do
   evalTactic (← `(tactic| first
-    | (xsearch_fastgate
-       xsimpl_core_with xsearch_unfold_step
+    | (xsimpl_core_with xsearch_unfold_step
        all_goals (try xsimpl_clean)
        xsearch_pure
        done)
@@ -9723,8 +9879,7 @@ macro_rules
       xsearch_cmodel
       xsearch_start
       first
-      | (xsearch_fastgate
-         xsimpl_core_with xsearch_unfold_step
+      | (xsimpl_core_with xsearch_unfold_step
          all_goals (try xsimpl_clean)
          xsearch_pure
          done)
