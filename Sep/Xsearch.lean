@@ -4377,7 +4377,10 @@ def acPermImp (A B : Expr) : MetaM (Option Expr) := do
   let back := oe sT B (mkAppN (mkConst ``Eq.symm [1]) #[hty, B, sT, pt])
   return some (tr A sS B (oe A sS ps) (tr sS sT B pm back))
 
+initialize lemBuilding : IO.Ref Bool ← IO.mkRef false
+
 initialize wgLocHook : IO.Ref (Expr → Expr → TacticM (Option Expr)) ← IO.mkRef (fun _ _ => pure none)
+initialize pureHook : IO.Ref (Expr → TacticM Expr) ← IO.mkRef (fun _ => throwError "pure: no hook")
 initialize wgFarHook : IO.Ref (Expr → Expr → TacticM (Option Expr)) ← IO.mkRef (fun _ _ => pure none)
 
 def acNeFar (lhs a b : Expr) : TacticM (Option Expr) := do
@@ -4429,14 +4432,36 @@ def acNeCells (lhs a b : Expr) : TacticM (Option Expr) := do
       return some (← mkExpectedTypeHint pf (← mkAppM ``holdsP #[← mkAppM ``Ne #[a, b], lhs]))
   return none
 
-def arRwLhs (As : List Expr) (lem : Expr) : TacticM (Array Expr) := do
+def arRwLhs (As : List Expr) (lem0 : Expr) : TacticM (Array Expr) := do
   withMainContext do
     let g ← getMainGoal
     let t ← instantiateMVars (← g.getType)
     let some (lhs, rhs) := entailHead? t | throwError "ar: not an entailment"
     let inst := t.getAppArgs[0]!
-    let lty ← instantiateMVars (← inferType lem)
-    let some (lemL, lemR) := entailHead? lty | throwError "ar: lemma shape"
+    let lty ← instantiateMVars (← inferType lem0)
+    let some (lemL0, lemR) := entailHead? lty | throwError "ar: lemma shape"
+    let lemAtoms := (flatStar lemL0 #[]).filter (!·.isAppOf ``HProp.hpure)
+    let mut unmatched := As.toArray
+    let mut swaps : Array (Expr × Expr) := #[]
+    for q in lemAtoms do
+      if let some i := unmatched.idxOf? q then
+        unmatched := unmatched.eraseIdx! i
+      else
+        swaps := swaps.push (q, q)
+    let mut swapped : Array (Expr × Expr) := #[]
+    for (q, _) in swaps do
+      let mut hit : Option Nat := none
+      for i in [0 : unmatched.size] do
+        if unmatched[i]!.getAppFn == q.getAppFn && (← isDefEq unmatched[i]! q) then
+          hit := some i
+          break
+      if let some i := hit then
+        swapped := swapped.push (q, unmatched[i]!)
+        unmatched := unmatched.eraseIdx! i
+    let lemL := if swapped.isEmpty then lemL0 else
+      lemL0.replace (fun e => (swapped.find? (·.1 == e)).map (·.2))
+    let lem ← if swapped.isEmpty then pure lem0 else
+      mkExpectedTypeHint lem0 (mkApp3 (mkConst ``HProp.himpl) inst lemL lemR)
     let mut rest := flatStar lhs #[]
     for x in As do
       match rest.idxOf? x with
@@ -4481,7 +4506,7 @@ def arRwLhs (As : List Expr) (lem : Expr) : TacticM (Array Expr) := do
           | none => if P.ne?.isSome then pure none else
               match ← arNonneg P with
               | some h => pure (some h)
-              | none => try some <$> arOmega P catch _ => pure none
+              | none => try some <$> ((← pureHook.get) P) catch _ => pure none
         match hp with
         | some hp => pf := mkAppN (mkConst ``Sep.pure_l_intro) #[inst, P, lhs, base, hp, pf]
         | none =>
@@ -4512,7 +4537,8 @@ def arRwLhs (As : List Expr) (lem : Expr) : TacticM (Array Expr) := do
         drops := drops.push (mkAppN (mkConst ``star_pure_drop) #[inst, padded, q.appArg!])
         tops := tops.push padded
         padded := hs padded q
-      let some imp ← acPermImp base padded | return none
+      let some imp ← (if base == padded then pure (some (mkApp2 (mkConst ``HProp.himpl_refl) inst base))
+        else acPermImp base padded) | return none
       let mut fin := tr lhs base padded pf imp
       let mut cur := padded
       for i' in [0 : drops.size] do
@@ -4523,6 +4549,7 @@ def arRwLhs (As : List Expr) (lem : Expr) : TacticM (Array Expr) := do
     match fast with
     | some pf => m1.mvarId!.assign pf
     | none =>
+      if ← lemBuilding.get then throwError "ar: no direct rewrite"
       setGoals [m1.mvarId!]
       Sep.Xsimpl.xsimplDriver none
       cleanAll
@@ -4827,6 +4854,10 @@ def finishDirect : TacticM Bool := do
     let g ← getMainGoal
     let t ← instantiateMVars (← g.getType)
     let some (lhs, rhs') := entailHead? t | return false
+    if lhs == rhs' then
+      g.assign (mkApp2 (mkConst ``HProp.himpl_refl) inst rhs')
+      replaceMainGoal []
+      return true
     unless lhs.isAppOfArity ``HProp.hstar 3 && lhs.appFn!.appArg! == rhs' do return false
     let restE := lhs.appArg!
     let some h := puresEmpPf inst (if restE.isAppOf ``HProp.hempty then [] else (flatStar restE #[]).toList)
@@ -4835,39 +4866,6 @@ def finishDirect : TacticM Bool := do
     g.assign (mkAppN (mkConst ``star_drop_emp) #[inst, rhs', restE, h])
     replaceMainGoal []
     return true
-
-def wgMatchClose : TacticM Unit := do
-  if ← wgUnfoldHelpers then
-    let _ ← arOpenDeep
-  let ws ← arOpenGoal
-  withMainContext do
-    let t ← instantiateMVars (← (← getMainGoal).getType)
-    let some (lhs, rhs) := entailHead? t | throwError "dat: not an entailment"
-    let L := (flatStar lhs #[]).filter (!·.isAppOf ``HProp.hpure)
-    let R := (flatStar rhs #[]).filter (fun r => !r.isAppOf ``HProp.hpure && r.hasExprMVar)
-    unless ← (arAssign L R.toList #[]) do throwError "dat: match"
-    for _ in [0 : 2] do
-      for c in pureProps (← instantiateMVars rhs) #[] do
-        for cc in pureConjs c #[] do
-          if let some (_, a, b) := cc.eq? then
-            let mut work := #[(a, b)]
-            while !work.isEmpty do
-              let (a, b) := work.back!
-              work := work.pop
-              let a ← instantiateMVars a
-              let b ← instantiateMVars b
-              if a.isAppOfArity ``Prod.mk 4 && b.isAppOfArity ``Prod.mk 4 then
-                work := work.push (a.getAppArgs[2]!, b.getAppArgs[2]!) |>.push (a.getAppArgs[3]!, b.getAppArgs[3]!)
-              else if a.isMVar && !b.hasExprMVar then let _ ← isDefEq a b
-              else if b.isMVar && !a.hasExprMVar then let _ ← isDefEq b a
-  for w in ws do
-    if (← instantiateMVars w).hasExprMVar then throwError "dat: witness open"
-  let s ← saveState
-  if ← (try finishDirect catch _ => pure false) then return
-  s.restore
-  (Sep.Xsimpl.xsimplDriver none)
-  cleanAll
-  arCloseProps
 
 partial def wgSplitDisj (fuel : Nat := 6) : TacticM (List MVarId) := do
   let _ ← arIntroLhs
@@ -6403,7 +6401,10 @@ def wgLem (key : String) (build : TacticM Expr) : TacticM (Option Expr) := do
       wgLCache.modify (·.filter (·.1 != key))
   let saved ← getGoals
   let st ← saveState
+  let old ← lemBuilding.get
+  lemBuilding.set true
   let r ← try withLCtx {} {} (some <$> build) catch _ => do st.restore; pure none
+  lemBuilding.set old
   setGoals saved
   wgLCache.modify (·.push (key, r))
   return r
@@ -6619,6 +6620,148 @@ def wgSide (p : Expr) : TacticM Expr := do
     if ← isDefEq (← inferType pf) p then return pf
   if ← wgSideFutile p then throwError "side: futile"
   arOmega p
+
+partial def pureHyps (hyps : Array (Expr × Expr)) : MetaM (Array (Expr × Expr)) := do
+  let mut out : Array (Expr × Expr) := #[]
+  let mut todo := hyps
+  while !todo.isEmpty do
+    let (ty, pf) := todo.back!
+    todo := todo.pop
+    let ty' ← wgNorm (← instantiateMVars ty)
+    let pf' ← if ty' == ty then pure pf else mkExpectedTypeHint pf ty'
+    if let some (a, b) := ty'.and? then
+      todo := todo.push (a, mkApp3 (mkConst ``And.left) a b pf') |>.push (b, mkApp3 (mkConst ``And.right) a b pf')
+      continue
+    if let some (_, l, r) := ty'.eq? then
+      if l.isAppOfArity ``Prod.mk 4 && r.isAppOfArity ``Prod.mk 4 then
+        let inj ← mkAppM ``Prod.mk.inj #[pf']
+        todo := todo.push (← inferType inj, inj)
+        continue
+    out := out.push (ty', pf')
+  return out
+
+partial def pureProveQ (hyps : Array (Expr × Expr)) (q0 : Expr) : TacticM Expr := do
+  let q ← wgNorm (← instantiateMVars q0)
+  let pf ← do
+    if q.isConstOf ``True then pure (mkConst ``True.intro) else
+    if let .forallE n ty body bi := q then
+      withLocalDecl n bi ty fun v => do
+        let b ← pureProveQ hyps (body.instantiate1 v)
+        mkLambdaFVars #[v] b
+    else
+    if let some (a, b) := q.and? then
+      pure (mkApp4 (mkConst ``And.intro) a b (← pureProveQ hyps a) (← pureProveQ hyps b)) else
+    match hyps.find? (·.1 == q) with
+    | some (_, h) => pure h
+    | none =>
+      match q.eq? with
+      | some (_, l, r) =>
+        if l == r then mkEqRefl l
+        else if let some (_, h) := hyps.find? (fun (t, _) => match t.eq? with
+            | some (_, l2, r2) => l2 == r && r2 == l
+            | none => false) then mkEqSymm h
+        else if l.isAppOfArity ``Prod.mk 4 && r.isAppOfArity ``Prod.mk 4 then
+          let la := l.getAppArgs
+          let ra := r.getAppArgs
+          let h1 ← pureProveQ hyps (← mkEq la[2]! ra[2]!)
+          let h2 ← pureProveQ hyps (← mkEq la[3]! ra[3]!)
+          mkAppM ``Prod.ext #[h1, h2]
+        else wgSide q
+      | none => wgSide q
+  if q == q0 then return pf
+  mkExpectedTypeHint pf q0
+
+partial def puresProp (inst e : Expr) : MetaM (Option (Expr × Expr)) := do
+  match e.getAppFnArgs with
+  | (``HProp.hstar, #[_, a, b]) =>
+    let some (pa, ha) ← puresProp inst a | return none
+    let some (pb, hb) ← puresProp inst b | return none
+    return some (← mkAppM ``And #[pa, pb], mkAppN (mkConst ``pures_conj) #[inst, a, b, pa, pb, ha, hb])
+  | (``HProp.hpure, #[_, p]) => return some (p, mkApp2 (mkConst ``HProp.himpl_refl) inst e)
+  | (``HProp.hempty, _) => return some (mkConst ``True, mkApp (mkConst ``emp_pure_true) inst)
+  | _ => return none
+
+partial def puresBuild (inst : Expr) (hs : Array (Expr × Expr)) (e : Expr) : TacticM Expr := do
+  match e.getAppFnArgs with
+  | (``HProp.hstar, #[_, a, b]) =>
+    let pa ← puresBuild inst hs a
+    let pb ← puresBuild inst hs b
+    return mkAppN (mkConst ``emp_star_intro) #[inst, a, b, pa, pb]
+  | (``HProp.hpure, #[_, q]) =>
+    return mkApp3 (mkConst ``HProp.himpl_hempty_hpure) inst q (← pureProveQ hs q)
+  | (``HProp.hempty, _) => return mkApp2 (mkConst ``HProp.himpl_refl) inst e
+  | _ => throwError "pure: atom"
+
+def pureCtx (q : Expr) : TacticM Expr := withMainContext do
+  let mut hs : Array (Expr × Expr) := #[]
+  for d in ← getLCtx do
+    if d.isImplementationDetail then continue
+    let ty ← instantiateMVars d.type
+    if ← isProp ty then hs := hs.push (ty, d.toExpr)
+  pureProveQ (← pureHyps hs) q
+
+initialize pureHook.set pureCtx
+
+def pureEntDirect : TacticM Bool := withMainContext do
+  let g ← getMainGoal
+  let t ← instantiateMVars (← g.getType)
+  let some (lhs, rhs) := entailHead? t | return false
+  if t.hasExprMVar then return false
+  let inst := t.getAppArgs[0]!
+  let some (P, hL) ← puresProp inst lhs | return false
+  let s ← saveState
+  try
+    let body ← withLocalDeclD `hpe P fun hp => do
+      let hyps ← pureHyps #[(P, hp)]
+      mkLambdaFVars #[hp] (← puresBuild inst hyps rhs)
+    g.assign (mkAppN (mkConst ``HProp.himpl_trans) #[inst, lhs, mkApp2 (mkConst ``HProp.hpure) inst P, rhs, hL,
+      mkAppN (mkConst ``pure_l_emp) #[inst, P, rhs, body]])
+    replaceMainGoal []
+    return true
+  catch _ =>
+    s.restore
+    return false
+
+def convClose : TacticM Unit := do
+  let _ ← arIntroLhs
+  wgSubstAll
+  let nested ← withMainContext do
+    let t ← instantiateMVars (← (← getMainGoal).getType)
+    let some (_, r) := entailHead? t | return false
+    let (body, _) ← arOpen r
+    return (body.find? (·.isAppOf ``HProp.hexists)).isSome
+  let ws0 ← if nested then arOpenDeep else pure #[]
+  if ← wgUnfoldHelpers then
+    let _ ← arOpenDeep
+  let ws ← arOpenGoal
+  withMainContext do
+    let t ← instantiateMVars (← (← getMainGoal).getType)
+    let some (lhs, rhs) := entailHead? t | throwError "dat: not an entailment"
+    let L := (flatStar lhs #[]).filter (!·.isAppOf ``HProp.hpure)
+    let R := (flatStar rhs #[]).filter (fun r => !r.isAppOf ``HProp.hpure && r.hasExprMVar)
+    unless ← (arAssign L R.toList #[]) do throwError "dat: match"
+    for _ in [0 : 2] do
+      for c in pureProps (← instantiateMVars rhs) #[] do
+        for cc in pureConjs c #[] do
+          if let some (_, a, b) := cc.eq? then
+            let mut work := #[(a, b)]
+            while !work.isEmpty do
+              let (a, b) := work.back!
+              work := work.pop
+              let a ← instantiateMVars a
+              let b ← instantiateMVars b
+              if a.isAppOfArity ``Prod.mk 4 && b.isAppOfArity ``Prod.mk 4 then
+                work := work.push (a.getAppArgs[2]!, b.getAppArgs[2]!) |>.push (a.getAppArgs[3]!, b.getAppArgs[3]!)
+              else if a.isMVar && !b.hasExprMVar then let _ ← isDefEq a b
+              else if b.isMVar && !a.hasExprMVar then let _ ← isDefEq b a
+  for w in ws do
+    if (← instantiateMVars w).hasExprMVar then throwError "dat: witness open"
+  let s ← saveState
+  if ← (try finishDirect catch _ => pure false) then return
+  s.restore
+  unless ← pureEntDirect do throwError "dat: no direct closure"
+  for w in ws0 do
+    if (← instantiateMVars w).hasExprMVar then throwError "conv: witness open"
 
 partial def wgTupEq (cs ds : Array Expr) : TacticM Expr := withMainContext do
   let eqc := fun (a b : Expr) => do
@@ -6857,7 +7000,7 @@ def wgBuildCI (P : WgP) : TacticM Expr := do
     let cellE ← wgNorm (P.cLam.beta #[st, nx, one])
     let m ← arGoal (← mkAppM ``HProp.himpl #[pre, cellE])
     if P.disj.2 > 1 then wgSelect P.disj.2 P.disj.1
-    wgMatchClose
+    convClose
     unless (← getUnsolvedGoals).isEmpty do throwError "wg: ci open"
     let pf ← instantiateMVars m
     let cl := mkAppN (mkConst ``Sep.wseg_cell) #[P.inst, P.sty, P.cLam, st, nx, one]
@@ -7006,9 +7149,11 @@ def wgCloseSegs (P : WgP) : TacticM Unit := do
     unless done do wgNil P r
   for w in ws do
     if (← instantiateMVars w).hasExprMVar then throwError "wg: witness open"
-  Sep.Xsimpl.xsimplDriver none
-  cleanAll
-  arCloseProps
+  let s ← saveState
+  if ← (try finishDirect catch _ => pure false) then return
+  s.restore
+  if ← pureEntDirect then return
+  throwError "wg: segments not closed"
 
 def wgOpen (v : Array Expr) : MetaM Bool := do
   return (← v.mapM instantiateMVars).any (·.hasExprMVar)
@@ -7088,12 +7233,12 @@ def wgUnfoldClose (P : WgP) (base : Bool) : TacticM Unit := do
   if P.cellData.isEmpty && !P.via then
     let j := if base then 1 - P.stepIdx else P.stepIdx
     if j == 0 then applyConstT ``hdisj_left else applyConstT ``hdisj_right
-    wgMatchClose
+    convClose
     return
   for j in [0 : P.nbr] do
     try
       wgSelect P.nbr j
-      wgMatchClose
+      convClose
       return
     catch _ => pure ()
   throwError "wg: no branch closes"
@@ -7261,31 +7406,18 @@ def wgGenEn (G : WgGen) (a : Expr) (m : Option Expr) : Expr :=
   | some m => G.enL.beta #[a, m]
   | none => G.enL.beta #[a]
 
-def wgUnfoldTo (P : WgP) (xs : Array Expr) (L : Expr) (bi : Nat) : TacticM (Expr × MVarId) := do
+def wgBranchTo (P : WgP) (xs : Array Expr) (L : Expr) (bi : Nat) : TacticM (Expr × MVarId) := do
   let entries ← arEntries
   let some ent := entries.find? (·.headFn == P.pname) | throwError "wg: gen unfold"
   let eqPf := mkAppN (mkConst ent.lemmaName) xs
-  let some (_, _, body) := (← inferType eqPf).eq? | throwError "wg: gen unfold eq"
-  let m ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``HProp.himpl #[L, body])
-  let pf ← mkAppM ``Eq.mpr #[← mkCongrArg (mkApp2 (mkConst ``HProp.himpl) P.inst L) eqPf, m]
-  setGoals [m.mvarId!]
-  wgSelect P.nbr bi
-  return (pf, ← getMainGoal)
-
-def wgGenClose (g : MVarId) : TacticM Unit := do
-  setGoals [g]
-  let _ ← arIntroLhs
-  wgSubstAll
-  let nested ← withMainContext do
-    let t ← instantiateMVars (← (← getMainGoal).getType)
-    let some (_, r) := entailHead? t | return false
-    let (body, _) ← arOpen r
-    return (body.find? (·.isAppOf ``HProp.hexists)).isSome
-  let ws ← if nested then arOpenDeep else pure #[]
-  wgMatchClose
-  for w in ws do
-    if (← instantiateMVars w).hasExprMVar then throwError "wg: gen witness"
-  unless (← getUnsolvedGoals).isEmpty do throwError "wg: gen open"
+  let some (_, lhsE, body) := (← inferType eqPf).eq? | throwError "wg: gen unfold eq"
+  let some br := (wgBranches body #[])[bi]? | throwError "wg: gen branch"
+  let m ← mkFreshExprSyntheticOpaqueMVar (mkApp3 (mkConst ``HProp.himpl) P.inst L br)
+  let toBody := wgPGSel P.inst L body bi m
+  let back ← mkEqSymm eqPf
+  let pf := mkAppN (mkConst ``HProp.himpl_trans) #[P.inst, L, body, lhsE, toBody,
+    mkAppN (mkConst ``himpl_of_eq) #[P.inst, body, lhsE, back]]
+  return (pf, m.mvarId!)
 
 def wgGenRel (G : WgGen) (a a' w : Expr) : MetaM Expr := do
   let ee ← match G.mTy with
@@ -7382,11 +7514,13 @@ def wgBuildAbsGen (P : WgP) : TacticM Expr := do
               ← mkAppOptM ``HProp.himpl_hexists_r #[none, none, one, lhs, iJ, m2]]
           unless ← isDefEq (← g.getType) (← inferType pf2) do throwError "wg: gen step type"
           g.assign pf2
-          wgGenClose m2.mvarId!
+          setGoals [m2.mvarId!]
+          convClose
           pfs := pfs.push (← mkAppOptM ``Sep.wor_r #[none, br, Bt, stepL, ← instantiateMVars m])
         else
           let m ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``HProp.himpl #[br, Bt])
-          wgGenClose m.mvarId!
+          setGoals [m.mvarId!]
+          convClose
           pfs := pfs.push (← mkAppOptM ``Sep.wor_l #[none, br, Bt, stepL, ← instantiateMVars m])
       let pf ← mkAppOptM ``hdisj_elim #[none, brs[0]!, brs[1]!, tgt, pfs[0]!, pfs[1]!]
       withLocalDeclD `a G.aty fun a => do
@@ -7490,8 +7624,9 @@ def wgBuildConcGen (P : WgP) (lo : Option Expr) : TacticM Expr := do
       else do
         let L ← wgNorm (mkApp3 P.cLam st en nE)
         pure (mkAppN (mkConst ``Sep.wseg_uncell) #[P.inst, P.sty, P.cLam, st, en, nE], L)
-    let (pf, g) ← (wgUnfoldTo P ys L bi)
-    wgGenClose g
+    let (pf, g) ← (wgBranchTo P ys L bi)
+    setGoals [g]
+    convClose
     let pf ← instantiateMVars pf
     let full ← mkAppM ``HProp.himpl_trans #[lem, ← mkExpectedTypeHint pf (← mkAppM ``HProp.himpl
       #[(← inferType lem).appArg!, mkAppN (mkConst P.pname) ys])]
@@ -7509,13 +7644,10 @@ def wgBuildConcGen (P : WgP) (lo : Option Expr) : TacticM Expr := do
       let pnx ← wgNorm (G.PL.beta #[nxa])
       let cell ← wgNorm (mkApp3 P.cLam st ct w)
       let L ← mkAppM ``HProp.hstar #[cell, pnx]
-      let (pf, g) ← (wgUnfoldTo P ys L ci)
-      if let some lo := lo then
-        setGoals [g]
-        (wgLoFact lo pnx)
-        let g ← getMainGoal
-        wgGenClose g
-      else wgGenClose g
+      let (pf, g) ← (wgBranchTo P ys L ci)
+      setGoals [g]
+      if let some lo := lo then wgLoFact lo pnx
+      convClose
       let pf ← instantiateMVars pf
       withLocalDeclD `a G.aty fun a => withLocalDeclD `s' P.sty fun s' => do
         let ps ← (Array.range G.nX).mapM (wgProj a · G.nX)
@@ -7731,7 +7863,7 @@ partial def wgBuildAbsVia (P : WgP) : TacticM Expr := do
         let m2 ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``HProp.himpl #[br, L])
         setGoals [m2.mvarId!]
         let _ ← arIntroLhs
-        wgMatchClose
+        convClose
         unless (← getUnsolvedGoals).isEmpty do throwError "wg: via base"
         m.mvarId!.assign (← mkAppM ``HProp.himpl_trans #[← instantiateMVars m2, lem])
       unless (← getUnsolvedGoals).isEmpty do throwError "wg: via open"
@@ -7874,7 +8006,7 @@ def wgBuildMap (A B : WgP) (idx : Array Nat) (rev : Bool) : TacticM Expr := do
         s.restore
         return r.isSome && Lc.size == Rc.size
       unless ok do throwError "wg: map cells"
-      wgMatchClose
+      convClose
       unless (← getUnsolvedGoals).isEmpty do throwError "wg: map open"
       mkLambdaFVars (a ++ b ++ #[w]) (← instantiateMVars m)
   let fLam ← withLocalDeclD `s A.sty fun s => do
@@ -7906,7 +8038,7 @@ def wgBuildRet (P : WgP) (j l : Nat) : TacticM Expr := do
         let m ← arGoal (← mkAppM ``HProp.himpl #[lhs, rhs])
         let _ ← arIntroLhs
         wgSubstAll
-        wgMatchClose
+        convClose
         unless (← getUnsolvedGoals).isEmpty do throwError "wg: ret open"
         mkLambdaFVars (a ++ b ++ #[w, hne]) (← instantiateMVars m)
   let hcp ← withLocalDeclsD (wgDecls tys "ra") fun a =>
@@ -7955,7 +8087,7 @@ def wgBuildRetPrev (P : WgP) (j pv ad : Nat) : TacticM Expr := do
         let m ← arGoal (← mkAppM ``HProp.himpl #[lhs, rhs])
         let _ ← arIntroLhs
         wgSubstAll
-        wgMatchClose
+        convClose
         unless (← getUnsolvedGoals).isEmpty do throwError "wg: retp open"
         mkLambdaFVars (a ++ b ++ #[w, hne]) (← instantiateMVars m)
   let hcp ← withLocalDeclsD (wgDecls tys "ra") fun a =>
@@ -9896,6 +10028,7 @@ elab "xsearch_start" : tactic => do
   unfoldBudget.set 8
   failMemo.set {}
   forcedDepth.set 0
+  lemBuilding.set false
   permCache.set #[]
   invCache.set #[]
   cmPending.set false

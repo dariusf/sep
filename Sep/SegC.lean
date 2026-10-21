@@ -1777,6 +1777,20 @@ theorem pures_emp_cons {P : Prop} {R : HProp} (h : R ==> emp) : ⌈P⌉ ✶ R ==
   rw [← HProp.hstar_hempty_l emp]
   exact HProp.himpl_frame_lr (Sep.pDrop P) h
 
+theorem pures_conj {A B : HProp} {P Q : Prop} (ha : A ==> ⌈P⌉) (hb : B ==> ⌈Q⌉) : A ✶ B ==> ⌈P ∧ Q⌉ := by
+  rw [← HProp.hstar_hpure_conj]
+  exact HProp.himpl_frame_lr ha hb
+
+theorem emp_pure_true : (emp : HProp) ==> ⌈True⌉ := HProp.himpl_hempty_hpure trivial
+
+theorem pure_l_emp {P : Prop} {R : HProp} (h : P → (emp ==> R)) : ⌈P⌉ ==> R := by
+  rw [← HProp.hstar_hempty_r ⌈P⌉]
+  exact HProp.himpl_hstar_hpure_l h
+
+theorem emp_star_intro {A B : HProp} (ha : emp ==> A) (hb : emp ==> B) : emp ==> A ✶ B := by
+  rw [← HProp.hstar_hempty_l emp]
+  exact HProp.himpl_frame_lr ha hb
+
 theorem star_drop_emp {H R : HProp} (h : R ==> emp) : H ✶ R ==> H :=
   HProp.himpl_trans (HProp.himpl_frame_r h) (by rw [HProp.hstar_hempty_r]; exact HProp.himpl_refl _)
 
