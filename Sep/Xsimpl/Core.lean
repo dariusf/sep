@@ -1,4 +1,5 @@
 import Sep.SepLogic
+import Batteries.Data.List.Perm
 
 open Lean Meta Elab Tactic
 
@@ -76,14 +77,6 @@ theorem nt_comm.{w, z} {α : Type w} [SepLogic.{w, z} α] (a b : α) :
 theorem nt_swap.{w, z} {α : Type w} [SepLogic.{w, z} α] (a b c : α) :
     a ∗ (b ∗ c) ==> b ∗ (a ∗ c) := by
   rw [hstar_left_comm]; exact entails_refl _
-
-theorem nt_cancel_r.{w, z} {α : Type w} [SepLogic.{w, z} α] (c : α) {q : α}
-    (h : (emp : α) ==> q) : c ==> c ∗ q :=
-  himpl_cancel_rhs h
-
-theorem nt_cancel_l.{w, z} {α : Type w} [SepLogic.{w, z} α] (c : α) {q : α}
-    (h : q ==> (emp : α)) : c ∗ q ==> c :=
-  himpl_cancel_lhs h
 
 theorem nt_assoc.{w, z} {α : Type w} [SepLogic.{w, z} α] (a b c : α) :
     (a ∗ b) ∗ c = a ∗ (b ∗ c) :=
@@ -171,6 +164,78 @@ theorem nt_wand_same.{w, z} {α : Type w} [SepLogic.{w, z} α] (a : α) {l r : �
 theorem nt_wand_same1.{w, z} {α : Type w} [SepLogic.{w, z} α] (a : α) {l : α}
     (h : l ==> emp) : l ==> a -∗ a :=
   entails_trans h (wand_intro (nt_of_eq (star_emp_l a)))
+
+inductive PTree.{w} (α : Type w) where
+  | leaf : PTree α
+  | node : PTree α → α → PTree α → PTree α
+
+noncomputable def ptGet.{w} {α : Type w} (d : α) (t : PTree α) : Nat → α :=
+  PTree.rec (motive := fun _ => Nat → α) (fun _ => d)
+    (fun _ x _ il ir i => cond (Nat.beq i 0) x (cond (Nat.beq (i % 2) 1) (il (i / 2)) (ir (i / 2 - 1)))) t
+
+noncomputable def listStar.{w, z} {α : Type w} [SepLogic.{w, z} α] (xs : List α) : α :=
+  List.rec (motive := fun _ => α) emp
+    (fun x r ih => List.rec (motive := fun _ => α) x (fun _ _ _ => x ∗ ih) r) xs
+
+noncomputable def starI.{w, z} {α : Type w} [SepLogic.{w, z} α] (env : PTree α) (l : List Nat) : α :=
+  listStar (l.map (ptGet emp env))
+
+noncomputable def bitMask (l : List Nat) : Nat :=
+  List.rec (motive := fun _ => Nat) 0 (fun i _ ih => (1 <<< i) ||| ih) l
+
+noncomputable def permChk (l r : List Nat) : Bool :=
+  Nat.beq l.length r.length && Nat.beq (bitMask l) (2 ^ l.length - 1) && Nat.beq (bitMask r) (2 ^ l.length - 1)
+
+theorem listStar_cons.{w, z} {α : Type w} [SepLogic.{w, z} α] (x : α) (xs : List α) :
+    listStar (x :: xs) = x ∗ listStar xs := by
+  cases xs with
+  | nil => exact (star_emp_r x).symm
+  | cons y ys => rfl
+
+theorem listStar_perm.{w, z} {α : Type w} [SepLogic.{w, z} α] {xs ys : List α} (h : xs.Perm ys) :
+    listStar xs = listStar ys := by
+  induction h with
+  | nil => rfl
+  | cons x _ ih => rw [listStar_cons, listStar_cons, ih]
+  | swap x y l =>
+    rw [listStar_cons, listStar_cons, listStar_cons, listStar_cons, ← star_assoc, ← star_assoc,
+      star_comm x y]
+  | trans _ _ ih1 ih2 => exact ih1.trans ih2
+
+theorem listStar_append.{w, z} {α : Type w} [SepLogic.{w, z} α] (xs ys : List α) :
+    listStar (xs ++ ys) = listStar xs ∗ listStar ys := by
+  induction xs with
+  | nil => exact (star_emp_l _).symm
+  | cons x xs ih => rw [List.cons_append, listStar_cons, listStar_cons, ih, star_assoc]
+
+theorem testBit_bitMask (l : List Nat) (i : Nat) : (bitMask l).testBit i = true ↔ i ∈ l := by
+  induction l with
+  | nil => simp [bitMask]
+  | cons j t ih =>
+    show ((1 <<< j) ||| bitMask t).testBit i = true ↔ i ∈ j :: t
+    rw [Nat.testBit_or, Nat.one_shiftLeft, Nat.testBit_two_pow, Bool.or_eq_true, ih]
+    simp [eq_comm]
+
+theorem perm_range_of_mask (l : List Nat) (n : Nat) (hl : l.length = n) (hm : bitMask l = 2 ^ n - 1) :
+    (List.range n).Perm l := by
+  refine (List.subperm_of_subset List.nodup_range (fun i hi => ?_)).perm_of_length_le (by simp [hl])
+  exact (testBit_bitMask l i).1 (by rw [hm, Nat.testBit_two_pow_sub_one]; simpa using List.mem_range.1 hi)
+
+theorem permChk_perm {l r : List Nat} (h : permChk l r = true) : l.Perm r := by
+  simp only [permChk, Bool.and_eq_true] at h
+  obtain ⟨⟨h1, h2⟩, h3⟩ := h
+  exact (perm_range_of_mask l _ rfl (Nat.eq_of_beq_eq_true h2)).symm.trans
+    (perm_range_of_mask r _ (Nat.eq_of_beq_eq_true h1).symm (Nat.eq_of_beq_eq_true h3))
+
+theorem nt_perm_idx.{w, z} {α : Type w} [SepLogic.{w, z} α] (env : PTree α) (l r : List Nat)
+    (h : permChk l r = true) : starI env l ==> starI env r := by
+  rw [starI, starI, listStar_perm ((permChk_perm h).map _)]
+  exact entails_refl _
+
+theorem nt_frame_list.{w, z} {α : Type w} [SepLogic.{w, z} α] (cs : List α) {xs ys : List α}
+    (h : listStar xs ==> listStar ys) : listStar (cs ++ xs) ==> listStar (cs ++ ys) := by
+  rw [listStar_append, listStar_append]
+  exact frame_r h
 
 end NativeLemmas
 
@@ -1113,17 +1178,22 @@ partial def perm (c : NCtx) (s : List Expr) (idx : List Nat) : Option Expr :=
     | some p, some f => some (c.trans (c.starL s) (c.mkStar t (c.starL s')) (c.mkStar t (c.starL t')) p f)
   | _, _ => none
 
-partial def frameChain (c : NCtx) (cs xs ys : List Expr) (mv : Expr) : Expr :=
-  match cs with
-  | [c1] =>
-    match xs.isEmpty, ys.isEmpty with
-    | false, false => c.lem ``nt_frame #[c1, c.starL xs, c.starL ys, mv]
-    | true, false => c.lem ``nt_cancel_r #[c1, c.starL ys, mv]
-    | false, true => c.lem ``nt_cancel_l #[c1, c.starL xs, mv]
-    | true, true => c.lem ``nt_refl #[c1]
-  | c1 :: cs' =>
-    c.lem ``nt_frame #[c1, c.starL (cs' ++ xs), c.starL (cs' ++ ys), c.frameChain cs' xs ys mv]
-  | [] => mv
+def natList (xs : List Nat) : Expr :=
+  xs.foldr (fun i acc => mkApp3 (mkConst ``List.cons [0]) (mkConst ``Nat) (mkRawNatLit i) acc)
+    (mkApp (mkConst ``List.nil [0]) (mkConst ``Nat))
+
+def atomList (c : NCtx) (xs : List Expr) : Expr :=
+  xs.foldr (fun a acc => mkApp3 (mkConst ``List.cons [c.u]) c.carrier a acc) (mkApp (mkConst ``List.nil [c.u]) c.carrier)
+
+partial def ptree (c : NCtx) (xs : Array Expr) (f : Nat → Nat) (n : Nat) : Expr :=
+  if n == 0 then mkApp (mkConst ``PTree.leaf [c.u]) c.carrier
+  else mkApp4 (mkConst ``PTree.node [c.u]) c.carrier (c.ptree xs (fun j => f (2 * j + 1)) (n / 2)) xs[f 0]!
+    (c.ptree xs (fun j => f (2 * j + 2)) ((n - 1) / 2))
+
+def permIdx (c : NCtx) (s : Array Expr) (r : List Nat) : Option Expr :=
+  if r == List.range s.size then none else
+  some (c.lem ``nt_perm_idx #[c.ptree s id s.size, natList (List.range s.size), natList r,
+    mkApp2 (mkConst ``Eq.refl [1]) (mkConst ``Bool) (mkConst ``Bool.true)])
 
 def selfEq (s : Expr) : Bool :=
   match s.getAppFnArgs with
@@ -1685,6 +1755,21 @@ def cancelScan (sa ta : Array Expr) : MetaM (Array (Nat × Nat) × Array Bool ×
   let mut lAlive : Array Bool := sa.map (fun _ => true)
   let mut pairs : Array (Nat × Nat) := #[]
   let mut tIdx : Array Nat := (List.range ta.size).toArray
+  let sI ← sa.mapM instantiateMVars
+  let tI ← ta.mapM instantiateMVars
+  if !sI.any (·.hasMVar) && !tI.any (·.hasMVar) then
+    let mut at_ : Std.HashMap Expr (List Nat) := {}
+    for li in (List.range sI.size).reverse do
+      at_ := at_.insert sI[li]! (li :: at_.getD sI[li]! [])
+    let mut rest : Array Nat := #[]
+    for ri in [0 : tI.size] do
+      match at_.getD tI[ri]! [] with
+      | li :: more =>
+        at_ := at_.insert tI[ri]! more
+        pairs := pairs.push (li, ri)
+        lAlive := lAlive.set! li false
+      | [] => rest := rest.push ri
+    tIdx := rest
   let mut rStart := 0
   let mut cont := true
   while cont do
@@ -1728,19 +1813,20 @@ def cancelStep (c : NCtx) (cur : MVarId) (s tt : List Expr) :
   let lRestIdx := (List.range sa.size).filter (fun i => lAlive[i]!)
   let sr := lRestIdx.map (sa[·]!)
   let tr := tIdx.toList.map (ta[·]!)
-  let pl := c.perm sa.toList (pairs.toList.map (·.1) ++ lRestIdx)
+  let pl := c.permIdx sa (pairs.toList.map (·.1) ++ lRestIdx)
   let u := cr ++ tr
   let pos := (List.range ta.size).map (fun k =>
     match pairs.findIdx? (·.2 == k) with
     | some p => p
     | none => cr.length + tIdx.toList.idxOf k)
-  let pr := c.perm u pos
+  let pr := c.permIdx u.toArray pos
   let ls := c.starL sa.toList
   let lcl := c.starL (cl ++ sr)
   let lcr := c.starL (cl ++ tr)
   let lt := c.starL ta.toList
   let body := fun (mv : Expr) =>
-    c.transO ls lcl lt pl (c.transO' lcl lcr lt (c.frameChain cl sr tr mv) pr)
+    c.transO ls lcl lt pl (c.transO' lcl lcr lt
+      (c.lem ``nt_frame_list #[c.atomList cl, c.atomList sr, c.atomList tr, mv]) pr)
   if sr.isEmpty && tr.isEmpty then
     cur.assign (body (c.lem ``nt_refl #[c.empE]))
     return some (none, [], [])
