@@ -355,7 +355,6 @@ def srcneSolve (m : MVarId) : TacticM Unit := do
   setGoals [m]
   evalTactic (← `(tactic| xsearch_srcne))
 
-
 def isHorConst (e : Expr) : Bool :=
   match e.getAppFn with
   | .const n _ => n.components.getLast? == some `hor
@@ -1526,19 +1525,6 @@ partial def leafCount (aty : Expr) : Nat :=
   match aty.getAppFnArgs with
   | (``Sum, #[a, b]) => leafCount a + leafCount b
   | _ => 1
-
-partial def mkXFunN (tup : Expr) (templs : Array Expr) (off : Nat) (aty : Expr) :
-    MetaM Expr := do
-  match aty.getAppFnArgs with
-  | (``Sum, #[a, b]) =>
-      mkAppM ``Sum.elim
-        #[← mkXFunN tup templs off a,
-          ← mkXFunN tup templs (off + leafCount a) b]
-  | _ =>
-      withLocalDeclD `xit aty fun t => do
-        let pm ← projMap tup t
-        let templ := templs[min off (templs.size - 1)]!
-        mkLambdaFVars #[t] (templ.replaceFVars (pm.map (·.1)) (pm.map (·.2)))
 
 partial def injIndex (e : Expr) : Nat :=
   match e.getAppFnArgs with
@@ -4661,12 +4647,6 @@ def arOpenDeep : TacticM (Array Expr) := do
     replaceMainGoal [m.mvarId!]
     ws.get
 
-def arFinish (m : Expr) (vs : Array Expr) : TacticM Expr := do
-  unless (← getUnsolvedGoals).isEmpty do throwError "ar: lemma open"
-  let pf ← instantiateMVars m
-  if pf.hasExprMVar then throwError "ar: lemma mvar"
-  mkLambdaFVars vs pf
-
 def arGoal (ty : Expr) : TacticM Expr := do
   let m ← mkFreshExprSyntheticOpaqueMVar ty
   setGoals [m.mvarId!]
@@ -6722,9 +6702,35 @@ def pureEntDirect : TacticM Bool := withMainContext do
     s.restore
     return false
 
+def convEqs (rhs : Expr) (addrOnly : Bool := false) : MetaM Unit := do
+  let rhs ← instantiateMVars rhs
+  let adr := (flatStar rhs #[]).filterMap fun r =>
+    if r.isAppOfArity ``HProp.hsingle 3 then some r.getAppArgs[1]! else none
+  let ok := fun (m : Expr) => !addrOnly || adr.any (fun a => (a.find? (· == m)).isSome)
+  for c in pureProps rhs #[] do
+    for cc in pureConjs c #[] do
+      if let some (_, a, b) := cc.eq? then
+        let mut work := #[(a, b)]
+        while !work.isEmpty do
+          let (a, b) := work.back!
+          work := work.pop
+          let a ← instantiateMVars a
+          let b ← instantiateMVars b
+          if a.isAppOfArity ``Prod.mk 4 && b.isAppOfArity ``Prod.mk 4 then
+            work := work.push (a.getAppArgs[2]!, b.getAppArgs[2]!) |>.push (a.getAppArgs[3]!, b.getAppArgs[3]!)
+          else if a.isMVar && !b.hasExprMVar && ok a then let _ ← isDefEq a b
+          else if b.isMVar && !a.hasExprMVar && ok b then let _ ← isDefEq b a
+
+partial def wgSplitMVar (ty : Expr) : MetaM Expr := do
+  let ty ← whnfR ty
+  if ty.isAppOfArity ``Prod 2 then
+    mkAppM ``Prod.mk #[← wgSplitMVar ty.appFn!.appArg!, ← wgSplitMVar ty.appArg!]
+  else mkFreshExprMVar ty
+
 def convClose : TacticM Unit := do
   let _ ← arIntroLhs
   wgSubstAll
+  if ← wgUnfoldHelpers then wgSubstAll
   let nested ← withMainContext do
     let t ← instantiateMVars (← (← getMainGoal).getType)
     let some (_, r) := entailHead? t | return false
@@ -6735,25 +6741,26 @@ def convClose : TacticM Unit := do
     let _ ← arOpenDeep
   let ws ← arOpenGoal
   withMainContext do
+    let mut split := false
+    for w in ws0 ++ ws do
+      if (← whnfR (← inferType w)).isAppOfArity ``Prod 2 then
+        w.mvarId!.assign (← wgSplitMVar (← inferType w))
+        split := true
+    if split then
+      let g ← getMainGoal
+      replaceMainGoal [← g.replaceTargetDefEq (← wgNorm (← instantiateMVars (← g.getType)))]
+  withMainContext do
     let t ← instantiateMVars (← (← getMainGoal).getType)
     let some (lhs, rhs) := entailHead? t | throwError "dat: not an entailment"
     let L := (flatStar lhs #[]).filter (!·.isAppOf ``HProp.hpure)
-    let R := (flatStar rhs #[]).filter (fun r => !r.isAppOf ``HProp.hpure && r.hasExprMVar)
+    convEqs rhs true
+    convEqs rhs true
+    let R ← (flatStar rhs #[]).filterMapM fun r => do
+      let r ← instantiateMVars r
+      pure (if !r.isAppOf ``HProp.hpure && r.hasExprMVar then some r else none)
     unless ← (arAssign L R.toList #[]) do throwError "dat: match"
-    for _ in [0 : 2] do
-      for c in pureProps (← instantiateMVars rhs) #[] do
-        for cc in pureConjs c #[] do
-          if let some (_, a, b) := cc.eq? then
-            let mut work := #[(a, b)]
-            while !work.isEmpty do
-              let (a, b) := work.back!
-              work := work.pop
-              let a ← instantiateMVars a
-              let b ← instantiateMVars b
-              if a.isAppOfArity ``Prod.mk 4 && b.isAppOfArity ``Prod.mk 4 then
-                work := work.push (a.getAppArgs[2]!, b.getAppArgs[2]!) |>.push (a.getAppArgs[3]!, b.getAppArgs[3]!)
-              else if a.isMVar && !b.hasExprMVar then let _ ← isDefEq a b
-              else if b.isMVar && !a.hasExprMVar then let _ ← isDefEq b a
+    convEqs rhs
+    convEqs rhs
   for w in ws do
     if (← instantiateMVars w).hasExprMVar then throwError "dat: witness open"
   let s ← saveState
@@ -6988,6 +6995,11 @@ def wgSelect (nb j : Nat) : TacticM Unit := do
   for _ in [0 : j] do applyConstT ``hdisj_right
   if j + 1 < nb then applyConstT ``hdisj_left
 
+def wgViews (P : WgP) : Array WgP :=
+  if P.cellData.isEmpty then #[P] else
+  P.cellData.mapIdx fun d (pre, next, us, w, _) =>
+    { P with preLam := pre, nextLam := next, usTys := us, wLam := some w, disj := (d, P.cellData.size) }
+
 def wgBuildCI (P : WgP) : TacticM Expr := do
   withLocalDeclsD (wgDecls (wgMovTys P) "cs") fun S => withLocalDeclsD (wgDecls P.usTys "cu") fun us => do
     let pre := P.preLam.beta (S ++ us)
@@ -7008,7 +7020,8 @@ def wgBuildCI (P : WgP) : TacticM Expr := do
     mkLambdaFVars (S ++ us) full
 
 def wgCIOf (P : WgP) : TacticM (Option Expr) :=
-  wgLem s!"ci:{P.cLam.hash}:{P.preLam.hash}:{P.nextLam.hash}" ((wgBuildCI P))
+  wgLem s!"ci:{P.cLam.hash}:{P.preLam.hash}:{P.nextLam.hash}"
+    (wgBuildCI (((wgViews P).find? fun V => V.preLam == P.preLam && V.nextLam == P.nextLam).getD P))
 
 def addrKey? (e : Expr) : Option (Option FVarId × Nat) :=
   if e.isFVar then some (some e.fvarId!, 0)
@@ -7098,22 +7111,6 @@ def wgUnifyStA (cst : Array Nat) (a b : Array Expr) : TacticM Bool := do
     return false
   return true
 
-def wgJoinAll (P : WgP) : TacticM Unit := do
-  for _ in [0 : 16] do
-    let pr ← withMainContext do
-      let S := (← wgLhs).filter (fun e => wgIsSeg e && e.getAppArgs[2]! == P.cLam)
-      for i in [0 : S.size] do
-        for j in [0 : S.size] do
-          if i == j then continue
-          if S[i]!.getAppArgs[6]! == S[j]!.getAppArgs[5]! then return some (S[i]!, S[j]!)
-      return none
-    let some (a, b) := pr | return
-    let aa := a.getAppArgs
-    let ba := b.getAppArgs
-    let lem := mkAppN (mkConst ``Sep.wseg_join) #[P.inst, P.sty, P.cLam, aa[3]!, ba[3]!, aa[4]!,
-      ba[4]!, aa[5]!, aa[6]!, ba[6]!]
-    let _ ← arRwLhs [a, b] lem
-
 def wgNil (P : WgP) (r : Expr) : TacticM Unit := do
   let lem ← withMainContext do
     let ra ← r.getAppArgs.mapM instantiateMVars
@@ -7132,28 +7129,6 @@ def wgNil (P : WgP) (r : Expr) : TacticM Unit := do
     let hn ← arOmega (← mkAppM ``Eq #[ra[4]!, ← arIntLit 0])
     pure (mkAppN (mkConst ``Sep.wseg_nil) #[P.inst, P.sty, ra[2]!, ra[4]!, ra[5]!, ra[6]!, h, hn])
   let _ ← arRwLhs [] lem
-
-def wgCloseSegs (P : WgP) : TacticM Unit := do
-  let ws ← arOpenGoal
-  let nc := P.mov.size
-  let rs := (← wgRhs).filter wgIsSeg
-  for r in rs do
-    let ls := (← wgLhs).filter wgIsSeg
-    let mut done := false
-    for l in ls do
-      if ← wgUnify l r nc then
-        let ra ← r.getAppArgs.mapM instantiateMVars
-        let _ ← wgCongTo l ra[3]! ra[4]! ra[5]! ra[6]! nc
-        done := true
-        break
-    unless done do wgNil P r
-  for w in ws do
-    if (← instantiateMVars w).hasExprMVar then throwError "wg: witness open"
-  let s ← saveState
-  if ← (try finishDirect catch _ => pure false) then return
-  s.restore
-  if ← pureEntDirect then return
-  throwError "wg: segments not closed"
 
 def wgOpen (v : Array Expr) : MetaM Bool := do
   return (← v.mapM instantiateMVars).any (·.hasExprMVar)
@@ -7194,180 +7169,14 @@ def wgCellMatch (P : WgP) (CI : Expr) (hst hen : Option (Array Expr)) (avoid : A
     s0.restore
   return none
 
-def wgViews (P : WgP) : Array WgP :=
-  if P.cellData.isEmpty then #[P] else
-  P.cellData.mapIdx fun d (pre, next, us, w, _) =>
-    { P with preLam := pre, nextLam := next, usTys := us, wLam := some w, disj := (d, P.cellData.size) }
-
-def wgCellToSeg (P : WgP) (hst hen : Option (Array Expr)) : TacticM (Option Expr) := do
-  for V in wgViews P do
-    let some CI ← wgCIOf V | continue
-    let some (atoms, lem) ← wgCellMatch V CI hst hen #[] | continue
-    let some (_, out) := entailHead? (← withMainContext do instantiateMVars (← inferType lem)) | continue
-    let _ ← arRwLhs atoms.toList lem
-    return some out
-  return none
-
 def wgConcLhs (P : WgP) (k nE : Expr) (xs miss : Array Expr) : MetaM Expr := do
   let seg := wgSeg P k nE (← wgTuple (P.mov.map (xs[·]!))) (← wgTuple (wgEnC P xs miss))
   match P.tailLam with
   | some t => mkAppM ``HProp.hstar #[seg, t.beta (xs ++ miss)]
   | none => pure seg
 
-def wgConcMotive (P : WgP) (k : Expr) : MetaM Expr := do
-  withLocalDeclsD (wgDecls P.tys "cx") fun xs =>
-  withLocalDeclsD (wgDecls (wgMissTys P) "cm") fun miss =>
-  withLocalDeclD `cn arIntT fun n => do
-    let nE := match P.ai with
-      | some i => xs[i]!
-      | none => n
-    let hk ← wgCond P k
-    let body ← mkArrow hk (← mkAppM ``HProp.himpl #[← wgConcLhs P k nE xs miss,
-      mkAppN (mkConst P.pname) xs])
-    let vs := if P.ai.isSome then xs ++ miss else xs ++ miss ++ #[n]
-    mkForallFVars vs body
-
-def wgUnfoldClose (P : WgP) (base : Bool) : TacticM Unit := do
-  let some a := (← wgRhs).find? (·.isAppOf P.pname) | throwError "wg: rhs pred"
-  rewriteOcc (← arEntries) a
-  if P.cellData.isEmpty && !P.via then
-    let j := if base then 1 - P.stepIdx else P.stepIdx
-    if j == 0 then applyConstT ``hdisj_left else applyConstT ``hdisj_right
-    convClose
-    return
-  for j in [0 : P.nbr] do
-    try
-      wgSelect P.nbr j
-      convClose
-      return
-    catch _ => pure ()
-  throwError "wg: no branch closes"
-
-def wgLhsSeg (P : WgP) : TacticM Expr := do
-  let some a := (← wgLhs).find? (fun e => wgIsSeg e && e.getAppArgs[2]! == P.cLam)
-    | throwError "wg: lhs seg"
-  return a
-
-def wgConcZeroElim (P : WgP) (atom : Expr) : TacticM Unit := do
-  let aa := atom.getAppArgs
-  let _ ← arRwLhs [atom] (mkAppN (mkConst ``Sep.wseg_zero_elim) #[P.inst, P.sty, P.cLam, aa[4]!, aa[5]!,
-    aa[6]!])
-  arIntroFacts
-  wgSubstAll
-  wgNormAll
-  wgUnfoldClose P true
-
-def wgConcIH (P : WgP) (Inv k ih : Expr) (xs miss : Array Expr) : TacticM Unit := do
-  wgInvAll P Inv
-  let atom ← wgLhsSeg P
-  let (lem, tl) ← withMainContext do
-    let aa := atom.getAppArgs
-    let sc ← wgComps aa[5]! P.mov.size
-    let mut xs' := xs
-    for j in [0 : P.mov.size] do xs' := xs'.set! P.mov[j]! sc[j]!
-    if let some i := P.ai then xs' := xs'.set! i aa[4]!
-    let hk' ← arOmega (← wgCond P k)
-    let extra := if P.ai.isSome then #[] else #[aa[4]!]
-    let pf := mkAppN ih (xs' ++ miss ++ extra ++ #[hk'])
-    let tl := wgTail P xs' miss
-    let ty ← mkAppM ``HProp.himpl #[← wgConcLhs P k aa[4]! xs' miss, mkAppN (mkConst P.pname) xs']
-    unless ← isDefEq (← inferType pf) ty do throwError "wg: ih type"
-    pure (← mkExpectedTypeHint pf ty, tl)
-  let _ ← arRwLhs ([atom] ++ tl.toList) lem
-  wgUnfoldClose P false
-
-def wgConcStep (P : WgP) (Inv k ih : Expr) (xs miss : Array Expr) : TacticM Unit := do
-  let old ← withMainContext do return (← getLCtx).getFVarIds
-  let atom ← wgLhsSeg P
-  let aa := atom.getAppArgs
-  let vs ← arRwLhs [atom] (mkAppN (mkConst ``Sep.wseg_succ_elim) #[P.inst, P.sty, P.cLam, k, aa[4]!,
-    aa[5]!, aa[6]!])
-  let some s' := vs[0]? | throwError "wg: succ"
-  let leaves ← if P.cellData.isEmpty then do
-      let _ ← arIntroLhs
-      pure [← getMainGoal]
-    else wgSplitDisj
-  if leaves.length > 1 || !P.cellData.isEmpty then
-    for g in leaves do
-      setGoals [g]
-      let _ ← wgDestruct s'
-      wgNormAll
-      let news ← withMainContext do return (← getLCtx).getFVarIds.filter (!old.contains ·)
-      wgSubstNew news
-      wgConcIH P Inv k ih xs miss
-    return
-  let _ ← wgDestruct s'
-  wgNormAll
-  let news ← withMainContext do return (← getLCtx).getFVarIds.filter (!old.contains ·)
-  wgSubstNew news
-  if P.kmin == 0 then
-    wgConcIH P Inv k ih xs miss
-    return
-  let (g1, g2) ← withMainContext do
-    let g ← getMainGoal
-    let cond ← mkAppM ``LE.le #[mkNatLit P.kmin, k]
-    let gt ← g.getType
-    let m1 ← mkFreshExprSyntheticOpaqueMVar (← mkArrow cond gt)
-    let m2 ← mkFreshExprSyntheticOpaqueMVar (← mkArrow (← mkAppM ``Not #[cond]) gt)
-    g.assign (← mkAppOptM ``Classical.byCases #[cond, gt, m1, m2])
-    let (_, g1) ← m1.mvarId!.intro1P
-    let (_, g2) ← m2.mvarId!.intro1P
-    pure (g1, g2)
-  setGoals [g1]
-  wgConcIH P Inv k ih xs miss
-  setGoals [g2]
-  let atom ← wgLhsSeg P
-  let aa := atom.getAppArgs
-  let mut atom' ← wgCongTo atom (mkNatLit (P.kmin - 1)) aa[4]! aa[5]! aa[6]! P.mov.size
-  for i in [0 : P.kmin - 1] do
-    let old ← withMainContext do return (← getLCtx).getFVarIds
-    let aa := atom'.getAppArgs
-    let vs ← arRwLhs [atom'] (mkAppN (mkConst ``Sep.wseg_succ_elim) #[P.inst, P.sty, P.cLam,
-      mkNatLit (P.kmin - 2 - i), aa[4]!, aa[5]!, aa[6]!])
-    let some s' := vs[0]? | throwError "wg: succ"
-    let _ ← arIntroLhs
-    let _ ← wgDestruct s'
-    wgNormAll
-    let news ← withMainContext do return (← getLCtx).getFVarIds.filter (!old.contains ·)
-    wgSubstNew news
-    atom' ← wgLhsSeg P
-  wgConcZeroElim P atom'
-
-def wgBuildConc (P : WgP) (Inv : Expr) : TacticM Expr := do
-  let motive ← withLocalDeclD `k (mkConst ``Nat) fun k => do mkLambdaFVars #[k] (← wgConcMotive P k)
-  let nx := P.tys.size
-  let nm := (wgMissTys P).size
-  let nv := nx + nm + (if P.ai.isSome then 0 else 1)
-  let mb ← arGoal (motive.beta #[mkNatLit 0])
-  let (_, gb) ← (← getMainGoal).introNP (nv + 1)
-  setGoals [gb]
-  if P.kmin ≥ 1 then
-    withMainContext do
-      let g ← getMainGoal
-      let pf ← arOmega (mkConst ``False)
-      g.assign (← mkAppOptM ``False.elim #[← g.getType, pf])
-  else
-    wgConcZeroElim P (← wgLhsSeg P)
-  unless (← getUnsolvedGoals).isEmpty do throwError "wg: conc base"
-  let base ← instantiateMVars mb
-  let sty ← withLocalDeclD `k (mkConst ``Nat) fun k => do
-    mkForallFVars #[k] (← mkArrow (motive.beta #[k]) (motive.beta #[← mkAppM ``HAdd.hAdd #[k, mkNatLit 1]]))
-  let ms ← arGoal sty
-  let (fvs, gs) ← (← getMainGoal).introNP (2 + nv + 1)
-  setGoals [gs]
-  let xs := (fvs.extract 2 (2 + nx)).map mkFVar
-  let miss := (fvs.extract (2 + nx) (2 + nx + nm)).map mkFVar
-  wgConcStep P Inv (mkFVar fvs[0]!) (mkFVar fvs[1]!) xs miss
-  unless (← getUnsolvedGoals).isEmpty do throwError "wg: conc step"
-  let step ← instantiateMVars ms
-  withLocalDeclD `k (mkConst ``Nat) fun k => do
-    let r ← instantiateMVars (← mkAppOptM ``Nat.rec #[motive, base, step, k])
-    if r.hasExprMVar then throwError "wg: conc mvar"
-    mkLambdaFVars #[k] r
-
 def wgGenOk (P : WgP) : Bool :=
-  P.profLam.isNone && !P.via && P.cellData.isEmpty && P.tailLam.isNone && !P.recursive &&
-    P.wLam.isNone && P.unitW && P.nbr == 2 && P.kmin ≤ 1 &&
+  P.profLam.isNone && !P.recursive && P.kmin ≤ 2 &&
     (P.endSpec.filter (fun (f, c) => f.isNone && c.isNone)).size ≤ 1
 
 structure WgGen where
@@ -7379,6 +7188,7 @@ structure WgGen where
   mTy : Option Expr
   nEL : Option Expr
   PL : Expr
+  TL : Option Expr
 
 def wgGenData (P : WgP) (xs : Array Expr) : MetaM WgGen := do
   let atom := mkAppN (mkConst P.pname) xs
@@ -7388,6 +7198,7 @@ def wgGenData (P : WgP) (xs : Array Expr) : MetaM WgGen := do
   let nX := xs.size
   unless ← isDefEq ta (← wgTuple xs) do throwError "wg: gen tuple"
   let mTy := (wgMissTys P)[0]?
+  if P.tailLam.isSome && mTy.isNone then throwError "wg: gen tail"
   withLocalDeclD `a aty fun a => withLocalDeclD `m (mTy.getD (mkConst ``Nat)) fun m => do
     let ps ← (Array.range nX).mapM (wgProj a · nX)
     let st ← wgTuple (P.mov.map (ps[·]!))
@@ -7398,8 +7209,9 @@ def wgGenData (P : WgP) (xs : Array Expr) : MetaM WgGen := do
     let nE := P.ai.map (ps[·]!)
     let pa := mkAppN (mkConst P.pname) ps
     let enL ← mkLambdaFVars (if mTy.isSome then #[a, m] else #[a]) en
+    let TL ← P.tailLam.mapM fun t => mkLambdaFVars #[a, m] (t.beta (ps.push m))
     return { aty, F, nX, stL := ← mkLambdaFVars #[a] st, enL, mTy,
-             nEL := ← nE.mapM (mkLambdaFVars #[a] ·), PL := ← mkLambdaFVars #[a] pa }
+             nEL := ← nE.mapM (mkLambdaFVars #[a] ·), PL := ← mkLambdaFVars #[a] pa, TL }
 
 def wgGenEn (G : WgGen) (a : Expr) (m : Option Expr) : Expr :=
   match m with
@@ -7419,126 +7231,210 @@ def wgBranchTo (P : WgP) (xs : Array Expr) (L : Expr) (bi : Nat) : TacticM (Expr
     mkAppN (mkConst ``himpl_of_eq) #[P.inst, body, lhsE, back]]
   return (pf, m.mvarId!)
 
+def wgBaseIdx (P : WgP) : MetaM Nat := do
+  let entries := xsearchUnfoldExt.getState (← getEnv)
+  let some ent := entries.find? (·.headFn == P.pname) | throwError "wg: gen unfold"
+  forallTelescopeReducing (← getConstInfo ent.lemmaName).type fun _ concl => do
+    let some (_, _, body) := concl.eq? | throwError "wg: gen unfold eq"
+    let brs := wgBranches body #[]
+    let bs := (Array.range brs.size).filter fun i => (brs[i]!.find? (·.isConstOf P.pname)).isNone
+    unless bs.size == 1 do throwError "wg: gen base"
+    return bs[0]!
+
 def wgGenRel (G : WgGen) (a a' w : Expr) : MetaM Expr := do
   let ee ← match G.mTy with
     | some ty => withLocalDeclD `m ty fun m => do
         mkForallFVars #[m] (← mkEq (wgGenEn G a' (some m)) (wgGenEn G a (some m)))
     | none => mkEq (wgGenEn G a' none) (wgGenEn G a none)
+  let ee ← match G.TL, G.mTy with
+    | some tl, some ty => mkAppM ``And #[ee, ← withLocalDeclD `m ty fun m => do
+        mkForallFVars #[m] (← mkEq (tl.beta #[a', m]) (tl.beta #[a, m]))]
+    | _, _ => pure ee
   match G.nEL with
   | some nl => mkAppM ``And #[ee, ← mkEq (nl.beta #[a]) (← arAdd (nl.beta #[a']) w)]
   | none => pure ee
+
+partial def wgCellViews (e : Expr) : Array Expr :=
+  if e.isAppOfArity ``hdisj 3 then #[e.getAppArgs[1]!] ++ wgCellViews e.getAppArgs[2]! else #[e]
+
+partial def wgCellSel (inst V e : Expr) (d : Nat) : Expr :=
+  if e.isAppOfArity ``hdisj 3 then
+    let a := e.getAppArgs
+    if d == 0 then mkAppN (mkConst ``hdisj_left) #[inst, V, a[1]!, a[2]!, mkApp2 (mkConst ``HProp.himpl_refl) inst V]
+    else mkAppN (mkConst ``hdisj_right) #[inst, V, a[1]!, a[2]!, wgCellSel inst V a[2]! (d - 1)]
+  else mkApp2 (mkConst ``HProp.himpl_refl) inst V
+
+partial def wgCellElim (inst K H e : Expr) (pfs : Array Expr) (d : Nat) : Expr :=
+  if e.isAppOfArity ``hdisj 3 then
+    let a := e.getAppArgs
+    mkAppN (mkConst ``hdisj_star_elim) #[inst, a[1]!, a[2]!, K, H, pfs[d]!, wgCellElim inst K H a[2]! pfs (d + 1)]
+  else pfs[d]!
+
+def wgViewIdx (P : WgP) (j : Nat) : Option Nat :=
+  if P.cellData.isEmpty then none else P.cellData.findIdx? (·.2.2.2.2 == j)
+
+def wgBaseLem (P : WgP) (G : WgGen) (a : Expr) : MetaM Expr := do
+  let st := G.stL.beta #[a]
+  let cnt := G.nEL.isSome
+  let nE := (G.nEL.map (·.beta #[a])).toArray
+  let (thm, args) ← match G.mTy, G.TL with
+    | none, _ => do
+      let thm ← match P.kmin, cnt with
+        | 0, true => pure ``Sep.wseg_base0_cnt
+        | 0, false => pure ``Sep.wseg_base0_free
+        | 1, true => pure ``Sep.wseg_base1_cnt
+        | 1, false => pure ``Sep.wseg_base1_free
+        | 2, false => pure ``Sep.wseg_base2_free
+        | _, _ => throwError "wg: gen base"
+      pure (thm, #[P.cLam, st, wgGenEn G a none] ++ nE)
+    | some ty, tl => do
+      let enF ← withLocalDeclD `m ty fun m => do mkLambdaFVars #[m] (wgGenEn G a (some m))
+      match tl with
+      | none =>
+        let thm ← match P.kmin, cnt with
+          | 0, true => pure ``Sep.wseg_base0_cnt_m
+          | 0, false => pure ``Sep.wseg_base0_free_m
+          | 1, true => pure ``Sep.wseg_base1_cnt_m
+          | 1, false => pure ``Sep.wseg_base1_free_m
+          | _, _ => throwError "wg: gen base"
+        pure (thm, #[ty, P.cLam, st, enF] ++ nE)
+      | some tl =>
+        let thm ← match P.kmin, cnt with
+          | 0, false => pure ``Sep.wseg_base0_free_mt
+          | 1, false => pure ``Sep.wseg_base1_free_mt
+          | _, _ => throwError "wg: gen base"
+        let tF ← withLocalDeclD `m ty fun m => do mkLambdaFVars #[m] (tl.beta #[a, m])
+        pure (thm, #[ty, P.cLam, st, enF, tF])
+  return mkAppN (mkConst thm) (#[P.inst, P.sty] ++ args)
+
+def wgViaPick (P : WgP) (st : Expr) : TacticM Nat := do
+  let (d, pay) ← withMainContext do
+    let L ← wgLhs
+    let hw := L.filter (·.isAppOf ``hwith)
+    let some h0 := hw[0]? | throwError "wg: via pick"
+    let c0 := P.mov.map (h0.getAppArgs[1]!.getAppArgs[·]!)
+    let cs ← wgComps st P.mov.size
+    let mut found := none
+    for d in [0 : P.cellData.size] do
+      let (pre, next, usT, _, _) := P.cellData[d]!
+      let s ← saveState
+      let us ← usT.mapM fun t => mkFreshExprMVar (some t)
+      let mut ok := true
+      for r in flatStar (← wgNorm (pre.beta (cs ++ us))) #[] do
+        unless r.isAppOfArity ``HProp.hsingle 3 do continue
+        let l? ← L.findM? (fun l => do
+          if l.isAppOfArity ``HProp.hsingle 3 then isDefEq l.getAppArgs[1]! r.getAppArgs[1]! else pure false)
+        unless ← (match l? with | some l => isDefEq l r | none => pure false) do ok := false
+      let nx ← wgComps (← instantiateMVars (← wgNorm (next.beta (cs ++ us)))) P.mov.size
+      s.restore
+      if ok && nx == c0 then
+        found := some d
+        break
+    let some d := found | throwError "wg: via pick"
+    pure (d, hw.extract 1 hw.size)
+  for h in pay do
+    let a := h.getAppArgs
+    let _ ← arRwLhs [h] (mkAppN (mkConst ``hwith_l) #[a[0]!, a[1]!, a[2]!])
+  return d
 
 def wgBuildAbsGen (P : WgP) : TacticM Expr := do
   let pty := (← getConstInfo P.pname).type
   forallTelescope pty fun xs _ => do
   let G ← wgGenData P xs
-  let one ← arIntLit 1
-  let cnt := G.nEL.isSome
-  let wrapM := fun (body : Expr → MetaM Expr) => do
-    match G.mTy with
-    | some ty => withLocalDeclD `m ty fun m => do
-        mkAppM ``HProp.hexists #[← mkLambdaFVars #[m] (← body m)]
-    | none => body (mkConst ``Unit.unit)
-  let mOpt := fun (m : Expr) => if G.mTy.isSome then some m else none
-  let BL ← withLocalDeclD `a G.aty fun a => do
-    let st := G.stL.beta #[a]
-    let b ← wrapM fun m => do
-      let en := wgGenEn G a (mOpt m)
-      if P.kmin == 0 then
-        if let some nl := G.nEL then
-          mkAppOptM ``HProp.hpure #[P.inst, ← mkAppM ``And #[← mkEq st en, ← mkEq (nl.beta #[a]) (← arIntLit 0)]]
-        else mkAppOptM ``HProp.hpure #[P.inst, ← mkEq st en]
-      else
-        withLocalDeclD `w arIntT fun w => do
-          let cell := mkApp3 P.cLam st en w
-          let body ← if let some nl := G.nEL then
-              mkAppM ``HProp.hstar #[← mkAppOptM ``HProp.hpure #[P.inst, ← mkEq (nl.beta #[a]) w], cell]
-            else pure cell
-          mkAppM ``HProp.hexists #[← mkLambdaFVars #[w] body]
-    mkLambdaFVars #[a] b
-  let hbase ← withLocalDeclD `a G.aty fun a => do
-    let st := G.stL.beta #[a]
-    let (thm, enArg) ← match G.mTy with
-      | some ty => do
-        let tl ← withLocalDeclD `m ty fun m => do mkLambdaFVars #[m] (wgGenEn G a (some m))
-        let thm := if P.kmin == 0 then (if cnt then ``Sep.wseg_base0_cnt_m else ``Sep.wseg_base0_free_m)
-          else (if cnt then ``Sep.wseg_base1_cnt_m else ``Sep.wseg_base1_free_m)
-        pure (thm, #[ty, P.cLam, st, tl])
-      | none => do
-        let thm := if P.kmin == 0 then (if cnt then ``Sep.wseg_base0_cnt else ``Sep.wseg_base0_free)
-          else (if cnt then ``Sep.wseg_base1_cnt else ``Sep.wseg_base1_free)
-        pure (thm, #[P.cLam, st, wgGenEn G a none])
-    let args := #[P.inst, P.sty] ++ enArg ++ (G.nEL.map (·.beta #[a])).toArray
-    mkLambdaFVars #[a] (mkAppN (mkConst thm) args)
-  let hstep ← withLocalDeclD `X (← mkArrow G.aty (mkApp (mkConst ``HProp) P.inst)) fun X =>
+  let inst := P.inst
+  let QL ← withLocalDeclD `a G.aty fun a => do
+    mkLambdaFVars #[a] (← wgAbsTarget P (← (Array.range G.nX).mapM (wgProj a · G.nX)))
+  let (BL, hbase) ← withLocalDeclD `a G.aty fun a => do
+    let lem ← wgBaseLem P G a
+    let some (b, _) := entailHead? (← inferType lem) | throwError "wg: gen base"
+    pure (← mkLambdaFVars #[a] (← Core.betaReduce b), ← mkLambdaFVars #[a] lem)
+  let relL ← withLocalDeclD `a G.aty fun a => withLocalDeclD `a' G.aty fun a' =>
+    withLocalDeclD `w arIntT fun w => do mkLambdaFVars #[a, a', w] (← wgGenRel G a a' w)
+  let (cons, cargs) ← match G.nEL.isSome, G.mTy, G.TL with
+    | true, none, none => pure (``Sep.wseg_cons_cnt, #[G.aty, P.sty, P.cLam, G.stL, G.enL] ++ G.nEL.toArray)
+    | false, none, none => pure (``Sep.wseg_cons_free, #[G.aty, P.sty, P.cLam, G.stL, G.enL])
+    | true, some ty, none => pure (``Sep.wseg_cons_cnt_m, #[G.aty, P.sty, ty, P.cLam, G.stL, G.enL] ++ G.nEL.toArray)
+    | false, some ty, none => pure (``Sep.wseg_cons_free_m, #[G.aty, P.sty, ty, P.cLam, G.stL, G.enL])
+    | false, some ty, some tl => pure (``Sep.wseg_cons_free_mt, #[G.aty, P.sty, ty, P.cLam, G.stL, G.enL, tl])
+    | _, _, _ => throwError "wg: gen cons"
+  let hcons := mkAppN (mkConst cons) (#[inst] ++ cargs ++ #[mkNatLit P.kmin])
+  let WL ← withLocalDeclD `b G.aty fun b => do
+    mkLambdaFVars #[b] (← mkAppM ``hwith #[G.PL.beta #[b], QL.beta #[b]])
+  let hstep ← withLocalDeclD `X (← mkArrow G.aty (mkApp (mkConst ``HProp) inst)) fun X =>
     withLocalDeclsD (wgDecls P.tys "gx") fun ys => do
+      let Xe := if P.via then WL else X
       let tup ← wgTuple ys
-      let some fx ← unfoldDefinition? (mkApp2 G.F X tup) | throwError "wg: gen F"
+      let st := G.stL.beta #[tup]
+      let some fx ← unfoldDefinition? (mkApp2 G.F Xe tup) | throwError "wg: gen F"
       let body ← wgNorm (← whnfCore fx)
       let brs := wgBranches body #[]
-      unless brs.size == 2 do throwError "wg: gen branches"
-      let st := G.stL.beta #[tup]
+      let isRec := fun (e : Expr) => if P.via then e.isAppOf ``hwith else e.getAppFn == X
       let Bt ← wgNorm (BL.beta #[tup])
       let stepL ← withLocalDeclD `a' G.aty fun a' => withLocalDeclD `w arIntT fun w => do
-        let r ← wgGenRel G tup a' w
-        let inner ← mkAppM ``HProp.hstar #[← mkAppOptM ``HProp.hpure #[P.inst, r],
-          ← mkAppM ``HProp.hstar #[mkApp3 P.cLam st (G.stL.beta #[a']) w, mkApp X a']]
+        let inner ← mkAppM ``HProp.hstar #[← mkAppOptM ``HProp.hpure #[inst, ← wgGenRel G tup a' w],
+          ← mkAppM ``HProp.hstar #[mkApp3 P.cLam st (G.stL.beta #[a']) w, mkApp Xe a']]
         let lw ← mkAppM ``HProp.hexists #[← mkLambdaFVars #[w] inner]
         mkAppM ``HProp.hexists #[← mkLambdaFVars #[a'] lw]
       let tgt ← mkAppM ``Sep.wor #[Bt, stepL]
-      let si := P.stepIdx
       let mut pfs : Array Expr := #[]
-      for j in [0 : 2] do
+      for j in [0 : brs.size] do
         let br := brs[j]!
-        if j == si then
-          let m ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``HProp.himpl #[br, stepL])
-          setGoals [m.mvarId!]
-          let _ ← arIntroLhs
-          let g ← getMainGoal
-          let lhs ← g.withContext do
-            let t ← instantiateMVars (← g.getType)
-            let some (l, _) := entailHead? t | throwError "wg: gen step"
-            pure l
-          let some xa := (flatStar lhs #[]).find? (·.getAppFn == X) | throwError "wg: gen rec"
-          let t := xa.appArg!
-          let inner ← g.withContext do
-            let r ← wgGenRel G tup t one
-            let e ← mkAppM ``HProp.hstar #[← mkAppOptM ``HProp.hpure #[P.inst, r],
-              ← mkAppM ``HProp.hstar #[mkApp3 P.cLam st (G.stL.beta #[t]) one, xa]]
-            wgNorm e
-          let m2 ← g.withContext do mkFreshExprSyntheticOpaqueMVar (← mkAppM ``HProp.himpl #[lhs, inner])
-          let pf2 ← g.withContext do
-            let oJ := stepL.appArg!
-            let iJ := (oJ.beta #[t]).appArg!
-            mkAppOptM ``HProp.himpl_hexists_r #[none, none, t, lhs, oJ,
-              ← mkAppOptM ``HProp.himpl_hexists_r #[none, none, one, lhs, iJ, m2]]
-          unless ← isDefEq (← g.getType) (← inferType pf2) do throwError "wg: gen step type"
-          g.assign pf2
-          setGoals [m2.mvarId!]
-          convClose
-          pfs := pfs.push (← mkAppOptM ``Sep.wor_r #[none, br, Bt, stepL, ← instantiateMVars m])
-        else
+        if (br.find? isRec).isNone then
           let m ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``HProp.himpl #[br, Bt])
           setGoals [m.mvarId!]
           convClose
           pfs := pfs.push (← mkAppOptM ``Sep.wor_l #[none, br, Bt, stepL, ← instantiateMVars m])
-      let pf ← mkAppOptM ``hdisj_elim #[none, brs[0]!, brs[1]!, tgt, pfs[0]!, pfs[1]!]
+          continue
+        let m ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``HProp.himpl #[br, stepL])
+        setGoals [m.mvarId!]
+        let _ ← arIntroLhs
+        let vd ← if P.via then some <$> wgViaPick P st else pure (wgViewIdx P j)
+        let g ← getMainGoal
+        g.withContext do
+          let some (lhs, _) := entailHead? (← instantiateMVars (← g.getType)) | throwError "wg: gen step"
+          let some xa := (flatStar lhs #[]).find? isRec | throwError "wg: gen rec"
+          let ta ← if P.via then wgTuple xa.getAppArgs[1]!.getAppArgs else pure xa.appArg!
+          let (RL, VL, CL, hv, inner) ← withLocalDeclD `w arIntT fun w => do
+            let cellN ← wgNorm (mkApp3 P.cLam st (G.stL.beta #[ta]) w)
+            let (V, hv) := match vd with
+              | some d => let V := (wgCellViews cellN)[d]!; (V, wgCellSel inst V cellN d)
+              | none => (cellN, mkApp2 (mkConst ``HProp.himpl_refl) inst cellN)
+            let r ← mkAppOptM ``HProp.hpure #[inst, ← wgGenRel G tup ta w]
+            let lam := fun e => mkLambdaFVars #[w] e
+            pure (← lam r, ← lam V, ← lam cellN, ← lam hv,
+              ← mkAppM ``HProp.hexists #[← lam (← mkAppM ``HProp.hstar #[r, ← mkAppM ``HProp.hstar #[V, xa]])])
+          let m2 ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``HProp.himpl #[lhs, ← wgNorm inner])
+          setGoals [m2.mvarId!]
+          convClose
+          let pfV := mkAppN (mkConst ``view_hexists) #[inst, lhs, xa, RL, VL, CL, ← instantiateMVars m2, hv]
+          let pf2 ← mkAppOptM ``HProp.himpl_hexists_r #[none, none, ta, lhs, stepL.appArg!, pfV]
+          unless ← isDefEq (← g.getType) (← inferType pf2) do throwError "wg: gen step type"
+          g.assign pf2
+        pfs := pfs.push (← mkAppOptM ``Sep.wor_r #[none, br, Bt, stepL, ← instantiateMVars m])
+      let (pf, _) := wgPGElim inst tgt body pfs 0
       withLocalDeclD `a G.aty fun a => do
         let ps ← (Array.range G.nX).mapM (wgProj a · G.nX)
-        let body := (← mkLambdaFVars ys pf).beta ps
-        mkLambdaFVars #[X, a] body
-  let hind ← withLocalDeclD `X (← mkArrow G.aty (mkApp (mkConst ``HProp) P.inst)) fun X => do
-    let hxT ← withLocalDeclD `b G.aty fun b => do
-      mkForallFVars #[b] (← mkAppM ``HProp.himpl #[mkApp2 G.F X b, mkApp X b])
-    withLocalDeclD `hX hxT fun hX => withLocalDeclD `a G.aty fun a => do
-      mkLambdaFVars #[X, hX, a] (← mkAppM ``lfpG_induct #[G.F, X, hX, a])
-  let hk ← mkDecideProof (← mkAppM ``LE.le #[mkNatLit P.kmin, mkNatLit 1])
-  let (thm, tyArgs) := match G.mTy with
-    | some ty => (if cnt then ``Sep.wseg_abs_cnt_m else ``Sep.wseg_abs_free_m, #[G.aty, P.sty, ty])
-    | none => (if cnt then ``Sep.wseg_abs_cnt else ``Sep.wseg_abs_free, #[G.aty, P.sty])
-  let args := #[P.inst] ++ tyArgs ++ #[G.PL, G.F, hind, P.cLam, G.stL, G.enL] ++ G.nEL.toArray ++
-    #[BL, mkNatLit P.kmin, hk, hstep, hbase, ← wgTuple xs]
-  let pf := mkAppN (mkConst thm) args
+        let bd := (← mkLambdaFVars ys pf).beta ps
+        mkLambdaFVars (if P.via then #[a] else #[X, a]) bd
+  let tup ← wgTuple xs
+  let pf ← if P.via then do
+      let entries ← arEntries
+      let some ent := entries.find? (·.headFn == P.pname) | throwError "wg: via unfold"
+      let some val := (← getConstInfo ent.lemmaName).value? (allowOpaque := true) | throwError "wg: via value"
+      let some un := val.find? (fun e => e.isAppOf `Bench.lfp_unfold) | throwError "wg: via lfp"
+      let hmono := un.getAppArgs.back!
+      let hfold ← withLocalDeclD `a G.aty fun a => do
+        mkLambdaFVars #[a] (mkAppN (mkConst `Bench.lfp_pre) #[inst, G.aty, G.F, hmono, a])
+      pure (mkAppN (mkConst ``wseg_abs_with) #[inst, G.aty, P.sty, G.F, hmono, hfold, P.cLam, G.stL, relL,
+        QL, BL, hstep, hbase, hcons, tup])
+    else do
+      let hind ← withLocalDeclD `X (← mkArrow G.aty (mkApp (mkConst ``HProp) inst)) fun X => do
+        let hxT ← withLocalDeclD `b G.aty fun b => do
+          mkForallFVars #[b] (← mkAppM ``HProp.himpl #[mkApp2 G.F X b, mkApp X b])
+        withLocalDeclD `hX hxT fun hX => withLocalDeclD `a G.aty fun a => do
+          mkLambdaFVars #[X, hX, a] (← mkAppM ``lfpG_induct #[G.F, X, hX, a])
+      pure (mkAppN (mkConst ``Sep.wseg_abs_core) #[inst, G.aty, P.sty, G.PL, G.F, hind, P.cLam, G.stL, relL,
+        QL, BL, hstep, hbase, hcons, tup])
   let ty ← mkAppM ``HProp.himpl #[mkAppN (mkConst P.pname) xs, ← wgAbsTarget P xs]
   unless ← isDefEq (← inferType pf) ty do throwError "wg: gen abs type"
   mkLambdaFVars xs (← mkExpectedTypeHint pf ty)
@@ -7558,13 +7454,49 @@ def wgLoFact (lo x : Expr) : TacticM Unit := withMainContext do
   let (_, g2) ← mv.mvarId!.intro1P
   replaceMainGoal [g2]
 
+def wgRflEq (a b : Expr) : MetaM Expr := do
+  unless ← isDefEq a b do throwError "wg: gen rfl"
+  mkExpectedTypeHint (← mkEqRefl a) (← mkEq a b)
+
 def wgBuildConcGen (P : WgP) (lo : Option Expr) : TacticM Expr := do
   let pty := (← getConstInfo P.pname).type
   forallTelescope pty fun xs0 _ => do
-  let G ← (wgGenData P xs0)
+  let G ← wgGenData P xs0
+  let inst := P.inst
   let nA := P.mov.size
   let cnt := G.nEL.isSome
-  let ext := fun (a s' w : Expr) => if cnt then #[a, s', w] else #[a, s']
+  let mTy := G.mTy.getD (mkConst ``Nat)
+  let JTy ← match cnt, G.mTy with
+    | true, none => pure (mkConst ``Unit)
+    | false, none => pure arIntT
+    | true, some ty => pure ty
+    | false, some ty => wgTupleTy #[ty, arIntT]
+  let jM := fun (j : Expr) => do
+    match cnt, G.mTy with
+    | true, some _ => pure (some j)
+    | false, some _ => some <$> wgProj j 0 2
+    | _, _ => pure none
+  let jN := fun (a j : Expr) => do
+    match G.nEL, G.mTy with
+    | some nl, _ => pure (nl.beta #[a])
+    | none, some _ => wgProj j 1 2
+    | none, none => pure j
+  let empE := mkApp (mkConst ``HProp.hempty) inst
+  let jT := fun (a j : Expr) => do
+    match G.TL with
+    | some tl => pure (tl.beta #[a, (← jM j).getD j])
+    | none => pure empE
+  let lam2 := fun (f : Expr → Expr → MetaM Expr) => withLocalDeclD `a G.aty fun a =>
+    withLocalDeclD `j JTy fun j => do mkLambdaFVars #[a, j] (← f a j)
+  let NL ← lam2 jN
+  let EL ← lam2 fun a j => do pure (wgGenEn G a (← jM j))
+  let TLL ← lam2 jT
+  let jxL ← withLocalDeclD `j JTy fun j => withLocalDeclD `w arIntT fun w => do
+    let r ← match cnt, G.mTy with
+      | true, _ => pure j
+      | false, none => arSub j w
+      | false, some _ => wgTuple #[← wgProj j 0 2, ← arSub (← wgProj j 1 2) w]
+    mkLambdaFVars #[j, w] r
   let nxL ← withLocalDeclD `a G.aty fun a => withLocalDeclD `s' P.sty fun s' =>
     withLocalDeclD `w arIntT fun w => do
       let ps ← (Array.range G.nX).mapM (wgProj a · G.nX)
@@ -7573,20 +7505,27 @@ def wgBuildConcGen (P : WgP) (lo : Option Expr) : TacticM Expr := do
       for i in [0 : G.nX] do
         match P.mov.idxOf? i with
         | some j => args := args.push (if P.cst.contains j then ps[i]! else cs[j]!)
-        | none =>
-          let v ← if P.ai == some i then arSub ps[i]! w else pure ps[i]!
-          args := args.push v
-      mkLambdaFVars (ext a s' w) (← wgTuple args)
-  let mTy := G.mTy.getD (mkConst ``Nat)
-  let rfls ← withLocalDeclD `a G.aty fun a => withLocalDeclD `s' P.sty fun s' =>
-    withLocalDeclD `w arIntT fun w => withLocalDeclD `m mTy fun m => do
-      let nxa := nxL.beta (ext a s' w)
-      let mo := if G.mTy.isSome then some m else none
-      let hst ← if P.cst.isEmpty then mkExpectedTypeHint (← mkEqRefl s') (← mkEq (G.stL.beta #[nxa]) s')
+        | none => args := args.push (← if P.ai == some i then arSub ps[i]! w else pure ps[i]!)
+      mkLambdaFVars #[a, s', w] (← wgTuple args)
+  let useInv := P.tailLam.isSome || !P.cellData.isEmpty
+  let (IL, hI) ← if useInv then do
+      let some Inv ← wgInvOf P | throwError "wg: gen inv"
+      pure (P.invLam, Inv)
+    else
+      withLocalDeclD `k (mkConst ``Nat) fun k => withLocalDeclD `n arIntT fun n =>
+      withLocalDeclD `s P.sty fun s => withLocalDeclD `t P.sty fun t => do
+        let IL ← mkLambdaFVars #[k, s, t, n] (mkConst ``True)
+        let hI ← mkLambdaFVars #[k, n, s, t] (mkAppN (mkConst ``holdsP_true) #[inst, wgSeg P k n s t])
+        pure (IL, hI)
+  let hst ← withLocalDeclD `a G.aty fun a => withLocalDeclD `s' P.sty fun s' =>
+    withLocalDeclD `w arIntT fun w => do
+      let nxa := nxL.beta #[a, s', w]
+      let q ← mkEq (G.stL.beta #[nxa]) s'
+      let cell := mkApp3 P.cLam (G.stL.beta #[a]) s' w
+      let pf ← if P.cst.isEmpty then
+          pure (mkAppN (mkConst ``holdsP_of) #[inst, q, cell, ← wgRflEq (G.stL.beta #[nxa]) s'])
         else do
-          let q ← mkEq (G.stL.beta #[nxa]) s'
-          let cell := mkApp3 P.cLam (G.stL.beta #[a]) s' w
-          let top ← mkAppM ``HProp.hstar #[← mkAppOptM ``HProp.hpure #[P.inst, q], mkApp (mkConst ``HProp.htop) P.inst]
+          let top ← mkAppM ``HProp.hstar #[← mkAppOptM ``HProp.hpure #[inst, q], mkApp (mkConst ``HProp.htop) inst]
           let m ← arGoal (← mkAppM ``HProp.himpl #[cell, top])
           for g in ← wgSplitDisj do
             setGoals [g]
@@ -7594,76 +7533,72 @@ def wgBuildConcGen (P : WgP) (lo : Option Expr) : TacticM Expr := do
               let g ← getMainGoal
               let some (lhs, _) := entailHead? (← instantiateMVars (← g.getType)) | throwError "wg: gen hst"
               let e ← wgTupEq (← wgComps (← wgNorm (G.stL.beta #[nxa])) nA) (← wgComps s' nA)
-              g.assign (← mkAppOptM ``himpl_pure_top #[P.inst, q, lhs, ← mkExpectedTypeHint e q])
-          mkAppOptM ``holdsP_of_top #[P.inst, q, cell, ← instantiateMVars m]
-      let hen ← mkExpectedTypeHint (← mkEqRefl (wgGenEn G a mo)) (← mkEq (wgGenEn G nxa mo) (wgGenEn G a mo))
-      let hn ← match G.nEL with
-        | some nl => do
-          let v ← arSub (nl.beta #[a]) w
-          pure (some (← mkLambdaFVars #[a, s', w] (← mkExpectedTypeHint (← mkEqRefl v) (← mkEq (nl.beta #[nxa]) v))))
-        | none => pure none
-      pure (← mkLambdaFVars (if P.cst.isEmpty then ext a s' w else #[a, s', w]) hst,
-        ← mkLambdaFVars (ext a s' w ++ (if G.mTy.isSome then #[m] else #[])) hen, hn)
-  let (hst, hen, hn) := rfls
-  for e in #[hst, hen] ++ hn.toArray do
-    let _ ← (inferType e)
-  let ci := P.stepIdx
-  let bi := 1 - ci
-  let hb ← withLocalDeclsD (wgDecls P.tys "gy") fun ys => withLocalDeclD `n arIntT fun n =>
-    withLocalDeclD `m mTy fun m => do
+              g.assign (← mkAppOptM ``himpl_pure_top #[inst, q, lhs, ← mkExpectedTypeHint e q])
+          mkAppOptM ``holdsP_of_top #[inst, q, cell, ← instantiateMVars m]
+      mkLambdaFVars #[a, s', w] pf
+  let (hN, hE, hT) ← withLocalDeclD `a G.aty fun a => withLocalDeclD `j JTy fun j =>
+    withLocalDeclD `s' P.sty fun s' => withLocalDeclD `w arIntT fun w => do
+      let nxa := nxL.beta #[a, s', w]
+      let jx := jxL.beta #[j, w]
+      let vs := #[a, j, s', w]
+      let hN ← mkLambdaFVars vs (← wgRflEq (NL.beta #[nxa, jx]) (← arSub (NL.beta #[a, j]) w))
+      let hE ← mkLambdaFVars vs (← wgRflEq (EL.beta #[nxa, jx]) (EL.beta #[a, j]))
+      let hT ← mkLambdaFVars vs (← wgRflEq (TLL.beta #[nxa, jx]) (TLL.beta #[a, j]))
+      pure (hN, hE, hT)
+  let bi ← wgBaseIdx P
+  let hb ← withLocalDeclsD (wgDecls P.tys "gy") fun ys => withLocalDeclD `j JTy fun j => do
     let tup ← wgTuple ys
-    let mo := if G.mTy.isSome then some m else none
     let st := G.stL.beta #[tup]
-    let en := wgGenEn G tup mo
-    let nE := match G.nEL with
-      | some nl => nl.beta #[tup]
-      | none => n
-    let (lem, L) ← if P.kmin == 0 then do
-        let L ← mkAppOptM ``HProp.hpure #[P.inst, ← mkAppM ``And #[← mkEq st en, ← mkEq nE (← arIntLit 0)]]
-        pure (mkAppN (mkConst ``Sep.wseg_zero_elim) #[P.inst, P.sty, P.cLam, nE, st, en], L)
+    let en := EL.beta #[tup, j]
+    let nE := NL.beta #[tup, j]
+    let T := TLL.beta #[tup, j]
+    let seg := wgSeg P (mkNatLit P.kmin) nE st en
+    let lem ← match P.kmin with
+      | 0 => pure (mkAppN (mkConst ``Sep.wseg_zero_elim) #[inst, P.sty, P.cLam, nE, st, en])
+      | 1 => pure (mkAppN (mkConst ``Sep.wseg_uncell) #[inst, P.sty, P.cLam, st, en, nE])
+      | 2 => pure (mkAppN (mkConst ``Sep.wseg_two_elim) #[inst, P.sty, P.cLam, nE, st, en])
+      | _ => throwError "wg: gen kmin"
+    let some (_, Lz) := entailHead? (← inferType lem) | throwError "wg: gen hb"
+    let (lemF, L) ← if G.TL.isSome then do
+        pure (mkAppN (mkConst ``HProp.himpl_frame_l) #[inst, seg, Lz, T, lem], ← mkAppM ``HProp.hstar #[Lz, T])
       else do
-        let L ← wgNorm (mkApp3 P.cLam st en nE)
-        pure (mkAppN (mkConst ``Sep.wseg_uncell) #[P.inst, P.sty, P.cLam, st, en, nE], L)
-    let (pf, g) ← (wgBranchTo P ys L bi)
+        pure (← mkAppM ``HProp.himpl_trans #[mkAppN (mkConst ``star_emp_elim) #[inst, seg], lem], Lz)
+    let L' ← wgNorm L
+    let (pf, g) ← wgBranchTo P ys L' bi
     setGoals [g]
     convClose
-    let pf ← instantiateMVars pf
-    let full ← mkAppM ``HProp.himpl_trans #[lem, ← mkExpectedTypeHint pf (← mkAppM ``HProp.himpl
-      #[(← inferType lem).appArg!, mkAppN (mkConst P.pname) ys])]
+    let full := mkAppN (mkConst ``HProp.himpl_trans) #[inst, ← mkAppM ``HProp.hstar #[seg, T], L,
+      mkAppN (mkConst P.pname) ys, lemF, ← instantiateMVars pf]
     withLocalDeclD `a G.aty fun a => do
       let ps ← (Array.range G.nX).mapM (wgProj a · G.nX)
-      let mv := if G.mTy.isSome then #[m] else #[]
-      if cnt then mkLambdaFVars (#[a] ++ mv) ((← mkLambdaFVars ys full).beta ps)
-      else mkLambdaFVars (#[a, n] ++ mv) ((← mkLambdaFVars (ys ++ #[n]) full).beta (ps ++ #[n]))
+      mkLambdaFVars #[a, j] ((← mkLambdaFVars ys full).beta ps)
   let h1 ← withLocalDeclsD (wgDecls P.tys "gy") fun ys =>
-    withLocalDeclsD (wgDecls (wgMovTys P) "gc") fun cs => withLocalDeclD `w arIntT fun w => do
+    withLocalDeclsD (wgDecls (wgMovTys P) "gc") fun cs => withLocalDeclD `w arIntT fun w =>
+    withLocalDeclD `k (mkConst ``Nat) fun k => withLocalDeclD `j JTy fun j => do
       let tup ← wgTuple ys
       let ct ← wgTuple cs
       let st := G.stL.beta #[tup]
-      let nxa ← wgNorm (nxL.beta (ext tup ct w))
-      let pnx ← wgNorm (G.PL.beta #[nxa])
+      let nw ← arSub (NL.beta #[tup, j]) w
+      withLocalDeclD `hi (← wgNorm (IL.beta #[k, ct, EL.beta #[tup, j], nw])) fun hi => do
+      let pnx ← wgNorm (G.PL.beta #[← wgNorm (nxL.beta #[tup, ct, w])])
       let cell ← wgNorm (mkApp3 P.cLam st ct w)
-      let L ← mkAppM ``HProp.hstar #[cell, pnx]
-      let (pf, g) ← (wgBranchTo P ys L ci)
-      setGoals [g]
-      if let some lo := lo then wgLoFact lo pnx
-      convClose
-      let pf ← instantiateMVars pf
+      let PA := mkAppN (mkConst P.pname) ys
+      let views := if P.cellData.isEmpty then #[(cell, P.stepIdx)] else
+        (wgCellViews cell).mapIdx fun d V => (V, if P.via then P.stepIdx else (P.cellData[d]!).2.2.2.2)
+      let mut pfs : Array Expr := #[]
+      for (V, b) in views do
+        let (pf, g) ← wgBranchTo P ys (← mkAppM ``HProp.hstar #[V, pnx]) b
+        setGoals [g]
+        if let some lo := lo then wgLoFact lo pnx
+        convClose
+        pfs := pfs.push (← instantiateMVars pf)
+      let pf := wgCellElim inst pnx PA cell pfs 0
       withLocalDeclD `a G.aty fun a => withLocalDeclD `s' P.sty fun s' => do
         let ps ← (Array.range G.nX).mapM (wgProj a · G.nX)
         let qs ← (Array.range nA).mapM (wgProj s' · nA)
-        let body := (← mkLambdaFVars (ys ++ cs ++ #[w]) pf).beta (ps ++ qs ++ #[w])
-        mkLambdaFVars #[a, s', w] body
-  if !P.cst.isEmpty && G.mTy.isSome then throwError "wg: gen conc cst"
-  let (thm, tyArgs) := match G.mTy with
-    | some ty => (if cnt then ``Sep.wseg_conc_cnt_m else ``Sep.wseg_conc_free_m, #[G.aty, P.sty, ty])
-    | none =>
-      if P.cst.isEmpty then (if cnt then ``Sep.wseg_conc_cnt else ``Sep.wseg_conc_free, #[G.aty, P.sty])
-      else (if cnt then ``wseg_conc_cnt_h else ``wseg_conc_free_h, #[G.aty, P.sty])
-  let args := #[P.inst] ++ tyArgs ++ #[G.PL, P.cLam, G.stL, G.enL] ++ G.nEL.toArray ++
-    #[nxL, mkNatLit P.kmin, hst, hen] ++ hn.toArray ++ #[hb, h1]
-  let core := mkAppN (mkConst thm) args
-  let _ ← (inferType core)
+        mkLambdaFVars #[a, s'] ((← mkLambdaFVars (ys ++ cs ++ #[w, k, j, hi]) pf).beta (ps ++ qs))
+  let core := mkAppN (mkConst ``wseg_conc_core) #[inst, G.aty, P.sty, JTy, G.PL, P.cLam, G.stL, NL, EL, TLL,
+    nxL, jxL, mkNatLit P.kmin, IL, hI, hst, hN, hE, hT, hb, h1]
   withLocalDeclD `k (mkConst ``Nat) fun k =>
   withLocalDeclsD (wgDecls P.tys "cx") fun xs =>
   withLocalDeclD `cm mTy fun m =>
@@ -7671,223 +7606,31 @@ def wgBuildConcGen (P : WgP) (lo : Option Expr) : TacticM Expr := do
     let nE := match P.ai with
       | some i => xs[i]!
       | none => n
-    let hkT ← wgCond P k
     let mv := if G.mTy.isSome then #[m] else #[]
-    withLocalDeclD `hk hkT fun hk => do
+    let jv ← match cnt, G.mTy with
+      | true, none => pure (mkConst ``Unit.unit)
+      | false, none => pure n
+      | true, some _ => pure m
+      | false, some _ => wgTuple #[m, n]
+    withLocalDeclD `hk (← wgCond P k) fun hk => do
       let tup ← wgTuple xs
-      let pf := if cnt then mkAppN core (#[k, tup] ++ mv ++ #[hk])
-        else mkAppN core (#[k, tup] ++ mv ++ #[n, hk])
-      let ty ← mkAppM ``HProp.himpl #[← wgConcLhs P k nE xs mv, mkAppN (mkConst P.pname) xs]
-      unless ← (do isDefEq (← inferType pf) ty) do throwError "wg: gen conc type"
-      let vs := if cnt then #[k] ++ xs ++ mv ++ #[hk] else #[k] ++ xs ++ mv ++ #[n, hk]
+      let pf0 := mkAppN core #[k, tup, jv, hk]
+      let lhs ← wgConcLhs P k nE xs mv
+      let pf ← if G.TL.isSome then pure pf0 else
+        mkAppM ``HProp.himpl_trans #[mkAppN (mkConst ``star_emp_r) #[inst, lhs], pf0]
+      let ty ← mkAppM ``HProp.himpl #[lhs, mkAppN (mkConst P.pname) xs]
+      unless ← isDefEq (← inferType pf) ty do throwError "wg: gen conc type"
+      let vs := #[k] ++ xs ++ mv ++ (if cnt then #[] else #[n]) ++ #[hk]
       mkLambdaFVars vs (← mkExpectedTypeHint pf ty)
 
 mutual
-
-partial def wgAbsLeaf (P : WgP) (grp : Array Name) : TacticM Unit := do
-  let _ ← arIntroLhs
-  let _ ← wgUnfoldHelpers
-  let pays := (#[P.preLam] ++ P.cellData.map (·.1))
-  for _ in [0 : 8] do
-    let nxt ← withMainContext do
-      for x in ← wgLhs do
-        let some q := x.getAppFn.constName? | continue
-        if grp.contains q || pays.any (fun e => (e.find? (·.isConstOf q)).isSome) then continue
-        let some Q ← wgPOf q | continue
-        if x.getAppNumArgs == Q.tys.size then return some (x, Q)
-      return none
-    let some (x, Q) := nxt | break
-    let some A ← wgAbsOf Q | throwError "wg: abs atom"
-    let _ ← (arRwLhs [x] (mkAppN A x.getAppArgs))
-    let _ ← arIntroLhs
-  wgSubstAll
-  wgNormAll
-  let finish := fun () => do
-    for _ in [0 : (← wgLhs).size] do
-      let starts ← withMainContext do
-        let L ← wgLhs
-        L.filterMapM fun e => do
-          if wgIsSeg e && e.getAppArgs[2]! == P.cLam then
-            return some (← wgComps (← instantiateMVars e.getAppArgs[5]!) P.mov.size)
-          return none
-      let mut stepped := false
-      if P.cellData.size > 1 then
-        for h in starts do
-          if (← wgCellToSeg P none (some h)).isSome then
-            stepped := true
-            break
-      unless stepped do
-        if (← (wgCellToSeg P none none)).isNone then break
-    (wgJoinAll P)
-    (wgCloseSegs P)
-  try finish ()
-  catch e =>
-    let cands ← withMainContext do
-      let mut out : Array (Expr × WgP) := #[]
-      for x in ← wgLhs do
-        unless wgIsSeg x && x.getAppArgs[2]! == P.cLam do continue
-        for q in grp do
-          let some Q ← wgPOf q | continue
-          unless Q.via do continue
-          let en ← wgComps x.getAppArgs[6]! Q.mov.size
-          if en == wgEnC Q #[] #[] then out := out.push (x, Q)
-      pure out
-    for (x, Q) in cands do
-      try
-        let some C ← wgConcOf Q | continue
-        let lem ← withMainContext do
-          let xa := x.getAppArgs
-          let pf := mkAppN C #[xa[3]!, xa[5]!, xa[4]!, ← arOmega (← wgCond Q xa[3]!)]
-          pure pf
-        let _ ← arRwLhs [x] lem
-        finish ()
-        return
-      catch _ => pure ()
-    throw e
-
-partial def wgBuildAbs (P : WgP) : TacticM Expr := do
-  let pty := (← getConstInfo P.pname).type
-  forallTelescope pty fun xs _ => do
-    let atom := mkAppN (mkConst P.pname) xs
-    let tgt ← wgAbsTarget P xs
-    match ← functionalOf? atom with
-    | some (F, ta) =>
-      let aty ← inferType ta
-      if aty.isAppOf ``Sum then throwError "wg: mutual"
-      let X ← (mkXFunN (stripInj ta) #[tgt] 0 aty)
-      let hX ← (indSetup F X aty 1)
-      let mut leaves : List MVarId := []
-      for g in ← getGoals do
-        setGoals [g]
-        leaves := leaves ++ (← wgSplitDisj)
-      for g in leaves do
-        setGoals [g]
-        wgAbsLeaf P #[P.pname]
-      setGoals []
-      let key ← (do instantiateMVars (← mkAppM ``lfpG_induct #[F, X, hX, ta]))
-      let ty ← mkAppM ``HProp.himpl #[atom, tgt]
-      unless ← (do isDefEq (← inferType key) ty) do throwError "wg: abs type"
-      let pf ← instantiateMVars (← mkExpectedTypeHint key ty)
-      if pf.hasExprMVar then throwError "wg: abs mvar"
-      mkLambdaFVars xs pf
-    | none =>
-      let m ← arGoal (← mkAppM ``HProp.himpl #[atom, tgt])
-      rewriteOcc (← arEntries) atom
-      for g in ← wgSplitDisj do
-        setGoals [g]
-        wgAbsLeaf P #[]
-      arFinish m xs
-
-partial def wgViaLeaf (P : WgP) : TacticM Unit := do
-  let _ ← arIntroLhs
-  let hw ← withMainContext do return (← wgLhs).filter (·.isAppOf ``hwith)
-  for i in [0 : hw.size] do
-    let s ← saveState
-    try
-      for j in [0 : hw.size] do
-        let a := hw[j]!
-        let aa := a.getAppArgs
-        let lem := mkAppN (mkConst (if i == j then ``hwith_r else ``hwith_l)) #[aa[0]!, aa[1]!, aa[2]!]
-        let _ ← arRwLhs [a] lem
-      let _ ← arIntroLhs
-      wgSubstAll
-      wgNormAll
-      for _ in [0 : hw.size + 1] do
-        if (← wgCellToSeg P none none).isNone then break
-      wgJoinAll P
-      wgCloseSegs P
-      return
-    catch _ => s.restore
-  throwError "wg: via leaf"
-
-partial def wgBuildAbsVia (P : WgP) : TacticM Expr := do
-  let pty := (← getConstInfo P.pname).type
-  forallTelescope pty fun xs _ => do
-  let atom := mkAppN (mkConst P.pname) xs
-  let some (F, ta) ← functionalOf? atom | throwError "wg: via functional"
-  let aty ← inferType ta
-  if aty.isAppOf ``Sum then throwError "wg: via mutual"
-  unless ← isDefEq ta (← wgTuple xs) do throwError "wg: via tuple"
-  let entries ← arEntries
-  let some ent := entries.find? (·.headFn == P.pname) | throwError "wg: via unfold"
-  let some val := (← getConstInfo ent.lemmaName).value? (allowOpaque := true) | throwError "wg: via value"
-  let some un := val.find? (fun e => e.isAppOf `Bench.lfp_unfold) | throwError "wg: via lfp"
-  let ua := un.getAppArgs
-  let hmono := ua.back!
-  let nX := xs.size
-  let ML ← withLocalDeclD `a aty fun a => do
-    let ps ← (Array.range nX).mapM (wgProj a · nX)
-    mkLambdaFVars #[a] (← wgAbsTarget P ps)
-  let hfold ← withLocalDeclD `a aty fun a => do
-    mkLambdaFVars #[a] (mkAppN (mkConst `Bench.lfp_pre) #[P.inst, aty, F, hmono, a])
-  let WL ← withLocalDeclD `b aty fun b => do
-    let ps ← (Array.range nX).mapM (wgProj b · nX)
-    mkLambdaFVars #[b] (← mkAppM ``hwith #[mkAppN (mkConst P.pname) ps, ML.beta #[b]])
-  let hM ← withLocalDeclsD (wgDecls P.tys "vx") fun ys => do
-    let tup ← wgTuple ys
-    let some fx ← unfoldDefinition? (mkApp2 F WL tup) | throwError "wg: via F"
-    let body ← wgNorm (← whnfCore fx)
-    let tgt ← wgNorm (ML.beta #[tup])
-    let brs := wgBranches body #[]
-    unless brs.size == 2 do throwError "wg: via branches"
-    let mut pfs : Array Expr := #[]
-    for br in brs do
-      let m ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``HProp.himpl #[br, tgt])
-      setGoals [m.mvarId!]
-      if (br.find? (·.isAppOf ``hwith)).isSome then wgViaLeaf P
-      else
-        let st := ys[P.mov[0]!]!
-        let missT := wgMissTys P
-        let (lem, L) ← if h : missT.size = 1 then do
-            let mty := missT[0]
-            let tl ← withLocalDeclD `m mty fun m => do mkLambdaFVars #[m] (wgEnC P ys #[m])[0]!
-            let L ← withLocalDeclD `m mty fun m => do
-              let body ← match P.ai with
-                | some i => mkAppOptM ``HProp.hpure #[P.inst, ← mkAppM ``And #[← mkEq st (tl.beta #[m]),
-                    ← mkEq ys[i]! (← arIntLit 0)]]
-                | none => mkAppOptM ``HProp.hpure #[P.inst, ← mkEq st (tl.beta #[m])]
-              mkAppM ``HProp.hexists #[← mkLambdaFVars #[m] body]
-            let lem := match P.ai with
-              | some i => mkAppN (mkConst ``Sep.wseg_base0_cnt_m) #[P.inst, P.sty, mty, P.cLam, st, tl, ys[i]!]
-              | none => mkAppN (mkConst ``Sep.wseg_base0_free_m) #[P.inst, P.sty, mty, P.cLam, st, tl]
-            pure (lem, L)
-          else
-          let en := (wgEnC P ys #[])[0]!
-          match P.ai with
-          | some i => do
-            let L ← mkAppOptM ``HProp.hpure #[P.inst, ← mkAppM ``And #[← mkEq st en, ← mkEq ys[i]! (← arIntLit 0)]]
-            pure (mkAppN (mkConst ``Sep.wseg_base0_cnt) #[P.inst, P.sty, P.cLam, st, en, ys[i]!], L)
-          | none => do
-            let L ← mkAppOptM ``HProp.hpure #[P.inst, ← mkEq st en]
-            pure (mkAppN (mkConst ``Sep.wseg_base0_free) #[P.inst, P.sty, P.cLam, st, en], L)
-        let m2 ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``HProp.himpl #[br, L])
-        setGoals [m2.mvarId!]
-        let _ ← arIntroLhs
-        convClose
-        unless (← getUnsolvedGoals).isEmpty do throwError "wg: via base"
-        m.mvarId!.assign (← mkAppM ``HProp.himpl_trans #[← instantiateMVars m2, lem])
-      unless (← getUnsolvedGoals).isEmpty do throwError "wg: via open"
-      pfs := pfs.push (← instantiateMVars m)
-    let pf ← mkAppOptM ``hdisj_elim #[none, brs[0]!, brs[1]!, tgt, pfs[0]!, pfs[1]!]
-    withLocalDeclD `a aty fun a => do
-      let ps ← (Array.range nX).mapM (wgProj a · nX)
-      mkLambdaFVars #[a] ((← mkLambdaFVars ys pf).beta ps)
-  let pf ← mkAppM ``lfpG_induct_with #[F, ML, hmono, hfold, hM, ← wgTuple xs]
-  let ty ← mkAppM ``HProp.himpl #[atom, ← wgAbsTarget P xs]
-  unless ← isDefEq (← inferType pf) ty do throwError "wg: via abs type"
-  mkLambdaFVars xs (← mkExpectedTypeHint pf ty)
 
 partial def wgAbsOf (P : WgP) : TacticM (Option Expr) := do
   if P.pg then
     if let some r ← wgLem s!"abs:{P.pname}" (wgBuildAbsPG P) then return some r
     wgLCache.modify (·.filter (·.1 != s!"abs:{P.pname}"))
-  if P.via then
-    if let some r ← wgLem s!"abs:{P.pname}" (wgBuildAbsVia P) then return some r
-    wgLCache.modify (·.filter (·.1 != s!"abs:{P.pname}"))
-  if wgGenOk P then
-    if let some r ← wgLem s!"abs:{P.pname}" (wgBuildAbsGen P) then return some r
-    wgLCache.modify (·.filter (·.1 != s!"abs:{P.pname}"))
-  wgLem s!"abs:{P.pname}" (wgBuildAbs P)
+  unless wgGenOk P do return none
+  wgLem s!"abs:{P.pname}" (wgBuildAbsGen P)
 
 partial def wgBuildLo (P : WgP) (Abs Inv : Expr) : TacticM Expr := do
   let pty := (← getConstInfo P.pname).type
@@ -7974,13 +7717,10 @@ partial def wgConcOf (P : WgP) : TacticM (Option Expr) := do
   if P.pg then
     if let some r ← wgLem s!"conc:{P.pname}" (wgBuildConcPG P) then return some r
     wgLCache.modify (·.filter (·.1 != s!"conc:{P.pname}"))
-  if wgGenOk P then
-    if let some r ← wgLem s!"conc:{P.pname}" (do
-        let lo ← if P.ai.isSome then wgLoOf P else pure none
-        wgBuildConcGen P lo) then return some r
-    wgLCache.modify (·.filter (·.1 != s!"conc:{P.pname}"))
-  let some Inv ← wgInvOf P | return none
-  wgLem s!"conc:{P.pname}" (wgBuildConc P Inv)
+  unless wgGenOk P do return none
+  wgLem s!"conc:{P.pname}" (do
+    let lo ← if P.ai.isSome then wgLoOf P else pure none
+    wgBuildConcGen P lo)
 
 end
 
@@ -9775,16 +9515,14 @@ def wgPayApply (Q : WgP) (C : Array Expr) (a : Expr) : TacticM Bool := do
 def wgPayEmpty (Q : WgP) (a : Expr) : TacticM Bool := do
   let saved ← getGoals
   let s ← saveState
-  let g ← getMainGoal
-  let m ← g.withContext do
-    let t ← instantiateMVars (← g.getType)
-    let inst := t.getAppArgs[0]!
-    mkFreshExprSyntheticOpaqueMVar (← mkAppM ``HProp.himpl #[starOf inst [], a])
   try
-    setGoals [m.mvarId!]
-    wgUnfoldClose Q true
-    unless (← getUnsolvedGoals).isEmpty do throwError "wg: pay empty"
-    let pf ← instantiateMVars m
+    let bi ← if Q.nbr == 2 && Q.cellData.isEmpty then pure (1 - Q.stepIdx) else wgBaseIdx Q
+    let pf ← withMainContext do
+      let (pf, g) ← wgBranchTo Q a.getAppArgs (starOf Q.inst []) bi
+      setGoals [g]
+      convClose
+      unless (← getUnsolvedGoals).isEmpty do throwError "wg: pay empty"
+      instantiateMVars pf
     if pf.hasExprMVar then throwError "wg: pay mvar"
     setGoals saved
     let _ ← arRwLhs [] pf
