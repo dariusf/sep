@@ -45,6 +45,8 @@ initialize xsearchUnfoldAttr : Unit ←
   }
 
 def hbPerVms : Nat := 44000
+def problemVms : Nat := 6000
+def cmVms : Nat := 60
 
 def vclock : BaseIO Nat := return (← IO.getNumHeartbeats) / hbPerVms
 
@@ -54,7 +56,6 @@ def pastGlobal : CoreM Bool := do
   return (← vclock) > (← globalDeadline.get)
 
 initialize searchDeadline : IO.Ref Nat ← IO.mkRef 0
-initialize searchNodes : IO.Ref Nat ← IO.mkRef 0
 initialize unfoldBudget : IO.Ref Nat ← IO.mkRef 0
 
 private def normLemmas : Array Name :=
@@ -855,27 +856,31 @@ def predArg0? (heads : Array Name) (e : Expr) : Option Expr :=
   | some n => if heads.contains n then e.getAppArgs.back? else none
   | none => none
 
-partial def branchScore (heads : Array Name) (lhsAtoms : List Expr) (e : Expr) :
-    Int :=
+partial def branchCounts (heads : Array Name) (lhsAtoms : List Expr) (e : Expr) :
+    Nat × Nat × Nat × Nat :=
+  let add := fun (u v : Nat × Nat × Nat × Nat) => (u.1 + v.1, u.2.1 + v.2.1, u.2.2.1 + v.2.2.1, u.2.2.2 + v.2.2.2)
   match e.getAppFnArgs with
-  | (``HProp.hstar, #[_, a, b]) =>
-      branchScore heads lhsAtoms a + branchScore heads lhsAtoms b
+  | (``HProp.hstar, #[_, a, b]) => add (branchCounts heads lhsAtoms a) (branchCounts heads lhsAtoms b)
   | (``HProp.hexists, args) =>
       match args.back? with
-      | some (.lam _ _ b _) => branchScore heads lhsAtoms b
-      | _ => 0
+      | some (.lam _ _ b _) => branchCounts heads lhsAtoms b
+      | _ => (0, 0, 0, 0)
   | (``HProp.hsingle, args) =>
-      if args.size < 2 then 0 else
+      if args.size < 2 then (0, 0, 0, 0) else
       let a := args[args.size-2]!
-      if lhsAtoms.any (fun l => atomHead? l == some a) then 3
-      else if lhsAtoms.any (fun l => predArg0? heads l == some a) then 1
-      else -4
+      if lhsAtoms.any (fun l => atomHead? l == some a) then (0, 1, 0, 0)
+      else if lhsAtoms.any (fun l => predArg0? heads l == some a) then (0, 0, 1, 0)
+      else (0, 0, 0, 0)
   | (``HProp.hpure, #[_, p]) =>
       match p.getAppFnArgs with
-      | (``Eq, #[_, a, b]) => if a == b then 2 else -1
-      | (``Ne, #[_, a, b]) => if a == b then -4 else 0
-      | _ => 0
-  | _ => 0
+      | (``Eq, #[_, a, b]) => if a == b then (0, 0, 0, 1) else (0, 0, 0, 0)
+      | (``Ne, #[_, a, b]) => if a == b then (1, 0, 0, 0) else (0, 0, 0, 0)
+      | _ => (0, 0, 0, 0)
+  | _ => (0, 0, 0, 0)
+
+def branchBetter (u v : Nat × Nat × Nat × Nat) : Bool :=
+  u.1 < v.1 || (u.1 == v.1 && (u.2.1 > v.2.1 || (u.2.1 == v.2.1 &&
+    (u.2.2.1 > v.2.2.1 || (u.2.2.1 == v.2.2.1 && u.2.2.2 > v.2.2.2)))))
 
 def factsCore : TacticM Unit := withMainContext do
   let goal ← getMainGoal
@@ -884,7 +889,6 @@ def factsCore : TacticM Unit := withMainContext do
   | (``HProp.himpl, #[inst, lhs, rhs]) =>
     if t.hasExprMVar then return ()
     let locs := ptoLocsOf lhs #[]
-    if locs.size > 32 then return ()
     let top := wgCells lhs
     let ps := locs.map fun l => (top.find? (·.1 == l)).map (·.2)
     let mut facts : Array (Name × Expr × Expr × Expr × Expr) := #[]
@@ -928,8 +932,6 @@ def checkDeadline : TacticM Unit := do
     throwError "xsearch: global budget exhausted"
   if (← vclock) > (← searchDeadline.get) then
     throwError "xsearch: time budget exhausted"
-  if (← searchNodes.get) == 0 then
-    throwError "xsearch: node budget exhausted"
 
 def withLemCache {κ : Type} [BEq κ] (cache : IO.Ref (Array (κ × Option Expr)))
     (key : κ) (ms : Nat) (clamp : Bool) (k : TacticM Expr) : TacticM (Option Expr) := do
@@ -1503,7 +1505,7 @@ partial def pureProps (e : Expr) (acc : Array Expr) : Array Expr :=
 partial def exPeel (e : Expr) : Expr × Nat := Id.run do
   let mut bd := e
   let mut n := 0
-  while bd.getAppFn.constName? == some ``HProp.hexists && n < 12 do
+  while bd.getAppFn.constName? == some ``HProp.hexists do
     match bd.getAppArgs.back? with
     | some lam =>
         if lam.isLambda then
@@ -1531,7 +1533,7 @@ def exDetermined (e : Expr) : Bool :=
   n > 0 && bvarDetermined bd (n - 1)
 
 elab "xsearch_trivpure" : tactic => withMainContext do
-  for _ in [0 : 64] do
+  repeat
     let t ← instantiateMVars (← (← getMainGoal).getType)
     let some (lhs, rhs) := entailHead? t | return ()
     if t.hasExprMVar then return ()
@@ -1555,7 +1557,7 @@ elab "xsearch_trivpure" : tactic => withMainContext do
       let _ ← simpOnlyTarget #[``HProp.hstar_hempty_l, ``HProp.hstar_hempty_r]
 
 def witDetermined : TacticM Unit := withMainContext do
-  for _ in [0 : 12] do
+  repeat
     if ← pastGlobal then return ()
     let t ← instantiateMVars (← (← getMainGoal).getType)
     let some (_, rhs) := entailHead? t | return ()
@@ -1759,7 +1761,6 @@ def isFlatPred (p : Name) : MetaM Bool := do
     return r
 
 initialize cmCounter : IO.Ref Nat ← IO.mkRef 0
-initialize cmSteps : IO.Ref Nat ← IO.mkRef 0
 
 abbrev CmHeap := Array (Int × Int)
 
@@ -1845,14 +1846,14 @@ partial def cmDisjs (e : Expr) : Array Expr :=
     cmDisjs xs[xs.size - 2]! ++ cmDisjs xs[xs.size - 1]!
   else #[e]
 
-partial def cmGen (tbl : Array (Name × Nat × Expr)) (lv depth : Nat) (e : Expr)
+partial def cmGen (tbl : Array (Name × Nat × Expr)) (lv dl w : Nat) (e : Expr)
     (sts : Array CmSt) (fold : Bool := false) : MetaM (Option (Array CmSt)) := do
   if sts.isEmpty then return some sts
-  if depth > 40 then return none
+  if (← vclock) > dl then return none
   match e.getAppFnArgs with
   | (``HProp.hstar, #[_, a, b]) =>
-      match ← cmGen tbl lv depth a sts fold with
-      | some s1 => cmGen tbl lv depth b s1 fold
+      match ← cmGen tbl lv dl w a sts fold with
+      | some s1 => cmGen tbl lv dl w b s1 fold
       | none => return none
   | (``HProp.hempty, #[_]) => return some sts
   | (``HProp.hpure, #[_, p]) => return some (sts.map fun s => { s with pures := s.pures.push p })
@@ -1860,16 +1861,16 @@ partial def cmGen (tbl : Array (Name × Nat × Expr)) (lv depth : Nat) (e : Expr
       return some (sts.map fun s => { s with cells := s.cells.push (a, v) })
   | (``HProp.hexists, #[_, _, j]) =>
       match j with
-      | .lam _ _ b _ => cmGen tbl lv depth (b.instantiate1 (← cmFresh)) sts fold
+      | .lam _ _ b _ => cmGen tbl lv dl w (b.instantiate1 (← cmFresh)) sts fold
       | _ => return none
   | _ =>
     if cmOr e then
       let mut out := #[]
       for d in cmDisjs e do
-        match ← cmGen tbl lv (depth + 1) d sts fold with
+        match ← cmGen tbl lv dl w d sts fold with
         | some s => out := out ++ s
         | none => return none
-      return some (out.extract 0 48)
+      return some (out.extract 0 w)
     if fold then return some (sts.map fun s => { s with chunks := s.chunks.push e })
     match cmUnfold tbl e with
     | none => return none
@@ -1885,10 +1886,10 @@ partial def cmGen (tbl : Array (Name × Nat × Expr)) (lv depth : Nat) (e : Expr
       if chosen.isEmpty then return none
       let mut out := #[]
       for d in chosen do
-        match ← cmGen tbl (lv - 1) (depth + 1) d sts with
+        match ← cmGen tbl (lv - 1) dl w d sts with
         | some s => out := out ++ s
         | none => return none
-      return some (out.extract 0 48)
+      return some (out.extract 0 w)
 
 structure CmLin where
   m : Std.HashMap FVarId Int := {}
@@ -2037,16 +2038,21 @@ structure CmSz where
 
 initialize cmSzCache : IO.Ref (Array (Name × CmSz)) ← IO.mkRef #[]
 
-partial def cmMinE (tbl : Array (Name × Nat)) (e : Expr) : Nat :=
+partial def cmMinE (tbl : Array (Name × Option Nat)) (e : Expr) : Option Nat :=
   match e.getAppFnArgs with
-  | (``HProp.hstar, #[_, a, b]) => cmMinE tbl a + cmMinE tbl b
-  | (``HProp.hsingle, #[_, _, _]) => 1
+  | (``HProp.hstar, #[_, a, b]) => do return (← cmMinE tbl a) + (← cmMinE tbl b)
+  | (``HProp.hsingle, #[_, _, _]) => some 1
   | (``HProp.hexists, #[_, _, .lam _ _ b _]) => cmMinE tbl b
   | _ =>
-    if cmOr e then (cmDisjs e).foldl (fun m d => min m (cmMinE tbl d)) (cmMinE tbl (cmDisjs e)[0]!)
+    if cmOr e then (cmDisjs e).foldl (fun m d => match m, cmMinE tbl d with
+        | some u, some v => some (min u v)
+        | some u, none => some u
+        | none, r => r) none
     else match e.getAppFn.constName? with
-      | some nm => ((tbl.find? (·.1 == nm)).map (·.2)).getD 0
-      | none => 0
+      | some nm => match tbl.find? (·.1 == nm) with
+        | some (_, v) => v
+        | none => some 0
+      | none => some 0
 
 def cmSzTable : MetaM (Array (Name × CmSz)) := do
   let tbl ← cmTable
@@ -2054,10 +2060,9 @@ def cmSzTable : MetaM (Array (Name × CmSz)) := do
   if tbl.all (fun (n, _, _) => c.any (·.1 == n)) then return c
   let bodies := tbl.map fun (n, a, r) =>
     (n, a, r.instantiateRev ((List.range a).toArray.map (fun i => mkFVar ⟨.num `_xcmslot i⟩)))
-  let inf := 1000000
-  let mut mins : Array (Name × Nat) := tbl.map (fun (n, _, _) => (n, inf))
+  let mut mins : Array (Name × Option Nat) := tbl.map (fun (n, _, _) => (n, none))
   for _ in [0 : tbl.size + 1] do
-    mins := bodies.map (fun (n, _, r) => (n, min inf (cmMinE mins r)))
+    mins := bodies.map (fun (n, _, r) => (n, cmMinE mins r))
   let mut lins : Array (Name × Option (Nat × Int × Int)) := tbl.map (fun (n, _, _) => (n, none))
   for _ in [0 : tbl.size] do
     for i in [0 : bodies.size] do
@@ -2065,7 +2070,7 @@ def cmSzTable : MetaM (Array (Name × CmSz)) := do
       let (n, a, r) := bodies[i]!
       lins := lins.set! i (n, cmSzLin lins n a r)
   let res := (List.range tbl.size).toArray.map fun i =>
-    (tbl[i]!.1, ({ minC := if mins[i]!.2 ≥ inf then 0 else mins[i]!.2, lin := lins[i]!.2 } : CmSz))
+    (tbl[i]!.1, ({ minC := mins[i]!.2.getD 0, lin := lins[i]!.2 } : CmSz))
   cmSzCache.set res
   return res
 
@@ -2456,7 +2461,7 @@ def cmDead (fb : CmFb) (pre : CmPre) (x y : Sum Nat Int) : Bool :=
   | _, _ => false
 
 def cmSolveM (pre : CmPre) (mi : Nat) (mj : Option Nat) (extra : Array (Sum Nat Int)) :
-    Option (Array (Option Int) × CmHeap × Array Int × Nat) := Id.run do
+    Option (Array (Option Int) × CmHeap × Array Int × Nat × Int × Int) := Id.run do
   let nb := pre.base.size
   let mut cs : Array (Array (Sum Nat Int)) := #[]
   for ci in [0 : nb + 1] do
@@ -2505,7 +2510,15 @@ def cmSolveM (pre : CmPre) (mi : Nat) (mj : Option Nat) (extra : Array (Sum Nat 
         if d[y]! + c < d[x]! then
           d := d.set! x (d[y]! + c)
           changed := true
-  let mut k := 0
+  let mut top : Int := 0
+  for ci in [0 : n] do
+    if used[ci]! then top := max top (d[ci]! - d[z]!).natAbs
+    else if let some m := lits[ci]! then top := max top m.natAbs
+  let mut wd : Int := top + 1
+  for (a, _) in pre.cells do
+    if let .add _ (.lit o) := a then wd := max wd (top + o.natAbs + 1)
+  let bs := wd
+  let mut k : Nat := 0
   let mut env : Array (Option Int) := Array.replicate pre.allV.size none
   let mut vals : Array Int := #[]
   for ci in [0 : n] do
@@ -2514,7 +2527,7 @@ def cmSolveM (pre : CmPre) (mi : Nat) (mj : Option Nat) (extra : Array (Sum Nat 
         | some m => pure m
         | none =>
           k := k + 1
-          pure (Int.ofNat (100000 + 1000 * k))
+          pure (bs + wd * (k : Int))
     let mut hasVar := false
     for a in cs[ci]! do
       match a with
@@ -2536,12 +2549,12 @@ def cmSolveM (pre : CmPre) (mi : Nat) (mj : Option Nat) (extra : Array (Sum Nat 
   let mut out : Array Int := #[]
   for v in vals.qsort (· < ·) do
     if out.back? != some v then out := out.push v
-  return some (env, h, out, k)
+  return some (env, h, out, k, bs, wd)
 
-def cmIsoKey (k : Nat) (h : CmHeap) (rv : Array (Option Int)) (vals : Array Int) :
+def cmIsoKey (k : Nat) (bs wd : Int) (h : CmHeap) (rv : Array (Option Int)) (vals : Array Int) :
     Array (Nat × Int × Nat × Int) × Array (Option (Nat × Int)) × Array (Nat × Int) := Id.run do
   let kOf := fun (v : Int) =>
-    if v ≥ 101000 && v < 100000 + 1000 * (k + 1) then (v - 100000).toNat / 1000 else 0
+    if v ≥ bs + wd && v < bs + wd * (k + 1) then ((v - bs) / wd).toNat else 0
   let mut start : Array Nat := Array.replicate (k + 1) h.size
   for idx in [0 : h.size] do
     let c := kOf h[idx]!.1
@@ -2572,7 +2585,7 @@ def cmIsoKey (k : Nat) (h : CmHeap) (rv : Array (Option Int)) (vals : Array Int)
       si := si + 1
   let enc := fun (v : Int) => match kOf v with
     | 0 => (0, v)
-    | c => (lab[c]!, v - 100000 - 1000 * c)
+    | c => (lab[c]!, v - bs - wd * c)
   let mut hk : Array (Nat × Int × Nat × Int) := #[]
   for (a, w) in h do
     if kOf a == 0 then
@@ -2583,7 +2596,7 @@ def cmIsoKey (k : Nat) (h : CmHeap) (rv : Array (Option Int)) (vals : Array Int)
     while idx < h.size && kOf h[idx]!.1 == b do
       let (a, w) := h[idx]!
       let (l, o) := enc w
-      hk := hk.push (lab[b]!, a - 100000 - 1000 * b, l, o)
+      hk := hk.push (lab[b]!, a - bs - wd * b, l, o)
       idx := idx + 1
   let lt := fun (p q : Nat × Int) => p.1 < q.1 || (p.1 == q.1 && p.2 < q.2)
   return (hk, rv.map (·.map enc), (vals.map enc).qsort lt)
@@ -2660,6 +2673,12 @@ inductive CmN where
   | unk
   deriving Inhabited
 
+partial def cmNSize : CmN → Nat
+  | .star a b => cmNSize a + cmNSize b + 1
+  | .ex _ _ _ _ b => cmNSize b + 1
+  | .or ds => ds.foldl (fun a d => a + cmNSize d) 1
+  | _ => 1
+
 partial def cmCompile (tbl : Array (Name × Nat × Expr)) (ix : Std.HashMap FVarId Nat)
     (next : Nat) (e : Expr) : CmN :=
   match e.getAppFnArgs with
@@ -2699,6 +2718,7 @@ structure CmEv where
   prog : Array CmN
   off : Nat
   gvals : Array Int
+  top : Nat
 
 abbrev CmM := StateM (Nat × Nat)
 
@@ -2876,7 +2896,7 @@ def cmCandsI (ev : CmEv) (env : Array (Option CmL)) (path : Array Int) (h : CmHe
   | _ => pure ()
   unless pinned do
     let n ← cmCount
-    let c0 := Int.ofNat (1000000000 + 1000 * n)
+    let c0 := Int.ofNat ((ev.top + ev.off + 1) * (n + 2))
     cands := #[c0]
     let mut cs : Std.HashSet Int := Std.HashSet.emptyWithCapacity.insert c0
     let add := fun (b0 : Int) (st : Array Int × Std.HashSet Int) => Id.run do
@@ -3009,20 +3029,34 @@ partial def cmConsKI (ev : CmEv) (env : Array (Option CmL)) (cs : CmCs) (path : 
 
 end
 
-partial def cmMaxOff (e : Expr) (acc : Nat) : Nat :=
+partial def cmCellOff (e : Expr) (acc : Nat) : Nat :=
   match e.getAppFnArgs with
-  | (``HAdd.hAdd, #[_, _, _, _, a, b]) =>
-      let acc := match cmVal {} b with
-        | some n => max acc n.natAbs
-        | none => acc
-      cmMaxOff b (cmMaxOff a acc)
+  | (``HProp.hsingle, #[_, a, v]) =>
+      let acc := match a.getAppFnArgs with
+        | (``HAdd.hAdd, #[_, _, _, _, _, k]) => ((cmVal {} k).map (max acc ·.natAbs)).getD acc
+        | _ => acc
+      cmCellOff v acc
   | _ =>
     match e with
-    | .app f a => cmMaxOff a (cmMaxOff f acc)
-    | .lam _ t b _ => cmMaxOff b (cmMaxOff t acc)
-    | .forallE _ t b _ => cmMaxOff b (cmMaxOff t acc)
-    | .mdata _ b => cmMaxOff b acc
+    | .app f a => cmCellOff a (cmCellOff f acc)
+    | .lam _ t b _ => cmCellOff b (cmCellOff t acc)
+    | .forallE _ t b _ => cmCellOff b (cmCellOff t acc)
+    | .mdata _ b => cmCellOff b acc
     | _ => acc
+
+def cmReachTbl (tbl : Array (Name × Nat × Expr)) (e : Expr) : Array (Name × Nat × Expr) := Id.run do
+  let mut idx : Std.HashMap Name Nat := {}
+  for i in [0 : tbl.size] do
+    idx := idx.insert tbl[i]!.1 i
+  let mut seen : Std.HashSet Nat := {}
+  let mut todo : Array Nat := (e.getUsedConstants.filterMap (idx[·]?))
+  while !todo.isEmpty do
+    let i := todo.back!
+    todo := todo.pop
+    if seen.contains i then continue
+    seen := seen.insert i
+    todo := todo ++ tbl[i]!.2.2.getUsedConstants.filterMap (idx[·]?)
+  return (List.range tbl.size).toArray.filterMap fun i => if seen.contains i then some tbl[i]! else none
 
 partial def cmItems (e : Expr) : Array Expr :=
   match e.getAppFnArgs with
@@ -3459,9 +3493,11 @@ def indCore (A M inst : Expr) : TacticM (Expr × List MVarId) := do
   setGoals saved
   return (← mkAppM ``lfpG_induct_with #[F, M, hmono, hfold, hM, ta], obl)
 
-def proveInv (solve : Nat → TacticM Unit) (p : Name) (inv : Expr) (strong : Bool) :
-    TacticM (Option Expr) :=
-  withLemCache invCache (p, inv, strong) 2600 true do
+def proveInv (solve : Bool → TacticM Unit) (p : Name) (inv : Expr) (strong : Bool) (share : Nat) :
+    TacticM (Option Expr) := do
+  let now ← vclock
+  let sd ← searchDeadline.get
+  withLemCache invCache (p, inv, strong) (if sd > now then (sd - now) / share else 0) true do
   let pty := (← getConstInfo p).type
   let pf ← forallTelescope pty fun xs _ => do
     let pxs := mkAppN (mkConst p) xs
@@ -3481,7 +3517,7 @@ def proveInv (solve : Nat → TacticM Unit) (p : Name) (inv : Expr) (strong : Bo
     setGoals gs
     evalTactic (← `(tactic| (all_goals (try xsearch_distr)
                              all_goals (try apply Sep.Xsearch.hdisj_elim))))
-    solve 8
+    solve false
     unless (← getUnsolvedGoals).isEmpty do throwError "inv: open"
     unless ← isDefEq (← inferType key) stmt do throwError "inv: type"
     let key ← mkExpectedTypeHint key stmt
@@ -3604,8 +3640,8 @@ def specAlts (lhs rhs : Expr) (L Rs : List Expr) : Array (Bool × TacticM Unit) 
     L[i]!.getAppFn.constName? == some ``HProp.hforall)).toArray.map
       (fun i => (false, specAlt lhs rhs L Rs i))
 
-def invUseAlt (solve : Nat → TacticM Unit) (lhs rhs : Expr) (L Rs : List Expr)
-    (i : Nat) (a : Name) (inv : Expr) (strong : Bool) : TacticM Unit :=
+def invUseAlt (solve : Bool → TacticM Unit) (lhs rhs : Expr) (L Rs : List Expr)
+    (i : Nat) (a : Name) (inv : Expr) (strong : Bool) (share : Nat) : TacticM Unit :=
   withMainContext do
     let A := L[i]!
     let W0 := (inv.beta A.getAppArgs).headBeta
@@ -3614,7 +3650,7 @@ def invUseAlt (solve : Nat → TacticM Unit) (lhs rhs : Expr) (L Rs : List Expr)
     unless ants0.any (fun an => (flatStar an #[]).any (fun b =>
         b.getAppArgs.any (fun v => locs.contains v))) do
       throwError "inv: irrelevant"
-    let some lem ← proveInv solve a inv strong | throwError "inv: lemma"
+    let some lem ← proveInv solve a inv strong share | throwError "inv: lemma"
     let pf := mkAppN lem A.getAppArgs
     let W := (inv.beta A.getAppArgs).headBeta
     match ← specByRhs W Rs with
@@ -3631,11 +3667,13 @@ def absentPreds (heads : Array Name) (atoms : List Expr) (e : Expr) : Nat :=
     | none => none)
   (ab.foldl (fun (acc : Array Name) c => if acc.contains c then acc else acc.push c) #[]).size
 
-partial def branchScoreD (heads : Array Name) (atoms : List Expr) (e : Expr) : Int :=
+partial def branchCountsD (heads : Array Name) (atoms : List Expr) (e : Expr) : Nat × Nat × Nat × Nat :=
   if isDisj e then
     let a := e.getAppArgs
-    max (branchScoreD heads atoms a[a.size-2]!) (branchScoreD heads atoms a[a.size-1]!)
-  else branchScore heads atoms e
+    let l := branchCountsD heads atoms a[a.size-2]!
+    let r := branchCountsD heads atoms a[a.size-1]!
+    if branchBetter r l then r else l
+  else branchCounts heads atoms e
 
 partial def absentPredsD (heads : Array Name) (atoms : List Expr) (e : Expr) : Nat :=
   if isDisj e then
@@ -3643,11 +3681,11 @@ partial def absentPredsD (heads : Array Name) (atoms : List Expr) (e : Expr) : N
     min (absentPredsD heads atoms a[a.size-2]!) (absentPredsD heads atoms a[a.size-1]!)
   else absentPreds heads atoms e
 
-def invAlts (solve : Nat → TacticM Unit) (heads : Array Name) (lhs rhs : Expr)
+def invAlts (solve : Bool → TacticM Unit) (heads : Array Name) (lhs rhs : Expr)
     (L Rs : List Expr) : TacticM (Array (Bool × TacticM Unit)) := do
-  let mut out : Array (Bool × TacticM Unit) := #[]
+  let mut cs : Array (Nat × Name × Expr × Bool) := #[]
   if L.any (fun e => (wandParts? e).isSome || isHwith e
-      || e.getAppFn.constName? == some ``HProp.hforall) then return out
+      || e.getAppFn.constName? == some ``HProp.hforall) then return #[]
   for i in [0 : L.length] do
     let some a := L[i]!.getAppFn.constName? | continue
     unless heads.contains a do continue
@@ -3659,8 +3697,8 @@ def invAlts (solve : Nat → TacticM Unit) (heads : Array Name) (lhs rhs : Expr)
       seen := seen.push r
       let strong := !(← isRecPred r)
       for inv in ← deriveInv a r strong do
-        out := out.push (false, invUseAlt solve lhs rhs L Rs i a inv strong)
-  return out
+        cs := cs.push (i, a, inv, strong)
+  return cs.map fun (i, a, inv, strong) => (false, invUseAlt solve lhs rhs L Rs i a inv strong cs.size)
 
 initialize failMemo : IO.Ref (Std.HashMap Expr (Array (Nat × Array FVarId × Nat × Nat × Nat))) ←
   IO.mkRef {}
@@ -3680,7 +3718,7 @@ def failSeen (k : Expr × Array FVarId × Nat × Nat × Nat) : BaseIO Bool := do
   | none => return false
 
 def failAdd (k : Expr × Array FVarId × Nat × Nat × Nat) : TacticM Unit := do
-  if (← vclock) > (← searchDeadline.get) || (← pastGlobal) || (← searchNodes.get) == 0 then
+  if (← vclock) > (← searchDeadline.get) || (← pastGlobal) then
     return
   let (t, fs, fuel, a, b) := k
   failMemo.modify fun m => m.insert t ((m.getD t #[]).push (fuel, fs, a, b / 1000, b % 1000))
@@ -3756,15 +3794,15 @@ def cmFind (unfold : Bool := true) : TacticM Bool := withMainContext do
     else
       closed := false
       if ← isProp ty then facts := facts.push ty
-  let tbl ← cmTable
+  let tbl := cmReachTbl (← cmTable) t
   let szs ← cmSzTable
-  for st in (← cmGen tbl 0 0 lhs #[{}] true).getD #[] do
+  for st in (← cmGen tbl 0 (← globalDeadline.get) ((cmItems lhs).size + 1) lhs #[{}] true).getD #[] do
     if cmFoot szs facts st rhs then
       if ← cmPureModel (st.pures ++ facts.filter cmFact) then return true
   unless unfold && closed do return false
   unless ← isDefEq (mkApp (mkConst ``Params.val) t.getAppArgs[0]!) (mkConst ``Int) do
     return false
-  let off := min 8 (tbl.foldl (fun a (_, _, r) => cmMaxOff r a) (cmMaxOff t 0))
+  let off := tbl.foldl (fun a (_, _, r) => cmCellOff r a) (cmCellOff t 0)
   let items := cmItems lhs
   let pidx := (List.range items.size).toArray.filter (fun i => (cmUnfold tbl items[i]!).isSome)
   let lvOf (pol : Nat → Nat) : Array Nat := (List.range items.size).toArray.map pol
@@ -3776,7 +3814,8 @@ def cmFind (unfold : Bool := true) : TacticM Bool := withMainContext do
     pols := pols.push (lvOf (fun j => if j == i || !pidx.contains j then 1 else 0))
   let nil := mkNatLit 0
   let t0 ← vclock
-  cmSteps.set 400000
+  let gd ← globalDeadline.get
+  let cap := cmVms
   let mut stCache : Array (Option (Array (Option CmPrepped))) := Array.replicate pols.size none
   let rvs := cmFVars rhs #[]
   let mut seen : Std.HashSet (CmHeap × Array (Option Int) × Array Int) := {}
@@ -3785,20 +3824,20 @@ def cmFind (unfold : Bool := true) : TacticM Bool := withMainContext do
   let prog0 := cmCompileTbl tbl
   let au := cmAddrUse prog0 (tbl.map (·.2.1))
   let prog := prog0.map (cmMark au)
+  let psz := prog.foldl (fun a n => a + cmNSize n) 0
   let rhsN := cmMark au (cmCompile tbl ((List.range vars.size).foldl (fun m i => m.insert vars[i]! i) {})
     vars.size rhs)
   for round in [0 : 3] do
     for pi in [0 : pols.size] do
-      if (← vclock) > t0 + 60 then return false
-      if (← cmSteps.get) == 0 then return false
+      if (← vclock) > t0 + cap then return false
       let sts ← match stCache[pi]! with
         | some s => pure s
         | none =>
           let mut sts : Array CmSt := #[{}]
           let mut ok := true
           for i in [0 : items.size] do
-            match ← cmGen tbl (pols[pi]!)[i]! 0 items[i]! sts with
-            | some s => sts := s.extract 0 48
+            match ← cmGen tbl (pols[pi]!)[i]! (t0 + cap) (items.size + 1) items[i]! sts with
+            | some s => sts := s.extract 0 (items.size + 1)
             | none => ok := false
           let s := if ok then sts else #[]
           let mut s' : Array (Option CmPrepped) := #[]
@@ -3823,26 +3862,26 @@ def cmFind (unfold : Bool := true) : TacticM Bool := withMainContext do
                   && !cmDead fb pre atomsI[i] atomsI[j] then
                 cands := cands.push (cmMergeOf fb pre atomsI[i] atomsI[j])
         for (mi, mj, extra) in cands do
-          if (← vclock) > t0 + 60 then return false
+          if (← vclock) > t0 + cap then return false
           match cmSolveM pre mi mj extra with
           | none => pure ()
-          | some (envA, h, vals, k) =>
+          | some (envA, h, vals, k, bs, wd) =>
             let rv := sp.rvIdx.map (fun i? => i?.bind (fun i => envA[i]?.join))
             let key := (h, rv, vals)
             if seen.contains key then continue
             seen := seen.insert key
-            let iso := cmIsoKey k h rv vals
+            let iso := cmIsoKey k bs wd h rv vals
             if seenIso.contains iso then continue
             seenIso := seenIso.insert iso
-            let rem ← cmSteps.get
-            let bud := min rem 5000
-            let ev : CmEv := { prog, off, gvals := envA.filterMap id }
+            let bud := (h.size + 1) * (psz + cmNSize rhsN)
+            let gv := envA.filterMap id
+            let tp := (h.foldl (fun m av => max m (max av.1.natAbs av.2.natAbs)) 0 :: gv.toList.map (·.natAbs)).foldl max 0
+            let ev : CmEv := { prog, off, gvals := gv, top := tp }
             let cnt0 ← cmCounter.get
-            let ((found, inc), (left, cnt)) :=
-              (cmConsKI ev ((envA.extract 0 vars.size).map (·.map ((0 : Nat), ·))) {} #[] (2 * h.size + 8)
+            let ((found, inc), (_, cnt)) :=
+              (cmConsKI ev ((envA.extract 0 vars.size).map (·.map ((0 : Nat), ·))) {} #[] (2 * h.size)
                 rhsN h).run (bud, cnt0)
             cmCounter.set cnt
-            cmSteps.set (rem - (bud - left))
             if !inc && !found then return true
   return false
 
@@ -3871,13 +3910,6 @@ partial def cmPureRefuted (p : Expr) : MetaM Bool := do
     let ty ← instantiateMVars d.type
     if cmFact ty && (← isProp ty) then facts := facts.push ty
   cmPureModel (facts ++ neg)
-
-elab_rules : tactic
-  | `(tactic| xsearch_omega) => do
-    let g ← getMainGoal
-    if ← g.withContext (do cmPureRefuted (← g.getType)) then
-      throwError "xsearch_omega: not entailed"
-    evalTactic (← `(tactic| omega))
 
 def stmtRefuted (xs : Array Expr) (lhs rhs : Expr) : TacticM Bool := do
   let stmt ← mkForallFVars xs (← mkAppM ``HProp.himpl #[lhs, rhs])
@@ -4259,7 +4291,7 @@ partial def exPull (e : Expr) : MetaM (Option (Expr × Expr)) := do
 
 partial def arIntroLhs : TacticM (Array Expr) := do
   let mut out : Array Expr := #[]
-  for _ in [0 : 24] do
+  repeat
     let g ← getMainGoal
     let t ← instantiateMVars (← g.getType)
     let some (lhs, _) := entailHead? t | break
@@ -4359,7 +4391,7 @@ def wgNormStep (e : Expr) : MetaM Expr := do
 
 def wgNorm (e : Expr) : MetaM Expr := do
   let mut cur := e
-  for _ in [0 : 8] do
+  repeat
     let nxt ← wgNormStep cur
     if nxt == cur then return cur
     cur := nxt
@@ -4379,8 +4411,8 @@ def wgNeHeap (lhs a b : Expr) : TacticM (Option Expr) := do
   if let some h ← wgFar lhs b a then return some (← mkAppM ``holdsP_ne_symm #[h])
   return none
 
-partial def wgShapeOk (pat tgt : Expr) (d : Nat) (top : Bool := false) : Bool :=
-  if d == 0 || pat.isBVar || pat.isMVar || pat.hasLooseBVars && !pat.isApp then true else
+partial def wgShapeOk (pat tgt : Expr) (top : Bool := false) : Bool :=
+  if pat.isBVar || pat.isMVar || pat.hasLooseBVars && !pat.isApp then true else
   match pat, tgt with
   | .lit a, .lit b => a == b
   | .app .., .app .. =>
@@ -4388,7 +4420,7 @@ partial def wgShapeOk (pat tgt : Expr) (d : Nat) (top : Bool := false) : Bool :=
     | .const a _, .const b _ =>
       let ok := a == b || (top && a == ``LT.lt && b == ``LE.le)
       ok && (a != b || (pat.getAppNumArgs == tgt.getAppNumArgs &&
-        (pat.getAppArgs.zip tgt.getAppArgs).all fun (u, v) => wgShapeOk u v (d - 1)))
+        (pat.getAppArgs.zip tgt.getAppArgs).all fun (u, v) => wgShapeOk u v))
     | .const .., .fvar .. => false
     | _, _ => true
   | .app .., .fvar .. => !pat.getAppFn.isConst
@@ -4424,7 +4456,7 @@ def wgByLemmas (inst goal : Expr) (hyps : Array (Expr × Expr)) : MetaM (Option 
   for (L, arL, lb) in ← wgLemTable do
     if arL < arG then continue
     if arG == 0 && (lb.isBVar || lb.getAppArgs.all (·.isBVar)) then continue
-    unless wgShapeOk lb gb 3 true do continue
+    unless wgShapeOk lb gb true do continue
     let s ← saveState
     let c ← mkConstWithFreshMVarLevels L
     let cty ← inferType c
@@ -4594,6 +4626,11 @@ def wgCloseGoal (g : MVarId) : TacticM Unit := g.withContext do
   if (entailHead? t).isSome then throwError "ar: open entailment"
   g.assign (← wgSide t)
 
+elab_rules : tactic
+  | `(tactic| xsearch_omega) => do
+    wgCloseGoal (← getMainGoal)
+    replaceMainGoal []
+
 def wgCloseAll : TacticM Unit := do
   for g in ← getUnsolvedGoals do
     unless ← g.isAssigned do wgCloseGoal g
@@ -4702,7 +4739,7 @@ def arRwLhs (As : List Expr) (lem0 : Expr) : TacticM (Array Expr) := do
     g.assign (tr lhs (hs lemL restE) rhs m1 pf2)
     setGoals [m2.mvarId!]
   let mut out : Array Expr := #[]
-  for _ in [0 : 16] do
+  repeat
     let g ← getMainGoal
     let t ← instantiateMVars (← g.getType)
     let some (lhs, _) := entailHead? t | break
@@ -4994,20 +5031,20 @@ def finishDirect : TacticM Bool := do
     replaceMainGoal []
     return true
 
-partial def wgSplitDisj (fuel : Nat := 6) : TacticM (List MVarId) := do
+partial def wgSplitDisj : TacticM (List MVarId) := do
   let _ ← arIntroLhs
   let hasD ← withMainContext do
     let t ← instantiateMVars (← (← getMainGoal).getType)
     let some (lhs, _) := entailHead? t | return false
     pure ((lhs.find? (·.isAppOf ``hdisj)).isSome)
-  if !hasD || fuel == 0 then return [← getMainGoal]
+  if !hasD then return [← getMainGoal]
   evalTactic (← `(tactic| try xsearch_distr))
   unless ← tryTactic (applyConstT ``hdisj_elim) do return [← getMainGoal]
   let gs ← getGoals
   let mut out : List MVarId := []
   for g in gs do
     setGoals [g]
-    out := out ++ (← wgSplitDisj (fuel - 1))
+    out := out ++ (← wgSplitDisj)
   return out
 
 structure WgP where
@@ -9400,7 +9437,7 @@ elab "xsearch_macros" : tactic => withMainContext do
     if k == 2 && !ms.contains e.headFn then ms := ms.push e.headFn
     if k == 1 && !ls.contains e.headFn then ls := ls.push e.headFn
     if det && !rs.contains e.headFn then rs := rs.push e.headFn
-  for _ in [0 : 24] do
+  repeat
     if ← pastGlobal then return ()
     let t ← instantiateMVars (← (← getMainGoal).getType)
     let mut occ : Option Expr := (collectOccs ms t #[])[0]?
@@ -9430,9 +9467,9 @@ elab "xsearch_refute" : tactic => withMainContext do
         throwError "xsearch: unconstrained rhs variable"
 
 elab "xsearch_start" : tactic => do
-  globalDeadline.set ((← vclock) + 6000)
   bodySigCache.set #[]
-  unfoldBudget.set 8
+  let t0 ← instantiateMVars (← (← getMainGoal).getType)
+  unfoldBudget.set (collectOccs ((xsearchUnfoldExt.getState (← getEnv)).map (·.headFn)) t0 #[]).size
   failMemo.set {}
   forcedDepth.set 0
   lemBuilding.set false
@@ -9462,6 +9499,7 @@ def hasPredAtom : TacticM Bool := withMainContext do
 syntax "xsearch_scope " tactic : tactic
 elab_rules : tactic
   | `(tactic| xsearch_scope $t) => do
+    globalDeadline.set ((← vclock) + problemVms)
     simpOnlyCache.set #[]
     let cheap ← hasPredAtom
     withEnableInfoTree false
@@ -9553,7 +9591,7 @@ def witStage1 (tuples : Array (Array Expr)) (k : TacticM Unit) : TacticM Unit :=
     let ok ← try (do
         witInst tuples[i]!
         if ← goalRefuted then throwError "wit: refuted"
-        globalDeadline.set (if i + 1 == tuples.size then gd else now + (gd - now) / 2)
+        globalDeadline.set (now + (gd - now) / (tuples.size - i))
         k
         unless (← getUnsolvedGoals).isEmpty do throwError "wit: open"
         pure true) catch _ => pure false
@@ -9643,23 +9681,22 @@ def witSearch (k : TacticM Unit) (cases : Bool) : TacticM Unit := do
 
 mutual
 
-partial def searchSolve (fuel : Nat) : TacticM Unit := do
+partial def searchSolve (inv : Bool) : TacticM Unit := do
   checkDeadline
   normGoals
   let gs ← getUnsolvedGoals
   if gs.isEmpty then return
-  if fuel == 0 then throwError "xsearch: depth exhausted"
   for g in gs do
     if ← g.isAssigned then continue
     setGoals [g]
-    branchGoal fuel
+    branchGoal inv
     unless (← getUnsolvedGoals).isEmpty do
       throwError "xsearch: subgoal remained"
   setGoals []
 
-partial def branchGoal (fuel : Nat) : TacticM Unit := do
+partial def branchGoal (inv : Bool) : TacticM Unit := do
   checkDeadline
-  let fk ← failKey fuel
+  let fk ← failKey (if inv then 1 else 0)
   if let some k := fk then
     if ← failSeen k then throwError "xsearch: known failure"
   evalTactic (← `(tactic| try xsearch_distr))
@@ -9683,8 +9720,8 @@ partial def branchGoal (fuel : Nat) : TacticM Unit := do
     let args := rhs.getAppArgs
     let n := args.size
     let atoms := Sep.Xsimpl.parseHstar lhs
-    let sa := branchScoreD heads atoms args[n-2]!
-    let sb := branchScoreD heads atoms args[n-1]!
+    let sa := branchCountsD heads atoms args[n-2]!
+    let sb := branchCountsD heads atoms args[n-1]!
     let l : TacticM Unit := applyConstT ``hdisj_left
     let r : TacticM Unit := applyConstT ``hdisj_right
     let side := fun (nm : Name) (D : Expr) (plain : TacticM Unit) =>
@@ -9698,7 +9735,7 @@ partial def branchGoal (fuel : Nat) : TacticM Unit := do
       else #[(false, plain)]
     let la := side ``hdisj_left args[n-2]! l
     let ra := side ``hdisj_right args[n-1]! r
-    if sa > sb || (sa == sb && absentPredsD heads atoms args[n-2]!
+    if branchBetter sa sb || (sa == sb && absentPredsD heads atoms args[n-2]!
         ≤ absentPredsD heads atoms args[n-1]!) then alts := la ++ ra
     else alts := ra ++ la
   else
@@ -9715,7 +9752,7 @@ partial def branchGoal (fuel : Nat) : TacticM Unit := do
       match o.getAppArgs[hi]? with
       | some a => if ptoLocs.any (· == a) then forced := forced.push o
       | none => pure ()
-    let ivs ← if fuel ≥ 36 && !t.hasExprMVar then invAlts searchSolve heads lhs rhs L Rs
+    let ivs ← if inv && !t.hasExprMVar then invAlts searchSolve heads lhs rhs L Rs
       else pure #[]
     for i in [0 : L.length] do
       match wandParts? L[i]! with
@@ -9736,9 +9773,8 @@ partial def branchGoal (fuel : Nat) : TacticM Unit := do
             | none => okS := false
           if okS && (!ks.isEmpty || allPure) && ks.length + 1 < L.length then
             alts := alts.push (false, wandAltS lhs rhs L i ks)
-    let fdeep := (← forcedDepth.get) ≥ 6
     for o in forced do
-      unless fdeep do alts := alts.push (true, rewriteOcc entries o)
+      alts := alts.push (true, rewriteOcc entries o)
     let lhsOccs := collectOccs heads lhs #[]
     for o in lhsOccs do
       match o.getAppFn.constName? with
@@ -9779,12 +9815,11 @@ partial def branchGoal (fuel : Nat) : TacticM Unit := do
     if sliced then
       let now ← vclock
       let gd ← globalDeadline.get
-      let slice := if gd > now then (gd - now) / 2 else 0
-      searchDeadline.set (min oldDl (now + max (min slice 1500) 600))
+      let slice := if gd > now then (gd - now) / (alts.size - ai) else 0
+      searchDeadline.set (min oldDl (now + slice))
     try
-      searchNodes.modify (fun n => n - 1)
       alt
-      searchSolve (fuel - 1)
+      searchSolve inv
       if isF then forcedDepth.modify (fun k => k - 1)
       if sliced then searchDeadline.set oldDl
       return
@@ -9799,8 +9834,7 @@ end
 
 elab "xsearch_backtrack" : tactic => do
   searchDeadline.set (← globalDeadline.get)
-  searchNodes.set 20000
-  searchSolve 40
+  searchSolve true
 
 def witEngine : TacticM Unit := do
   evalTactic (← `(tactic| first
