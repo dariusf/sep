@@ -800,97 +800,7 @@ def contraClose (g : MVarId) : MetaM Bool := g.withContext do
     | _ => pure ()
   return false
 
-def arithAtom? (e : Expr) : Option Expr :=
-  match e with
-  | .fvar _ => some e
-  | .lit (.natVal n) => some (mkRawNatLit n)
-  | _ =>
-    if e.isAppOfArity ``OfNat.ofNat 3 then
-      match e.appFn!.appArg! with
-      | .lit (.natVal n) => some (mkRawNatLit n)
-      | _ => none
-    else none
-
-def eqAtoms? (t : Expr) : Option (Bool × (Bool × Expr) × (Bool × Expr)) :=
-  let t' := if t.isAppOfArity ``Not 1 then t.appArg! else t
-  let neg := t.isAppOfArity ``Not 1
-  if (t'.isAppOfArity ``Eq 3 || (!neg && t'.isAppOfArity ``Ne 3)) then
-    let ty := t'.appFn!.appFn!.appArg!
-    if !(ty.isConstOf ``Nat || ty.isConstOf ``Int) then none else
-    let isInt := ty.isConstOf ``Int
-    match arithAtom? t'.appFn!.appArg!, arithAtom? t'.appArg! with
-    | some a, some b => some (t'.isAppOfArity ``Eq 3 && !neg, (isInt, a), (isInt, b))
-    | _, _ => none
-  else none
-
-def omegaHeads : List Name :=
-  [``Eq, ``Ne, ``Not, ``LT.lt, ``LE.le, ``GT.gt, ``GE.ge, ``Dvd.dvd, ``And, ``Or, ``Iff,
-   ``False, ``True, ``Exists]
-
-def omegaHopeless (g : MVarId) : MetaM Bool := g.withContext do
-  let gt ← instantiateMVars (← g.getType)
-  let some (gEq, ga, gb) := eqAtoms? gt | return false
-  let mut parent : Std.HashMap (Bool × Expr) (Bool × Expr) := {}
-  let mut diseqs : Array ((Bool × Expr) × (Bool × Expr)) := #[]
-  let find := fun (m : Std.HashMap (Bool × Expr) (Bool × Expr))
-      (x : Bool × Expr) => Id.run do
-    let mut y := x
-    for _ in [0 : 10000] do
-      match m[y]? with
-      | some z => if z == y then break else y := z
-      | none => break
-    return y
-  let mut eqs : Array ((Bool × Expr) × (Bool × Expr)) := #[]
-  for d in ← getLCtx do
-    if d.isImplementationDetail then continue
-    let t ← instantiateMVars d.type
-    match eqAtoms? t with
-    | some (true, a, b) => eqs := eqs.push (a, b)
-    | some (false, a, b) => diseqs := diseqs.push (a, b)
-    | none =>
-      match t.getAppFn with
-      | .const n _ =>
-        if omegaHeads.contains n then
-          if t.isAppOfArity ``Eq 3 || t.isAppOfArity ``Ne 3 then
-            let ty := t.appFn!.appFn!.appArg!
-            if ty.isConstOf ``Nat || ty.isConstOf ``Int then return false
-            if (← instantiateMVars ty).isConstOf ``Nat then return false
-          else return false
-      | .forallE .. => if ← isProp t then return false
-      | .mvar _ => return false
-      | _ => pure ()
-  for (a, b) in eqs do
-    let ra := find parent a
-    let rb := find parent b
-    if ra != rb then parent := parent.insert ra rb
-  let lit := fun (m : Std.HashMap (Bool × Expr) (Bool × Expr))
-      (r : Bool × Expr) (all : Array (Bool × Expr)) =>
-    all.filterMap (fun x => match x.2 with
-      | .lit (.natVal n) => if find m x == r then some n else none
-      | _ => none)
-  let mut atoms : Array (Bool × Expr) := #[ga, gb]
-  for (a, b) in eqs ++ diseqs do atoms := atoms.push a |>.push b
-  for x in atoms do
-    let ls := lit parent (find parent x) atoms
-    if ls.any (· != ls[0]!) then return false
-  for (a, b) in diseqs do
-    if find parent a == find parent b then return false
-  let ra := find parent ga
-  let rb := find parent gb
-  if gEq then return ra != rb
-  if ra == rb then return true
-  let la := lit parent ra atoms
-  let lb := lit parent rb atoms
-  if !la.isEmpty && !lb.isEmpty && la[0]! != lb[0]! then return false
-  for (a, b) in diseqs do
-    let x := find parent a
-    let y := find parent b
-    if (x == ra && y == rb) || (x == rb && y == ra) then return false
-  return true
-
-elab "xsearch_omega" : tactic => do
-  if ← omegaHopeless (← getMainGoal) then throwError "xsearch_omega: not entailed"
-  evalTactic (← `(tactic| omega))
+syntax "xsearch_omega" : tactic
 
 elab "xsearch_pure" : tactic => do
   let gs ← getUnsolvedGoals
@@ -1928,8 +1838,10 @@ partial def cmHasPred (tbl : Array (Name × Nat × Expr)) (e : Expr) : Bool :=
     | .app f a => cmHasPred tbl f || cmHasPred tbl a
     | _ => false
 
+def cmOr (e : Expr) : Bool := (isHorConst e || e.isAppOf ``hdisj) && e.getAppNumArgs ≥ 2
+
 partial def cmDisjs (e : Expr) : Array Expr :=
-  if isHorConst e && e.getAppNumArgs ≥ 2 then
+  if cmOr e then
     let xs := e.getAppArgs
     cmDisjs xs[xs.size - 2]! ++ cmDisjs xs[xs.size - 1]!
   else #[e]
@@ -1952,7 +1864,7 @@ partial def cmGen (tbl : Array (Name × Nat × Expr)) (lv depth : Nat) (e : Expr
       | .lam _ _ b _ => cmGen tbl lv depth (b.instantiate1 (← cmFresh)) sts
       | _ => return none
   | _ =>
-    if isHorConst e && e.getAppNumArgs ≥ 2 then
+    if cmOr e then
       let mut out := #[]
       for d in cmDisjs e do
         match ← cmGen tbl lv (depth + 1) d sts with
@@ -1964,7 +1876,11 @@ partial def cmGen (tbl : Array (Name × Nat × Expr)) (lv depth : Nat) (e : Expr
     | some body =>
       let ds := cmDisjs body
       let rec_ := ds.filter (cmHasPred tbl)
-      let base := ds.filter (fun d => !cmHasPred tbl d)
+      let base0 := ds.filter (fun d => !cmHasPred tbl d)
+      let self := e.getAppFn.constName?
+      let base := if base0.isEmpty then
+          ds.filter (fun d => (d.find? (fun s => s.getAppFn.constName? == self && self.isSome)).isNone)
+        else base0
       let chosen := if lv == 0 then base else if rec_.isEmpty then base else rec_
       if chosen.isEmpty then return none
       let mut out := #[]
@@ -2040,6 +1956,8 @@ inductive CmV where
 inductive CmP where
   | eq (a b : CmV)
   | ne (a b : CmV)
+  | le (a b : CmV)
+  | lt (a b : CmV)
   | not (a : CmP)
   | and (a b : CmP)
   | or (a b : CmP)
@@ -2072,6 +1990,10 @@ partial def cmCP (ix : Std.HashMap FVarId Nat) (p : Expr) : CmP :=
   match p.getAppFnArgs with
   | (``Eq, #[_, a, b]) => .eq (cmCV ix a) (cmCV ix b)
   | (``Ne, #[_, a, b]) => .ne (cmCV ix a) (cmCV ix b)
+  | (``LE.le, #[_, _, a, b]) => .le (cmCV ix a) (cmCV ix b)
+  | (``LT.lt, #[_, _, a, b]) => .lt (cmCV ix a) (cmCV ix b)
+  | (``GE.ge, #[_, _, a, b]) => .le (cmCV ix b) (cmCV ix a)
+  | (``GT.gt, #[_, _, a, b]) => .lt (cmCV ix b) (cmCV ix a)
   | (``Not, #[a]) => .not (cmCP ix a)
   | (``And, #[a, b]) => .and (cmCP ix a) (cmCP ix b)
   | (``Or, #[a, b]) => .or (cmCP ix a) (cmCP ix b)
@@ -2105,6 +2027,12 @@ def CmP.eval (env : Array (Option Int)) : CmP → Option Bool
   | .ne a b => match a.eval env, b.eval env with
     | some x, some y => some (x != y)
     | _, _ => none
+  | .le a b => match a.eval env, b.eval env with
+    | some x, some y => some (decide (x ≤ y))
+    | _, _ => none
+  | .lt a b => match a.eval env, b.eval env with
+    | some x, some y => some (decide (x < y))
+    | _, _ => none
   | .not a => (a.eval env).map (!·)
   | .and a b => match a.eval env, b.eval env with
     | some false, _ => some false
@@ -2127,7 +2055,44 @@ def CmP.eval (env : Array (Option Int)) : CmP → Option Bool
 
 abbrev CmClsI := Array (Array (Sum Nat Int))
 
+def CmV.lin : CmV → Option (Option Nat × Int)
+  | .var i => some (some i, 0)
+  | .lit n => some (none, n)
+  | .add a b => do
+    let (u, k) ← a.lin
+    let (v, l) ← b.lin
+    match u, v with
+    | some _, some _ => none
+    | some i, none | none, some i => some (some i, k + l)
+    | none, none => some (none, k + l)
+  | .sub a b => do
+    let (u, k) ← a.lin
+    let (v, l) ← b.lin
+    if v.isSome then none else some (u, k - l)
+  | _ => none
+
+partial def cmAtoms (p : CmP) (acc : Array CmP) : Array CmP :=
+  match p with
+  | .and a b => cmAtoms b (cmAtoms a acc)
+  | _ => acc.push p
+
+def cmLins (ps : Array CmP) : Array (Option Nat × Int × Option Nat × Int × Int × Bool) := Id.run do
+  let mut out := #[]
+  for p in ps do
+    for q in cmAtoms p #[] do
+      let (a, b, c, two) := match q with
+        | .eq a b => (a, b, (0 : Int), true)
+        | .le a b => (a, b, 0, false)
+        | .lt a b => (a, b, -1, false)
+        | _ => (CmV.unk, CmV.unk, 0, false)
+      let some (u, k) := a.lin | continue
+      let some (v, l) := b.lin | continue
+      if u.isNone && v.isNone then continue
+      out := out.push (u, k, v, l, c, two)
+  return out
+
 structure CmPre where
+  lins : Array (Option Nat × Int × Option Nat × Int × Int × Bool)
   allV : Array FVarId
   ix : Std.HashMap FVarId Nat
   pures : Array CmP
@@ -2161,7 +2126,7 @@ def cmPrep (vars : Array FVarId) (st : CmSt) (cls : CmCls) : Option CmPre := Id.
     base := base.push ci
   let pures := st.pures.map (cmCP ix)
   let cells := st.cells.map (fun (a, v) => (cmCV ix a, cmCV ix v))
-  return some ⟨allV, ix, pures, cells, base⟩
+  return some ⟨cmLins pures, allV, ix, pures, cells, base⟩
 
 def cmSameI (cls : CmClsI) (x y : Sum Nat Int) : Bool :=
   match cls.findIdx? (·.contains x) with
@@ -2173,6 +2138,7 @@ structure CmFb where
   litOf : Array (Option Int) := #[]
   pairs : Std.HashSet (Nat × Nat) := {}
   lits : Std.HashSet (Nat × Int) := {}
+  offs : Std.HashMap Nat (Array Int) := {}
 
 partial def cmNeAtoms (p : CmP) (acc : Array (CmV × CmV)) : Array (CmV × CmV) :=
   match p with
@@ -2206,7 +2172,7 @@ def cmFbOf (pre : CmPre) : CmFb := Id.run do
           | some ci => lits := lits.insert (ci, n)
           | none => pure ()
       | _, _ => pure ()
-  let mut byOff : Array (Int × Nat) := #[]
+  let mut offs : Std.HashMap Nat (Array Int) := {}
   for (a, _) in pre.cells do
     let r : Option (Nat × Int) := match a with
       | .var i => some (i, 0)
@@ -2215,13 +2181,10 @@ def cmFbOf (pre : CmPre) : CmFb := Id.run do
     match r with
     | some (i, k) =>
         match clsOf[i]? with
-        | some ci =>
-            for (k2, c2) in byOff do
-              if k2 == k then pairs := pairs.insert (key ci c2)
-            byOff := byOff.push (k, ci)
+        | some ci => offs := offs.insert ci ((offs.getD ci #[]).push k)
         | none => pure ()
     | none => pure ()
-  return { clsOf, litOf, pairs, lits }
+  return { clsOf, litOf, pairs, lits, offs }
 
 def cmDead (fb : CmFb) (pre : CmPre) (x y : Sum Nat Int) : Bool :=
   let key := fun (a b : Nat) => if a ≤ b then (a, b) else (b, a)
@@ -2233,61 +2196,152 @@ def cmDead (fb : CmFb) (pre : CmPre) (x y : Sum Nat Int) : Bool :=
   | .inl i, .inl j =>
       match fb.clsOf[i]?, fb.clsOf[j]? with
       | some ci, some cj =>
-          fb.pairs.contains (key ci cj) || clash (fb.litOf[ci]?.join) (fb.litOf[cj]?.join)
+          fb.pairs.contains (key ci cj) || clash (fb.litOf[ci]?.join) (fb.litOf[cj]?.join) ||
+            (ci != cj && (fb.offs.getD ci #[]).any ((fb.offs.getD cj #[]).contains ·))
       | _, _ => false
   | .inl i, .inr n | .inr n, .inl i =>
       match fb.clsOf[i]? with
       | some ci =>
           fb.lits.contains (ci, n) || clash (fb.litOf[ci]?.join) (some n) ||
             (match litCls n with
-              | some cn => fb.pairs.contains (key ci cn)
+              | some cn => fb.pairs.contains (key ci cn) ||
+                  (ci != cn && (fb.offs.getD ci #[]).any ((fb.offs.getD cn #[]).contains ·))
               | none => false)
       | none => false
   | _, _ => false
 
 def cmSolveM (pre : CmPre) (mi : Nat) (mj : Option Nat) (extra : Array (Sum Nat Int)) :
-    Option (Array (Option Int) × CmHeap × Array Int) := Id.run do
-  let mut env : Array (Option Int) := Array.replicate pre.allV.size none
-  let mut k := 0
-  let mut litVals : Array Int := #[]
+    Option (Array (Option Int) × CmHeap × Array Int × Nat) := Id.run do
   let nb := pre.base.size
+  let mut cs : Array (Array (Sum Nat Int)) := #[]
   for ci in [0 : nb + 1] do
     if mj == some ci then continue
     if ci == nb && mi != nb then continue
-    let c := if ci == nb then extra else if ci == mi then pre.base[ci]! ++ extra else pre.base[ci]!
+    cs := cs.push (if ci == nb then extra else if ci == mi then pre.base[ci]! ++ extra else pre.base[ci]!)
+  let n := cs.size
+  let mut varCls : Array (Option Nat) := Array.replicate pre.allV.size none
+  let mut lits : Array (Option Int) := #[]
+  for ci in [0 : n] do
     let mut lit : Option Int := none
-    for a in c do
+    for a in cs[ci]! do
       match a with
-      | .inr n => match lit with
-        | none => lit := some n
-        | some m => if m != n then return none
-      | .inl _ => pure ()
-    let v ← match lit with
-      | some n => pure n
-      | none =>
+      | .inr m => match lit with
+        | none => lit := some m
+        | some m' => if m != m' then return none
+      | .inl i => varCls := varCls.set! i (some ci)
+    lits := lits.push lit
+  let z := n
+  let mut es : Array (Nat × Nat × Int) := #[]
+  let mut used : Array Bool := Array.replicate (n + 1) false
+  for (u, k, v, l, c, two) in pre.lins do
+    let node := fun (w : Option Nat) => match w with
+      | some i => varCls[i]?.join
+      | none => some z
+    let some x := node u | continue
+    let some y := node v | continue
+    if x == y then continue
+    es := es.push (y, x, l - k + c)
+    if two then es := es.push (x, y, k - l)
+    used := used.set! x true |>.set! y true
+  for ci in [0 : n] do
+    unless used[ci]! do continue
+    if let some m := lits[ci]! then
+      es := es.push (z, ci, m) |>.push (ci, z, -m)
+    es := es.push (ci, z, 0)
+  let mut d : Array Int := Array.replicate (n + 1) 0
+  if !es.isEmpty then
+    let mut changed := true
+    let mut it := 0
+    while changed do
+      if it > n + 1 then return none
+      changed := false
+      it := it + 1
+      for (y, x, c) in es do
+        if d[y]! + c < d[x]! then
+          d := d.set! x (d[y]! + c)
+          changed := true
+  let mut k := 0
+  let mut env : Array (Option Int) := Array.replicate pre.allV.size none
+  let mut vals : Array Int := #[]
+  for ci in [0 : n] do
+    let v ← if used[ci]! then pure (d[ci]! - d[z]!)
+      else match lits[ci]! with
+        | some m => pure m
+        | none =>
           k := k + 1
           pure (Int.ofNat (100000 + 1000 * k))
     let mut hasVar := false
-    for a in c do
+    for a in cs[ci]! do
       match a with
       | .inl i =>
           env := env.set! i (some v)
           hasVar := true
       | .inr _ => pure ()
-    if hasVar && lit.isSome then litVals := litVals.push v
+    if hasVar then vals := vals.push v
   for p in pre.pures do
     unless p.eval env == some true do return none
   let mut h : CmHeap := #[]
   for (a, v) in pre.cells do
     match a.eval env, v.eval env with
-    | some x, some y =>
-        if h.any (·.1 == x) then return none
-        h := h.push (x, y)
+    | some x, some y => h := h.push (x, y)
     | _, _ => return none
-  let mut vals : Array Int := #[]
-  for v in (litVals ++ (List.range k).toArray.map (fun i => Int.ofNat (100000 + 1000 * (i + 1)))).qsort (· < ·) do
-    if vals.back? != some v then vals := vals.push v
-  return some (env, h.qsort (fun x y => x.1 < y.1), vals)
+  h := h.qsort (fun x y => x.1 < y.1)
+  for i in [1 : h.size] do
+    if h[i - 1]!.1 == h[i]!.1 then return none
+  let mut out : Array Int := #[]
+  for v in vals.qsort (· < ·) do
+    if out.back? != some v then out := out.push v
+  return some (env, h, out, k)
+
+def cmIsoKey (k : Nat) (h : CmHeap) (rv : Array (Option Int)) (vals : Array Int) :
+    Array (Nat × Int × Nat × Int) × Array (Option (Nat × Int)) × Array (Nat × Int) := Id.run do
+  let kOf := fun (v : Int) =>
+    if v ≥ 101000 && v < 100000 + 1000 * (k + 1) then (v - 100000).toNat / 1000 else 0
+  let mut start : Array Nat := Array.replicate (k + 1) h.size
+  for idx in [0 : h.size] do
+    let c := kOf h[idx]!.1
+    if c != 0 && start[c]! == h.size then start := start.set! c idx
+  let mut lab : Array Nat := Array.replicate (k + 1) 0
+  let mut order : Array Nat := #[]
+  let mut si := 0
+  let mut i := 0
+  let nr := rv.size
+  while si < nr + h.size + vals.size || i < order.size do
+    if i < order.size then
+      let b := order[i]!
+      i := i + 1
+      let mut idx := start[b]!
+      while idx < h.size && kOf h[idx]!.1 == b do
+        let c := kOf h[idx]!.2
+        if c != 0 && lab[c]! == 0 then
+          order := order.push c
+          lab := lab.set! c order.size
+        idx := idx + 1
+    else
+      let v := if si < nr then rv[si]!.getD 0 else if si < nr + h.size then h[si - nr]!.1
+        else vals[si - nr - h.size]!
+      let c := kOf v
+      if c != 0 && lab[c]! == 0 then
+        order := order.push c
+        lab := lab.set! c order.size
+      si := si + 1
+  let enc := fun (v : Int) => match kOf v with
+    | 0 => (0, v)
+    | c => (lab[c]!, v - 100000 - 1000 * c)
+  let mut hk : Array (Nat × Int × Nat × Int) := #[]
+  for (a, w) in h do
+    if kOf a == 0 then
+      let (l, o) := enc w
+      hk := hk.push (0, a, l, o)
+  for b in order do
+    let mut idx := start[b]!
+    while idx < h.size && kOf h[idx]!.1 == b do
+      let (a, w) := h[idx]!
+      let (l, o) := enc w
+      hk := hk.push (lab[b]!, a - 100000 - 1000 * b, l, o)
+      idx := idx + 1
+  let lt := fun (p q : Nat × Int) => p.1 < q.1 || (p.1 == q.1 && p.2 < q.2)
+  return (hk, rv.map (·.map enc), (vals.map enc).qsort lt)
 
 def cmMergeOf (fb : CmFb) (pre : CmPre) (x y : Sum Nat Int) :
     Nat × Option Nat × Array (Sum Nat Int) :=
@@ -2335,15 +2389,6 @@ def cmCanon (vars : Array FVarId) (st : CmSt) : Array Expr := Id.run do
     out := out.push (rn p)
   return out
 
-structure CmRes where
-  outs : Array CmHeap := #[]
-  inc : Bool := false
-  deriving Inhabited
-
-def CmRes.join (a b : CmRes) : CmRes :=
-  { outs := b.outs.foldl (fun acc o => if acc.contains o then acc else acc.push o) a.outs,
-    inc := a.inc || b.inc }
-
 partial def cmPin (x : Expr) (e : Expr) : Option Expr :=
   match e.getAppFnArgs with
   | (``HProp.hstar, #[_, a, b]) =>
@@ -2364,7 +2409,7 @@ inductive CmN where
   | emp
   | pure (p : CmP)
   | cell (a v : CmV)
-  | ex (isNat : Bool) (pin : Option CmV) (body : CmN)
+  | ex (isNat : Bool) (slot : Nat) (sym : Bool) (pin : Option CmV) (body : CmN)
   | or (ds : Array CmN)
   | call (p : Nat) (args : Array CmV)
   | unk
@@ -2385,10 +2430,10 @@ partial def cmCompile (tbl : Array (Name × Nat × Expr)) (ix : Std.HashMap FVar
           let x := mkFVar ⟨.num `_xcmslot next⟩
           let body := b.instantiate1 x
           let ix' := ix.insert x.fvarId! next
-          .ex isNat ((cmPin x body).map (cmCV ix)) (cmCompile tbl ix' (next + 1) body)
+          .ex isNat next false ((cmPin x body).map (cmCV ix)) (cmCompile tbl ix' (next + 1) body)
       | _ => .unk
   | _ =>
-    if isHorConst e && e.getAppNumArgs ≥ 2 then
+    if cmOr e then
       .or ((cmDisjs e).map (cmCompile tbl ix next))
     else
       match e.getAppFn.constName? with
@@ -2423,18 +2468,167 @@ def cmCount : CmM Nat := do
   set (s, c + 1)
   return c
 
-def cmCandsI (ev : CmEv) (env : Array (Option Int)) (path : Array Int) (h : CmHeap)
+partial def CmV.slots (v : CmV) (acc : Array Nat) : Array Nat :=
+  match v with
+  | .var i => acc.push i
+  | .add a b | .subN a b | .sub a b => b.slots (a.slots acc)
+  | .neg a => a.slots acc
+  | _ => acc
+
+partial def cmAddrSlots (au : Array (Array Bool)) (e : CmN) (acc : Array Nat) : Array Nat :=
+  match e with
+  | .star a b => cmAddrSlots au b (cmAddrSlots au a acc)
+  | .cell a _ => a.slots acc
+  | .ex _ _ _ _ body => cmAddrSlots au body acc
+  | .or ds => ds.foldl (fun acc d => cmAddrSlots au d acc) acc
+  | .call k args => (List.range args.size).foldl (fun acc j =>
+      if ((au[k]?).bind (·[j]?)).getD true then args[j]!.slots acc else acc) acc
+  | _ => acc
+
+def cmAddrUse (prog : Array CmN) (arity : Array Nat) : Array (Array Bool) := Id.run do
+  let mut au := arity.map (fun n => Array.replicate n false)
+  for _ in [0 : arity.foldl (· + ·) 0 + 1] do
+    let nu := (List.range prog.size).toArray.map fun k =>
+      let s := cmAddrSlots au prog[k]! #[]
+      (List.range arity[k]!).toArray.map (s.contains ·)
+    if nu == au then break
+    au := nu
+  return au
+
+partial def cmMark (au : Array (Array Bool)) (e : CmN) : CmN :=
+  match e with
+  | .star a b => .star (cmMark au a) (cmMark au b)
+  | .ex isNat slot _ pin body =>
+    let b := cmMark au body
+    .ex isNat slot (pin.isNone && !(cmAddrSlots au b #[]).contains slot) pin b
+  | .or ds => .or (ds.map (cmMark au))
+  | e => e
+
+abbrev CmL := Nat × Int
+
+def CmV.sym (env : Array (Option CmL)) : CmV → Option CmL
+  | .var i => env[i]?.join
+  | .lit n => some (0, n)
+  | .add a b => do
+    let (u, k) ← a.sym env
+    let (v, l) ← b.sym env
+    if u == 0 then some (v, k + l) else if v == 0 then some (u, k + l) else none
+  | .sub a b => do
+    let (u, k) ← a.sym env
+    let (v, l) ← b.sym env
+    if v == 0 then some (u, k - l) else if u == v then some (0, k - l) else none
+  | .subN a b => do
+    let (u, k) ← a.sym env
+    let (v, l) ← b.sym env
+    if u == 0 && v == 0 then some (0, if k ≥ l then k - l else 0) else none
+  | .neg a => do
+    let (u, k) ← a.sym env
+    if u == 0 then some (0, -k) else none
+  | .unk => none
+
+structure CmCs where
+  n : Nat := 0
+  es : Array (Nat × Nat × Int) := #[]
+  nes : Array (CmL × CmL) := #[]
+  deriving BEq, Inhabited
+
+def CmCs.le (cs : CmCs) (a b : CmL) : Option CmCs :=
+  if a.1 == b.1 then (if a.2 ≤ b.2 then some cs else none)
+  else some { cs with es := cs.es.push (b.1, a.1, b.2 - a.2) }
+
+def CmCs.solve (cs : CmCs) : Option (Array Int) := Id.run do
+  let mut d : Array Int := Array.replicate (cs.n + 1) 0
+  let mut changed := true
+  let mut it := 0
+  while changed do
+    if it > cs.n + 1 then return none
+    changed := false
+    it := it + 1
+    for (y, x, c) in cs.es do
+      if d[y]! + c < d[x]! then
+        d := d.set! x (d[y]! + c)
+        changed := true
+  let z := d[0]!
+  return some (d.map (· - z))
+
+def CmCs.final (cs : CmCs) : Option Bool :=
+  match cs.solve with
+  | none => some false
+  | some v =>
+    let val := fun (l : CmL) => v[l.1]! + l.2
+    if cs.nes.all (fun (a, b) => val a != val b) then some true else none
+
+partial def CmP.sym (env : Array (Option CmL)) (cs : CmCs) : CmP → Option (Bool × CmCs)
+  | .eq a b => do
+    let la ← a.sym env
+    let lb ← b.sym env
+    if la.1 == 0 && lb.1 == 0 then return (la.2 == lb.2, cs)
+    match cs.le la lb >>= (·.le lb la) with
+    | some cs' => some (true, cs')
+    | none => some (false, cs)
+  | .le a b => do
+    let la ← a.sym env
+    let lb ← b.sym env
+    match cs.le la lb with
+    | some cs' => some (true, cs')
+    | none => some (false, cs)
+  | .lt a b => do
+    let la ← a.sym env
+    let lb ← b.sym env
+    match cs.le (la.1, la.2 + 1) lb with
+    | some cs' => some (true, cs')
+    | none => some (false, cs)
+  | .ne a b => do
+    let la ← a.sym env
+    let lb ← b.sym env
+    if la.1 == 0 && lb.1 == 0 then return (la.2 != lb.2, cs)
+    if la == lb then return (false, cs)
+    some (true, { cs with nes := cs.nes.push (la, lb) })
+  | .not (.eq a b) => CmP.sym env cs (.ne a b)
+  | .not p => do
+    let (r, cs') ← p.sym env cs
+    if cs' == cs then some (!r, cs) else none
+  | .and a b => do
+    let (r, c1) ← a.sym env cs
+    if !r then return (false, cs)
+    b.sym env c1
+  | .or a b =>
+    match a.sym env cs, b.sym env cs with
+    | some (true, c), _ => if c == cs then some (true, cs) else none
+    | _, some (true, c) => if c == cs then some (true, cs) else none
+    | some (false, _), some (false, _) => some (false, cs)
+    | _, _ => none
+  | .imp a b =>
+    match a.sym env cs, b.sym env cs with
+    | some (false, _), _ => some (true, cs)
+    | _, some (true, c) => if c == cs then some (true, cs) else none
+    | some (true, c), some (false, _) => if c == cs then some (false, cs) else none
+    | _, _ => none
+  | .tt => some (true, cs)
+  | .ff => some (false, cs)
+  | .unk => none
+
+structure CmRes where
+  outs : Array (CmHeap × CmCs) := #[]
+  inc : Bool := false
+  deriving Inhabited
+
+def CmRes.join (a b : CmRes) : CmRes :=
+  { outs := b.outs.foldl (fun acc o => if acc.contains o then acc else acc.push o) a.outs,
+    inc := a.inc || b.inc }
+
+def cmCandsI (ev : CmEv) (env : Array (Option CmL)) (path : Array Int) (h : CmHeap)
     (isNat : Bool) (pin : Option CmV) : CmM (Array Int) := do
   let _ ← cmCount
   let mut cands : Array Int := #[]
   let mut pinned := false
-  match pin.bind (·.eval env) with
-  | some av =>
+  match pin.bind (·.sym env) with
+  | some (0, av) =>
       pinned := true
       match h.find? (·.1 == av) with
       | some (_, v) => cands := #[v]
       | none => pure ()
-  | none => pure ()
+  | _ => pure ()
   unless pinned do
     let n ← cmCount
     let c0 := Int.ofNat (1000000000 + 1000 * n)
@@ -2459,88 +2653,113 @@ def cmCandsI (ev : CmEv) (env : Array (Option Int)) (path : Array Int) (h : CmHe
   if isNat then cands := cands.filter (· ≥ 0)
   return cands
 
+def cmFresh? (cs : CmCs) (isNat : Bool) : CmCs × CmL :=
+  let x := cs.n + 1
+  ({ cs with n := x, es := if isNat then cs.es.push (x, 0, 0) else cs.es }, (x, 0))
+
+def cmCellS (env : Array (Option CmL)) (cs : CmCs) (a v : CmV) (h : CmHeap) :
+    Option (Option (CmHeap × CmCs)) := do
+  let (u, x) ← a.sym env
+  if u != 0 then none
+  let lv ← v.sym env
+  match h.find? (·.1 == x) with
+  | none => some none
+  | some (_, y) =>
+    if lv.1 == 0 then
+      return if lv.2 == y then some (h.filter (·.1 != x), cs) else none
+    match cs.le lv (0, y) >>= (·.le (0, y) lv) with
+    | some cs' => if cs'.solve.isSome then some (some (h.filter (·.1 != x), cs')) else some none
+    | none => some none
+
 mutual
 
-partial def cmConsI (ev : CmEv) (env : Array (Option Int)) (path : Array Int) (fuel : Nat)
+partial def cmConsI (ev : CmEv) (env : Array (Option CmL)) (cs : CmCs) (path : Array Int) (fuel : Nat)
     (e : CmN) (h : CmHeap) : CmM CmRes := do
   unless ← cmTick do return { inc := true }
   match e with
   | .star a b =>
-      let r1 ← cmConsI ev env path fuel a h
+      let r1 ← cmConsI ev env cs path fuel a h
       let mut acc : CmRes := { inc := r1.inc }
-      for o in r1.outs do
-        acc := acc.join (← cmConsI ev env path fuel b o)
+      for (o, c) in r1.outs do
+        acc := acc.join (← cmConsI ev env c path fuel b o)
       return acc
-  | .emp => return { outs := #[h] }
+  | .emp => return { outs := #[(h, cs)] }
   | .pure p =>
-      match p.eval env with
-      | some true => return { outs := #[h] }
-      | some false => return {}
+      match p.sym env cs with
+      | some (true, cs') => if cs' != cs && cs'.solve.isNone then return {} else return { outs := #[(h, cs')] }
+      | some (false, _) => return {}
       | none => return { inc := true }
   | .cell a v =>
-      match a.eval env, v.eval env with
-      | some x, some y =>
-          if h.contains (x, y) then return { outs := #[h.filter (·.1 != x)] }
-          else return {}
-      | _, _ => return { inc := true }
-  | .ex isNat pin body =>
+      match cmCellS env cs a v h with
+      | some (some o) => return { outs := #[o] }
+      | some none => return {}
+      | none => return { inc := true }
+  | .ex isNat _ sym pin body =>
+      if sym then
+        let (cs', l) := cmFresh? cs isNat
+        return ← cmConsI ev (env.push (some l)) cs' path fuel body h
       let cands ← cmCandsI ev env path h isNat pin
       let mut acc : CmRes := {}
       for c in cands do
-        acc := acc.join (← cmConsI ev (env.push (some c)) (path.push c) fuel body h)
+        acc := acc.join (← cmConsI ev (env.push (some (0, c))) cs (path.push c) fuel body h)
       return acc
   | .or ds =>
       let mut acc : CmRes := {}
       for d in ds do
-        acc := acc.join (← cmConsI ev env path fuel d h)
+        acc := acc.join (← cmConsI ev env cs path fuel d h)
       return acc
   | .call k args =>
       if fuel == 0 then return { inc := true }
-      cmConsI ev (args.map (·.eval env)) path (fuel - 1) ev.prog[k]! h
+      cmConsI ev (args.map (·.sym env)) cs path (fuel - 1) ev.prog[k]! h
   | .unk => return { inc := true }
 
-partial def cmConsKI (ev : CmEv) (env : Array (Option Int)) (path : Array Int) (fuel : Nat)
+partial def cmConsKI (ev : CmEv) (env : Array (Option CmL)) (cs : CmCs) (path : Array Int) (fuel : Nat)
     (e : CmN) (h : CmHeap) : CmM (Bool × Bool) := do
   unless ← cmTick do return (false, true)
+  let fin := fun (h : CmHeap) (c : CmCs) => if !h.isEmpty then (false, false) else match c.final with
+    | some r => (r, false)
+    | none => (false, true)
   match e with
   | .star a b =>
-      let r1 ← cmConsI ev env path fuel a h
+      let r1 ← cmConsI ev env cs path fuel a h
       let mut inc := r1.inc
-      for o in r1.outs do
-        let (f, i) ← cmConsKI ev env path fuel b o
+      for (o, c) in r1.outs do
+        let (f, i) ← cmConsKI ev env c path fuel b o
         inc := inc || i
         if f then return (true, inc)
       return (false, inc)
-  | .emp => return (h.isEmpty, false)
+  | .emp => return fin h cs
   | .pure p =>
-      match p.eval env with
-      | some true => return (h.isEmpty, false)
-      | some false => return (false, false)
+      match p.sym env cs with
+      | some (true, cs') => return fin h cs'
+      | some (false, _) => return (false, false)
       | none => return (false, true)
   | .cell a v =>
-      match a.eval env, v.eval env with
-      | some x, some y =>
-          if h.contains (x, y) then return ((h.filter (·.1 != x)).isEmpty, false)
-          else return (false, false)
-      | _, _ => return (false, true)
-  | .ex isNat pin body =>
+      match cmCellS env cs a v h with
+      | some (some (o, c)) => return fin o c
+      | some none => return (false, false)
+      | none => return (false, true)
+  | .ex isNat _ sym pin body =>
+      if sym then
+        let (cs', l) := cmFresh? cs isNat
+        return ← cmConsKI ev (env.push (some l)) cs' path fuel body h
       let cands ← cmCandsI ev env path h isNat pin
       let mut inc := false
       for c in cands do
-        let (f, i) ← cmConsKI ev (env.push (some c)) (path.push c) fuel body h
+        let (f, i) ← cmConsKI ev (env.push (some (0, c))) cs (path.push c) fuel body h
         inc := inc || i
         if f then return (true, inc)
       return (false, inc)
   | .or ds =>
       let mut inc := false
       for d in ds do
-        let (f, i) ← cmConsKI ev env path fuel d h
+        let (f, i) ← cmConsKI ev env cs path fuel d h
         inc := inc || i
         if f then return (true, inc)
       return (false, inc)
   | .call k args =>
       if fuel == 0 then return (false, true)
-      cmConsKI ev (args.map (·.eval env)) path (fuel - 1) ev.prog[k]! h
+      cmConsKI ev (args.map (·.sym env)) cs path (fuel - 1) ev.prog[k]! h
   | .unk => return (false, true)
 
 end
@@ -3241,16 +3460,21 @@ def cmFind : TacticM Bool := withMainContext do
   for i in pidx do
     pols := pols.push (lvOf (fun j => if j == i then 0 else 1))
     pols := pols.push (lvOf (fun j => if j == i then 2 else 1))
+  for i in pidx do
+    pols := pols.push (lvOf (fun j => if j == i || !pidx.contains j then 1 else 0))
   let nil := mkNatLit 0
   let t0 ← vclock
   cmSteps.set 400000
   let mut stCache : Array (Option (Array (Option CmPrepped))) := Array.replicate pols.size none
   let rvs := cmFVars rhs #[]
   let mut seen : Std.HashSet (CmHeap × Array (Option Int) × Array Int) := {}
+  let mut seenIso : Std.HashSet (Array (Nat × Int × Nat × Int) × Array (Option (Nat × Int)) × Array (Nat × Int)) := {}
   let mut stSeen : Std.HashSet (Array Expr) := {}
-  let prog := cmCompileTbl tbl
-  let rhsN := cmCompile tbl ((List.range vars.size).foldl (fun m i => m.insert vars[i]! i) {})
-    vars.size rhs
+  let prog0 := cmCompileTbl tbl
+  let au := cmAddrUse prog0 (tbl.map (·.2.1))
+  let prog := prog0.map (cmMark au)
+  let rhsN := cmMark au (cmCompile tbl ((List.range vars.size).foldl (fun m i => m.insert vars[i]! i) {})
+    vars.size rhs)
   for round in [0 : 3] do
     for pi in [0 : pols.size] do
       if (← vclock) > t0 + 60 then return false
@@ -3290,20 +3514,74 @@ def cmFind : TacticM Bool := withMainContext do
           if (← vclock) > t0 + 60 then return false
           match cmSolveM pre mi mj extra with
           | none => pure ()
-          | some (envA, h, vals) =>
-            let key := (h, sp.rvIdx.map (fun i? => i?.bind (fun i => envA[i]?.join)), vals)
+          | some (envA, h, vals, k) =>
+            let rv := sp.rvIdx.map (fun i? => i?.bind (fun i => envA[i]?.join))
+            let key := (h, rv, vals)
             if seen.contains key then continue
             seen := seen.insert key
+            let iso := cmIsoKey k h rv vals
+            if seenIso.contains iso then continue
+            seenIso := seenIso.insert iso
             let rem ← cmSteps.get
             let bud := min rem 5000
             let ev : CmEv := { prog, off, gvals := envA.filterMap id }
             let cnt0 ← cmCounter.get
             let ((found, inc), (left, cnt)) :=
-              (cmConsKI ev (envA.extract 0 vars.size) #[] (2 * h.size + 8) rhsN h).run (bud, cnt0)
+              (cmConsKI ev ((envA.extract 0 vars.size).map (·.map ((0 : Nat), ·))) {} #[] (2 * h.size + 8)
+                rhsN h).run (bud, cnt0)
             cmCounter.set cnt
             cmSteps.set (rem - (bud - left))
             if !inc && !found then return true
   return false
+
+def cmNeg (p : Expr) : MetaM (Option (Array Expr)) := do
+  let num := fun (t : Expr) => t.isConstOf ``Nat || t.isConstOf ``Int
+  match p.getAppFnArgs with
+  | (``False, _) => return some #[]
+  | (``Ne, #[t, a, b]) => if num t then return some #[← mkEq a b] else return none
+  | (``Not, #[q]) => match q.eq? with
+    | some (t, a, b) => if num t then return some #[← mkEq a b] else return none
+    | none => return none
+  | (``Eq, #[t, a, b]) => if num t then return some #[← mkAppM ``Ne #[a, b]] else return none
+  | (``LE.le, #[t, _, a, b]) => if num t then return some #[← mkAppM ``LT.lt #[b, a]] else return none
+  | (``LT.lt, #[t, _, a, b]) => if num t then return some #[← mkAppM ``LE.le #[b, a]] else return none
+  | (``GE.ge, #[t, _, a, b]) => if num t then return some #[← mkAppM ``LT.lt #[a, b]] else return none
+  | (``GT.gt, #[t, _, a, b]) => if num t then return some #[← mkAppM ``LE.le #[a, b]] else return none
+  | _ => return none
+
+def cmFact (t : Expr) : Bool :=
+  match t.getAppFnArgs with
+  | (``Eq, #[ty, _, _]) | (``Ne, #[ty, _, _]) => ty.isConstOf ``Nat || ty.isConstOf ``Int
+  | (``LE.le, _) | (``LT.lt, _) | (``GE.ge, _) | (``GT.gt, _) | (``Not, _) | (``And, _) | (``Or, _)
+  | (``False, _) => true
+  | _ => t.isForall && !t.bindingBody!.hasLooseBVars
+
+def cmPureModel (facts : Array Expr) : MetaM Bool := do
+  let mut vars : Array FVarId := #[]
+  for f in facts.foldl (fun acc p => cmFVars p acc) #[] do
+    let ty ← instantiateMVars (← f.getType)
+    if ty.isConstOf ``Nat || ty.isConstOf ``Int then vars := vars.push f
+  let st : CmSt := { pures := facts }
+  let some pre := cmPrep vars st (cmBase vars st) | return false
+  return (cmSolveM pre pre.base.size none #[]).isSome
+
+partial def cmPureRefuted (p : Expr) : MetaM Bool := do
+  let p ← instantiateMVars p
+  if let some (a, b) := p.and? then return (← cmPureRefuted a) || (← cmPureRefuted b)
+  let some neg ← cmNeg p | return false
+  let mut facts : Array Expr := #[]
+  for d in ← getLCtx do
+    if d.isImplementationDetail then continue
+    let ty ← instantiateMVars d.type
+    if cmFact ty && (← isProp ty) then facts := facts.push ty
+  cmPureModel (facts ++ neg)
+
+elab_rules : tactic
+  | `(tactic| xsearch_omega) => do
+    let g ← getMainGoal
+    if ← g.withContext (do cmPureRefuted (← g.getType)) then
+      throwError "xsearch_omega: not entailed"
+    evalTactic (← `(tactic| omega))
 
 def stmtRefuted (xs : Array Expr) (lhs rhs : Expr) : TacticM Bool := do
   let stmt ← mkForallFVars xs (← mkAppM ``HProp.himpl #[lhs, rhs])
@@ -3340,7 +3618,7 @@ def goalRefuted : TacticM Bool := withMainContext do
   let mut L := lhs
   for p in ps do
     L ← mkAppM ``HProp.hstar #[← mkAppOptM ``HProp.hpure #[inst, p], L]
-  stmtRefuted vs L rhs
+  stmtRefuted (vs.filter fun v => L.containsFVar v.fvarId! || rhs.containsFVar v.fvarId!) L rhs
 
 def cmCheckPending : TacticM Unit := do
   if ← cmPending.get then
@@ -3872,7 +4150,7 @@ def arByHyp (p : Expr) : MetaM (Option Expr) := do
   wgHypMatch (← wgRawHyps) (← instantiateMVars p)
 
 def arOmegaCore (p : Expr) (saved : List MVarId) : TacticM Expr := do
-  let tiers : Array (MVarId → MetaM MVarId) :=
+  let tiers : Array (MVarId → MetaM MVarId) := if !p.hasFVar then #[pure] else
     (if arTriv p then #[arClearProps] else #[]) ++ #[(arTrim · false), (arTrim · true)]
   let mut err : Option Exception := none
   for tr in tiers do
@@ -4167,52 +4445,6 @@ def wgByLemmas (inst goal : Expr) (hyps : Array (Expr × Expr)) : MetaM (Option 
     s.restore
   return none
 
-def wgSideFutile (p : Expr) : MetaM Bool := do
-  let atom := fun (e : Expr) => e.isFVar || (e.nat?).isSome
-  let ab : Option (Expr × Expr) := match p.ne? with
-    | some (_, a, b) => some (a, b)
-    | none => match p.not?.bind (·.eq?) with
-      | some (_, a, b) => some (a, b)
-      | none => match p.eq? with
-        | some (ty, a, b) => if ty == mkConst ``Nat && a != b then some (a, b) else none
-        | none => match p.getAppFnArgs with
-          | (``LE.le, #[ty, _, c, v]) =>
-            if ty == mkConst ``Nat && (c.nat?.getD 0) ≥ 1 && v.isFVar then some (c, v) else none
-          | _ => none
-  let some (a, b) := ab | return false
-  unless atom a && atom b do return false
-  if let (``LE.le, #[_, _, _, v]) := p.getAppFnArgs then
-    let strip := fun (e : Expr) => if e.isAppOfArity ``Nat.cast 3 then e.appArg! else e
-    let mut cls : Array Expr := #[v]
-    let mut hs : Array Expr := #[]
-    for d in ← getLCtx do
-      if d.isImplementationDetail then continue
-      let ty ← instantiateMVars d.type
-      if ← isProp ty then hs := hs.push ty
-    for _ in [0 : hs.size + 1] do
-      for ty in hs do
-        if let some (_, l, r) := ty.eq? then
-          let l' := strip l
-          let r' := strip r
-          if cls.contains l' && r'.isFVar && !cls.contains r' then cls := cls.push r'
-          if cls.contains r' && l'.isFVar && !cls.contains l' then cls := cls.push l'
-    for ty in hs do
-      if ty.ne?.isSome || (ty.not?.bind (·.eq?)).isSome then continue
-      if let some (_, l, r) := ty.eq? then
-        if cls.contains (strip l) || cls.contains (strip r) then
-          if (strip l).isFVar && (strip r).isFVar then continue
-      if let (``LE.le, #[_, _, z, w]) := ty.getAppFnArgs then
-        if (z.int? == some 0 || z.nat? == some 0) && cls.contains (strip w) then continue
-      if (ty.find? (fun e => cls.contains e)).isSome then return false
-    return true
-  for d in ← getLCtx do
-    if d.isImplementationDetail then continue
-    let ty ← instantiateMVars d.type
-    unless ← isProp ty do continue
-    if ty.ne?.isSome || (ty.not?.bind (·.eq?)).isSome then continue
-    if (ty.find? (fun e => (e == a && a.isFVar) || (e == b && b.isFVar))).isSome then return false
-  return true
-
 partial def pureHyps (hyps : Array (Expr × Expr)) : MetaM (Array (Expr × Expr)) := do
   let mut out : Array (Expr × Expr) := #[]
   let mut todo := hyps
@@ -4311,7 +4543,7 @@ partial def wgProveH (hyps : Array (Expr × Expr)) (p0 : Expr) (heap : Option Ex
     let dir ← cs.mapM (wgDirect hyps)
     let rest := ((Array.range cs.size).filter fun i => dir[i]!.isNone && wgArith cs[i]!).map (cs[·]!)
     for c in rest do
-      if ← wgSideFutile c then throwError "side: futile"
+      if ← cmPureRefuted c then throwError "side: futile"
     let restPf ← if rest.isEmpty then pure none else some <$> arOmegaCore (← wgConj rest) (← getGoals)
     return (← fin (← wgAndTree p fun c => do
       if let some i := cs.idxOf? c then
@@ -4323,7 +4555,7 @@ partial def wgProveH (hyps : Array (Expr × Expr)) (p0 : Expr) (heap : Option Ex
     if let some (a, b) := wgNeSides p then
       let h ← instantiateMVars h
       if let some pf ← wgNeHeap h a b then return (pf, true)
-  if ← wgSideFutile p then throwError "side: futile"
+  if ← cmPureRefuted p then throwError "side: futile"
   return (← fin (← arOmegaCore p (← getGoals)), false)
 
 def wgProve (p : Expr) (heap : Option Expr) : TacticM (Expr × Bool) := do
@@ -8718,64 +8950,11 @@ def wgEntryFacts : TacticM (Array (Expr × Expr)) := do
     if let some k := ws[0]? then out := out.push (x, mkFVar k)
   return out
 
-def arKeepEqs (g : MVarId) : MetaM MVarId := g.withContext do
-  let mut lctx ← getLCtx
-  for d in lctx do
-    if d.isImplementationDetail then continue
-    let ty ← instantiateMVars d.type
-    unless ← isProp ty do continue
-    let keep := ty.isAppOf ``Eq || ty.isAppOf ``Ne || ty.isAppOf ``Not ||
-      (ty.isAppOf ``And && (pureConjs ty #[]).all (fun c => c.isAppOf ``Eq || c.isAppOf ``Ne))
-    unless keep do lctx := lctx.erase d.fvarId
-  let m ← withLCtx lctx (← getLocalInstances) (mkFreshExprSyntheticOpaqueMVar (← g.getType))
-  g.assign m
-  return m.mvarId!
-
-def wgOmegaTiered (p : Expr) (div : Nat) : TacticM Expr := do
-  let gs ← getGoals
-  for tr in #[arKeepEqs, pure] do
-    let s ← saveState
-    let m ← mkFreshExprSyntheticOpaqueMVar p
-    try
-      let g' ← tr m.mvarId!
-      arOmegaIn g' (some div)
-      setGoals gs
-      return ← instantiateMVars m
-    catch _ => s.restore
-  setGoals gs
-  throwError "wg: omega tiers"
-
-def wgFalseFutile : MetaM Bool := do
-  let num := fun (t : Expr) => t.isConstOf ``Nat || t.isConstOf ``Int
-  let atom := fun (e : Expr) => e.isFVar || (e.nat?).isSome || (e.int?).isSome
-  for d in ← getLCtx do
-    if d.isImplementationDetail then continue
-    let ty ← instantiateMVars d.type
-    unless ← isProp ty do continue
-    let ne := match ty.ne? with
-      | some r => some r
-      | none => ty.not?.bind (·.eq?)
-    if let some (t, a, b) := ne then
-      if !num t then continue
-      unless atom a && atom b && a != b do return false
-      continue
-    if let some (t, _, _) := ty.eq? then
-      if num t then return false
-      continue
-    match ty.getAppFn.constName? with
-    | some n =>
-      if [``LE.le, ``LT.lt, ``GE.ge, ``GT.gt, ``And, ``Or, ``Iff, ``Not, ``Dvd.dvd, ``False].contains n then
-        return false
-    | none => pure ()
-  return true
-
-def wgRefuted : TacticM Bool := withMainContext do
-  if ← wgFalseFutile then return false
+def wgFalseClose : TacticM Bool := withMainContext do
   let g ← getMainGoal
   let s ← saveState
   try
-    let pf ← wgOmegaTiered (mkConst ``False) 2
-    g.assign (← mkAppOptM ``False.elim #[← g.getType, pf])
+    g.assign (← mkAppOptM ``False.elim #[← g.getType, ← wgSide (mkConst ``False)])
     replaceMainGoal []
     return true
   catch _ =>
@@ -8789,7 +8968,7 @@ def wgDropEmpty (ks : Array (Expr × Expr)) : TacticM Unit := do
     try
       let isZero ← withMainContext do
         try (do
-            let _ ← wgOmegaTiered (← mkAppM ``Eq #[k, mkNatLit 0]) (ks.size + 1)
+            let _ ← wgSide (← mkAppM ``Eq #[k, mkNatLit 0])
             pure true) catch _ => pure false
       unless isZero do continue
       let some p := x.getAppFn.constName? | continue
@@ -8989,7 +9168,7 @@ def wgEntry : TacticM Bool := do
   if ← (try wgDupAlloc catch _ => pure false) then return true
   unless ← wgSegCycle do return false
   let ks ← wgEntryFacts
-  if ← wgRefuted then return true
+  if ← wgFalseClose then return true
   wgDropEmpty ks
   return false
 
@@ -9495,7 +9674,7 @@ partial def witCaseRun (tuples : Array (Array Expr)) : TacticM Unit := do
     for i' in [0 : cs.size - 1] do
       d ← mkAppM ``Or #[cs[cs.size - 2 - i']!, d]
     pure d
-  let _ ← withMainContext (wgOmegaTiered disj 2)
+  let _ ← withMainContext (wgSide disj)
   let mut cur := g
   let gd ← globalDeadline.get
   for i in [0 : res.size] do
@@ -9529,7 +9708,7 @@ elab "xsearch_witcase" : tactic => do
       let leaves ← wgSplitDisj
       for leaf in leaves do
         setGoals [leaf]
-        if ← wgRefuted then continue
+        if ← wgFalseClose then continue
         let tuples ← witCaseTuples
         witCaseRun tuples
       if (← getUnsolvedGoals).isEmpty then return
