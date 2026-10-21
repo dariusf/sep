@@ -524,13 +524,6 @@ theorem pG_intro {C : Nat → Nat → HProp} {B : List (List (List (Option Nat))
     (h : H ==> pChain C (fun j x y => pG C B (j, x, y)) f b 0 x y) : H ==> pG C B (j, x, y) :=
   HProp.himpl_trans h (HProp.himpl_trans (pF_intro hb f) (pG_pre C B (j, x, y)))
 
-theorem pF_elim {C : Nat → Nat → HProp} {B : List (List (List (Option Nat)))}
-    {X : Nat × Nat × Nat → HProp} {j x y : Nat} {T : HProp}
-    (H : ∀ b ∈ pNthK B j [], ∀ f : Nat → Nat, pChain C (fun j x y => X (j, x, y)) f b 0 x y ==> T) :
-    pF C B X (j, x, y) ==> T := by
-  intro h ⟨b, hb, f, hh⟩
-  exact H b hb f h hh
-
 omit [Params] in
 theorem pAll_nil {α : Type} {P : α → Prop} : ∀ b ∈ ([] : List α), P b := by
   intro b hb
@@ -1505,3 +1498,590 @@ theorem pConcLe (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))
   pConcPhi C B prof rk N sps cert hC j m 1 rs hj hpr k n x y (Int.ofNat_le.mpr hk)
 
 end Sep
+
+namespace Sep.Xsearch
+
+open HProp Notation
+
+variable [Params]
+
+theorem hpure_true {P : Prop} (hp : P) : (⌈P⌉ : HProp) = HProp.hempty := by
+  funext h
+  exact propext ⟨fun hh => (HProp.hpure_elim_hempty hh).2,
+    fun hh => HProp.hpure_intro_hempty hh hp⟩
+
+theorem hstar_hexists_rr {A : Sort _} (H : HProp) (J : A → HProp) :
+    H ✶ (HProp.hexists J) = ∃✶ x, H ✶ J x := by
+  rw [HProp.hstar_comm, HProp.hstar_hexists]
+  exact congrArg _ (funext fun x => HProp.hstar_comm _ _)
+
+def hdisj (H1 H2 : HProp) : HProp := fun h => H1 h ∨ H2 h
+
+theorem hdisj_star_l (H1 H2 K : HProp) :
+    hdisj H1 H2 ✶ K = hdisj (H1 ✶ K) (H2 ✶ K) := by
+  funext h
+  apply propext
+  constructor
+  · intro hh
+    obtain ⟨h1, h2, ha, hb, hd, he⟩ := HProp.hstar_elim hh
+    rcases ha with ha | ha
+    · exact Or.inl (he ▸ HProp.hstar_intro ha hb hd)
+    · exact Or.inr (he ▸ HProp.hstar_intro ha hb hd)
+  · intro hh
+    rcases hh with hh | hh
+    · obtain ⟨h1, h2, ha, hb, hd, he⟩ := HProp.hstar_elim hh
+      exact he ▸ HProp.hstar_intro (show hdisj H1 H2 h1 from Or.inl ha) hb hd
+    · obtain ⟨h1, h2, ha, hb, hd, he⟩ := HProp.hstar_elim hh
+      exact he ▸ HProp.hstar_intro (show hdisj H1 H2 h1 from Or.inr ha) hb hd
+
+theorem hdisj_star_r (K H1 H2 : HProp) :
+    K ✶ hdisj H1 H2 = hdisj (K ✶ H1) (K ✶ H2) := by
+  rw [HProp.hstar_comm, hdisj_star_l, HProp.hstar_comm K H1, HProp.hstar_comm K H2]
+
+theorem hdisj_hexists {A : Sort _} (J K : A → HProp) :
+    HProp.hexists (fun x => hdisj (J x) (K x))
+      = hdisj (HProp.hexists J) (HProp.hexists K) := by
+  funext h
+  simp only [HProp.hexists, hdisj]
+  exact propext exists_or
+
+theorem hdisj_elim {H1 H2 H : HProp} (h1 : H1 ==> H) (h2 : H2 ==> H) :
+    hdisj H1 H2 ==> H := by
+  intro h hh
+  rcases hh with hh | hh
+  · exact h1 h hh
+  · exact h2 h hh
+
+theorem hdisj_left {H H1 H2 : HProp} (h : H ==> H1) : H ==> hdisj H1 H2 :=
+  fun h' hh => Or.inl (h h' hh)
+
+theorem hdisj_right {H H1 H2 : HProp} (h : H ==> H2) : H ==> hdisj H1 H2 :=
+  fun h' hh => Or.inr (h h' hh)
+
+def hasLoc (p : Loc) (H : HProp) : Prop := ∀ h, H h → p ∈ h
+
+def neLocs (p q : Loc) (H : HProp) : Prop := ∀ h, H h → p ≠ q
+
+theorem hasLoc_single (p : Loc) (v : val) : hasLoc p (HProp.hsingle p v) := by
+  intro h hh
+  simp only [HProp.hsingle] at hh
+  rw [hh]
+  exact (Finmap.mem_singleton p p v).2 rfl
+
+theorem hasLoc_star_l {p : Loc} {H1 H2 : HProp} (h1 : hasLoc p H1) :
+    hasLoc p (H1 ✶ H2) := by
+  intro h hh
+  obtain ⟨a, b, ha, hb, hd, he⟩ := HProp.hstar_elim hh
+  rw [he]
+  exact Finmap.mem_union.2 (Or.inl (h1 a ha))
+
+theorem hasLoc_star_r {p : Loc} {H1 H2 : HProp} (h2 : hasLoc p H2) :
+    hasLoc p (H1 ✶ H2) := by
+  intro h hh
+  obtain ⟨a, b, ha, hb, hd, he⟩ := HProp.hstar_elim hh
+  rw [he]
+  exact Finmap.mem_union.2 (Or.inr (h2 b hb))
+
+theorem hasLoc_hexists {A : Sort _} {p : Loc} {J : A → HProp}
+    (h : ∀ a, hasLoc p (J a)) : hasLoc p (HProp.hexists J) := by
+  intro hh hj
+  simp only [HProp.hexists] at hj
+  obtain ⟨a, ha⟩ := hj
+  exact h a hh ha
+
+theorem hasLoc_disj {p : Loc} {H1 H2 : HProp} (h1 : hasLoc p H1)
+    (h2 : hasLoc p H2) : hasLoc p (hdisj H1 H2) := by
+  intro h hh
+  rcases hh with hh | hh
+  · exact h1 h hh
+  · exact h2 h hh
+
+theorem hasLoc_pure_star {p : Loc} {P : Prop} {H : HProp}
+    (h : P → hasLoc p H) : hasLoc p (⌈P⌉ ✶ H) := by
+  intro hh hj
+  rcases (HProp.hstar_hpure_l P H hh).1 hj with ⟨hP, hH⟩
+  exact h hP hh hH
+
+theorem hasLoc_mono {p : Loc} {F G : HProp} (h : F ==> G) (hg : hasLoc p G) :
+    hasLoc p F := fun hh hf => hg hh (h hh hf)
+
+def safeFar (f : Loc) (F : HProp) : Prop := f = 0 ∨ hasLoc f F
+
+theorem safeFar_nil {f : Loc} {F : HProp} (h : f = 0) : safeFar f F := Or.inl h
+
+theorem safeFar_loc {f : Loc} {F : HProp} (h : hasLoc f F) : safeFar f F :=
+  Or.inr h
+
+theorem safeFar_step {a b : Loc} {F : HProp} (h1 : a ≠ b → hasLoc a F)
+    (h2 : a = b → safeFar b F) : safeFar a F := by
+  by_cases h : a = b
+  · rcases h2 h with hb | hb
+    · exact Or.inl (h ▸ hb)
+    · exact Or.inr (h ▸ hb)
+  · exact Or.inr (h1 h)
+
+theorem neLocs_star {p q : Loc} {H1 H2 : HProp}
+    (h1 : hasLoc p H1) (h2 : hasLoc q H2) : neLocs p q (H1 ✶ H2) := by
+  intro h hh
+  obtain ⟨a, b, ha, hb, hd, _⟩ := HProp.hstar_elim hh
+  intro hpq
+  exact hd p (h1 a ha) (hpq ▸ h2 b hb)
+
+theorem neLocs_star' {p q : Loc} {H1 H2 : HProp}
+    (h1 : hasLoc q H1) (h2 : hasLoc p H2) : neLocs p q (H1 ✶ H2) := by
+  intro h hh
+  obtain ⟨a, b, ha, hb, hd, _⟩ := HProp.hstar_elim hh
+  intro hpq
+  exact hd q (h1 a ha) (hpq ▸ h2 b hb)
+
+theorem neLocs_star_l {p q : Loc} {H1 H2 : HProp} (h : neLocs p q H1) :
+    neLocs p q (H1 ✶ H2) := by
+  intro h' hh
+  obtain ⟨a, b, ha, _, _, _⟩ := HProp.hstar_elim hh
+  exact h a ha
+
+theorem neLocs_star_r {p q : Loc} {H1 H2 : HProp} (h : neLocs p q H2) :
+    neLocs p q (H1 ✶ H2) := by
+  intro h' hh
+  obtain ⟨a, b, _, hb, _, _⟩ := HProp.hstar_elim hh
+  exact h b hb
+
+theorem neLocs_const {p q : Loc} {H : HProp} (h : p ≠ q) : neLocs p q H :=
+  fun _ _ => h
+
+theorem neLocs_mono {p q : Loc} {F G : HProp} (h : F ==> G) (hg : neLocs p q G) :
+    neLocs p q F := fun hh hf => hg hh (h hh hf)
+
+theorem neLocs_disj {p q : Loc} {H1 H2 : HProp} (h1 : neLocs p q H1)
+    (h2 : neLocs p q H2) : neLocs p q (hdisj H1 H2) := by
+  intro h hh
+  rcases hh with hh | hh
+  · exact h1 h hh
+  · exact h2 h hh
+
+theorem neLocs_pure_star {p q : Loc} {P : Prop} {H : HProp}
+    (h : P → neLocs p q H) : neLocs p q (⌈P⌉ ✶ H) := by
+  intro hh hj
+  rcases (HProp.hstar_hpure_l P H hh).1 hj with ⟨hP, hH⟩
+  exact h hP hh hH
+
+theorem neLocs_hexists {A : Sort _} {p q : Loc} {J : A → HProp}
+    (h : ∀ a, neLocs p q (J a)) : neLocs p q (HProp.hexists J) := by
+  intro hh hj
+  simp only [HProp.hexists] at hj
+  obtain ⟨a, ha⟩ := hj
+  exact h a hh ha
+
+theorem himpl_of_neLocs {p q : Loc} {H R : HProp} (hn : neLocs p q H)
+    (k : p ≠ q → H ==> R) : H ==> R := fun h hh => k (hn h hh) h hh
+
+def lfpG {α : Type} (F : (α → HProp) → α → HProp) : α → HProp :=
+  fun a h => ∀ X : α → HProp, (∀ b, F X b ==> X b) → X a h
+
+theorem lfpG_induct {α : Type} (F : (α → HProp) → α → HProp) (X : α → HProp)
+    (hX : ∀ b, F X b ==> X b) (a : α) : lfpG F a ==> X a := fun _ hh => hh X hX
+
+theorem frame_l_of (H3 : HProp) {H1 H2 : HProp} (h : H1 ==> H2) :
+    H1 ✶ H3 ==> H2 ✶ H3 := HProp.himpl_frame_l h
+
+theorem frame_r_of (H1 : HProp) {H2 H3 : HProp} (h : H2 ==> H3) :
+    H1 ✶ H2 ==> H1 ✶ H3 := HProp.himpl_frame_r h
+
+theorem perm_comm (A B : HProp) : A ✶ B ==> B ✶ A := by
+  rw [HProp.hstar_comm]
+  exact HProp.himpl_refl _
+
+theorem perm_swap (A B C : HProp) : A ✶ (B ✶ C) ==> B ✶ (A ✶ C) := by
+  rw [← HProp.hstar_assoc, HProp.hstar_comm A B, HProp.hstar_assoc]
+  exact HProp.himpl_refl _
+
+theorem himpl_of_eq {A B : HProp} (h : A = B) : A ==> B := h ▸ HProp.himpl_refl A
+
+theorem wand_use {A B D C : HProp} (h1 : D ==> A) (h2 : B ==> C) :
+    (A -✶ B) ✶ D ==> C := by
+  rw [HProp.hstar_comm]
+  exact HProp.himpl_trans (HProp.himpl_frame_l h1)
+    (HProp.himpl_trans (HProp.hwand_cancel A B) h2)
+
+theorem wand_use2 {A B E F C : HProp} (h1 : E ==> A) (h2 : B ✶ F ==> C) :
+    (A -✶ B) ✶ (E ✶ F) ==> C := by
+  refine HProp.himpl_trans (HProp.himpl_frame_r (HProp.himpl_frame_l h1)) ?_
+  rw [← HProp.hstar_assoc, HProp.hstar_comm (A -✶ B) A]
+  exact HProp.himpl_trans (HProp.himpl_frame_l (HProp.hwand_cancel A B)) h2
+
+def hpack (H1 H2 : HProp) : HProp := H1 ✶ H2
+
+theorem hpack_eq (H1 H2 : HProp) : hpack H1 H2 = H1 ✶ H2 := rfl
+
+def holdsP (P : Prop) (H : HProp) : Prop := ∀ h, H h → P
+
+theorem holdsP_pure (P : Prop) : holdsP P (⌈P⌉ : HProp) :=
+  fun _ hh => (HProp.hpure_elim hh).1
+
+theorem holdsP_star_l {P : Prop} {H1 H2 : HProp} (h : holdsP P H1) :
+    holdsP P (H1 ✶ H2) := by
+  intro h' hh
+  obtain ⟨a, _, ha, _, _, _⟩ := HProp.hstar_elim hh
+  exact h a ha
+
+theorem holdsP_star_r {P : Prop} {H1 H2 : HProp} (h : holdsP P H2) :
+    holdsP P (H1 ✶ H2) := by
+  intro h' hh
+  obtain ⟨_, b, _, hb, _, _⟩ := HProp.hstar_elim hh
+  exact h b hb
+
+theorem himpl_of_holds {P : Prop} {H R : HProp} (hn : holdsP P H)
+    (k : P → H ==> R) : H ==> R := fun h hh => k (hn h hh) h hh
+
+theorem holdsP_of_top {P : Prop} {H : HProp} (h : H ==> ⌈P⌉ ✶ HProp.htop) : holdsP P H :=
+  fun hh hx => ((HProp.hstar_hpure_l P _ hh).1 (h hh hx)).1
+
+theorem himpl_pure_top {P : Prop} {H : HProp} (hp : P) : H ==> ⌈P⌉ ✶ HProp.htop :=
+  fun hh _ => (HProp.hstar_hpure_l P _ hh).2 ⟨hp, HProp.htop_intro hh⟩
+
+theorem fwand_use {α : Sort _} {J : α → HProp} {A B E F C : HProp} (v : α)
+    (hj : J v = (A -✶ B)) (h1 : E ==> A) (h2 : B ✶ F ==> C) :
+    HProp.hforall J ✶ (E ✶ F) ==> C := by
+  have hw : HProp.hforall J ==> (A -✶ B) := hj ▸ HProp.hforall_specialize v J
+  refine HProp.himpl_trans (HProp.himpl_frame_l hw) ?_
+  refine HProp.himpl_trans (HProp.himpl_frame_r (HProp.himpl_frame_l h1)) ?_
+  rw [← HProp.hstar_assoc, HProp.hstar_comm (A -✶ B) A]
+  exact HProp.himpl_trans (HProp.himpl_frame_l (HProp.hwand_cancel A B)) h2
+
+def hwith (H1 H2 : HProp) : HProp := fun h => H1 h ∧ H2 h
+
+theorem hwith_intro {H A B : HProp} (h1 : H ==> A) (h2 : H ==> B) :
+    H ==> hwith A B := fun h hh => ⟨h1 h hh, h2 h hh⟩
+
+theorem hwith_l (A B : HProp) : hwith A B ==> A := fun _ hh => hh.1
+
+theorem hwith_r (A B : HProp) : hwith A B ==> B := fun _ hh => hh.2
+
+theorem lfpG_induct_with {α : Type} (F : (α → HProp) → α → HProp) (M : α → HProp)
+    (hmono : ∀ X Y : α → HProp, (∀ a, X a ==> Y a) → ∀ a, F X a ==> F Y a)
+    (hfold : ∀ a, F (lfpG F) a ==> lfpG F a)
+    (hM : ∀ a, F (fun b => hwith (lfpG F b) (M b)) a ==> M a) (a : α) : lfpG F a ==> M a := by
+  have h : ∀ a, lfpG F a ==> hwith (lfpG F a) (M a) :=
+    lfpG_induct F _ (fun b => hwith_intro
+      (HProp.himpl_trans (hmono _ _ (fun c => hwith_l _ _) b) (hfold b)) (hM b))
+  exact HProp.himpl_trans (h a) (hwith_r _ _)
+
+theorem star_pure_drop (H : HProp) (P : Prop) : H ✶ ⌈P⌉ ==> H := by
+  rw [HProp.hstar_comm]
+  exact HProp.himpl_hstar_hpure_l (fun _ => HProp.himpl_refl _)
+
+theorem pure_r_of_holds {H G : HProp} {P : Prop} (hp : holdsP P H) (h : H ==> G) : H ==> G ✶ ⌈P⌉ :=
+  fun k hk => Sep.pure_r_intro (hp k hk) h k hk
+
+theorem holdsP_mono_imp {P : Prop} {F G : HProp} (h : F ==> G) (hg : holdsP P G) : holdsP P F :=
+  fun k hk => hg k (h k hk)
+
+theorem holdsP_ne_symm {a b : Loc} {H : HProp} (h : holdsP (a ≠ b) H) : holdsP (b ≠ a) H :=
+  fun k hk => Ne.symm (h k hk)
+
+theorem ne_far {a b : Loc} {X F : HProp} (hx : hasLoc a X) (hz : a ≠ 0) (hF : safeFar b F) :
+    holdsP (a ≠ b) (X ✶ F) := by
+  intro h hh
+  obtain ⟨h1, h2, m1, m2, hd, _⟩ := HProp.hstar_elim hh
+  rcases hF with h0 | hl
+  · rw [h0]
+    exact hz
+  · intro heq
+    rw [heq] at hx
+    exact hd b (hx h1 m1) (hl h2 m2)
+
+theorem wseg_retarget {σ : Type} (c : σ → σ → Int → HProp) (f : σ → σ) (loc : σ → Loc) (e : Loc)
+    (F : HProp) (hF : safeFar e F) (hc : ∀ s s' w, hasLoc (loc s) (c s s' w))
+    (hz : ∀ s s' w h, c s s' w h → loc s ≠ 0)
+    (hg : ∀ s s' w, loc s ≠ e → c s s' w ==> c (f s) (f s') w) (k : Nat) (n : Int) (s t : σ) :
+    Sep.wseg c k n s t ✶ F ==> Sep.wseg c k n (f s) (f t) ✶ F := by
+  refine Sep.wseg_map_fr c c f F (fun s s' w => ?_) k n s t
+  intro h hh
+  obtain ⟨h1, h2, hc1, hf2, hd, he⟩ := HProp.hstar_elim hh
+  have hne : loc s ≠ e := by
+    rcases hF with h0 | hl
+    · rw [h0]
+      exact hz s s' w h1 hc1
+    · intro heq
+      have m1 := hc s s' w h1 hc1
+      have m2 := hl h2 hf2
+      rw [heq] at m1
+      exact hd e m1 m2
+  rw [he]
+  exact HProp.hstar_intro (hg s s' w hne h1 hc1) hf2 hd
+
+theorem safeFar_star_r {e : Loc} {W F : HProp} (h : safeFar e F) : safeFar e (W ✶ F) :=
+  h.elim Or.inl (fun hl => Or.inr (hasLoc_star_r hl))
+
+theorem cell_far {H G : HProp} {a e : Loc} (hH : hasLoc a H) (hz : ∀ h, H h → a ≠ 0)
+    (hG : safeFar e G) : H ✶ G ==> ⌈a ≠ e⌉ ✶ (H ✶ G) := by
+  intro h hh
+  refine (HProp.hstar_hpure_l _ _ h).2 ⟨?_, hh⟩
+  obtain ⟨h1, h2, m1, m2, hd, _⟩ := HProp.hstar_elim hh
+  rcases hG with h0 | hl
+  · rw [h0]
+    exact hz h1 m1
+  · intro heq
+    rw [heq] at hH
+    exact hd e (hH h1 m1) (hl h2 m2)
+
+theorem himpl_pure_of {H : HProp} {P : Prop} (hp : holdsP P H) : H ==> ⌈P⌉ ✶ H :=
+  fun h hh => (HProp.hstar_hpure_l P H h).2 ⟨hp h hh, hh⟩
+
+theorem wseg_conc_cnt_h {α σ : Type} (P : α → HProp) (c : σ → σ → Int → HProp) (st en : α → σ)
+    (nE : α → Int) (nx : α → σ → Int → α) (kmin : Nat)
+    (hst : ∀ a s' w, holdsP (st (nx a s' w) = s') (c (st a) s' w))
+    (hen : ∀ a s' w, en (nx a s' w) = en a)
+    (hn : ∀ a s' w, nE (nx a s' w) = nE a - w)
+    (hb : ∀ a, Sep.wseg c kmin (nE a) (st a) (en a) ==> P a)
+    (h1 : ∀ a s' w, c (st a) s' w ✶ P (nx a s' w) ==> P a) :
+    ∀ k a, kmin ≤ k → Sep.wseg c k (nE a) (st a) (en a) ==> P a := by
+  intro k
+  induction k with
+  | zero =>
+    intro a hk
+    have : kmin = 0 := by omega
+    subst this
+    exact hb a
+  | succ k ih =>
+    intro a hk
+    rcases Nat.lt_or_ge k kmin with hlt | hge
+    · have : kmin = k + 1 := by omega
+      subst this
+      exact hb a
+    · show (∃✶ s', ∃✶ w, c (st a) s' w ✶ Sep.wseg c k (nE a - w) s' (en a)) ==> P a
+      refine HProp.himpl_hexists_l (fun s' => HProp.himpl_hexists_l (fun w => ?_))
+      have h := ih (nx a s' w) hge
+      rw [hen, hn] at h
+      refine HProp.himpl_trans (HProp.himpl_frame_l (himpl_pure_of (hst a s' w))) ?_
+      rw [HProp.hstar_assoc]
+      refine HProp.himpl_hstar_hpure_l (fun he => ?_)
+      rw [he] at h
+      exact HProp.himpl_trans (HProp.himpl_frame_r h) (h1 a s' w)
+
+theorem wseg_conc_free_h {α σ : Type} (P : α → HProp) (c : σ → σ → Int → HProp) (st en : α → σ)
+    (nx : α → σ → α) (kmin : Nat)
+    (hst : ∀ a s' w, holdsP (st (nx a s') = s') (c (st a) s' w))
+    (hen : ∀ a s', en (nx a s') = en a)
+    (hb : ∀ a n, Sep.wseg c kmin n (st a) (en a) ==> P a)
+    (h1 : ∀ a s' w, c (st a) s' w ✶ P (nx a s') ==> P a) :
+    ∀ k a n, kmin ≤ k → Sep.wseg c k n (st a) (en a) ==> P a := by
+  intro k
+  induction k with
+  | zero =>
+    intro a n hk
+    have : kmin = 0 := by omega
+    subst this
+    exact hb a n
+  | succ k ih =>
+    intro a n hk
+    rcases Nat.lt_or_ge k kmin with hlt | hge
+    · have : kmin = k + 1 := by omega
+      subst this
+      exact hb a n
+    · show (∃✶ s', ∃✶ w, c (st a) s' w ✶ Sep.wseg c k (n - w) s' (en a)) ==> P a
+      refine HProp.himpl_hexists_l (fun s' => HProp.himpl_hexists_l (fun w => ?_))
+      have h := ih (nx a s') (n - w) hge
+      rw [hen] at h
+      refine HProp.himpl_trans (HProp.himpl_frame_l (himpl_pure_of (hst a s' w))) ?_
+      rw [HProp.hstar_assoc]
+      refine HProp.himpl_hstar_hpure_l (fun he => ?_)
+      rw [he] at h
+      exact HProp.himpl_trans (HProp.himpl_frame_r h) (h1 a s' w)
+
+theorem wseg_retarget_prev {σ : Type} (c : σ → σ → Int → HProp) (f : σ → σ) (adr prv : σ → Loc)
+    (e : Loc) (F : HProp) (hF : safeFar e F) (hc : ∀ s s' w, hasLoc (adr s) (c s s' w))
+    (hz : ∀ s s' w h, c s s' w h → adr s ≠ 0) (hp : ∀ s s' w, holdsP (prv s' = adr s) (c s s' w))
+    (hg : ∀ s s' w, prv s ≠ e → c s s' w ==> c (f s) (f s') w) (k : Nat) :
+    ∀ (n : Int) (s t : σ), prv s ≠ e →
+      Sep.wseg c k n s t ✶ F ==> Sep.wseg c k n (f s) (f t) ✶ F := by
+  induction k with
+  | zero =>
+    intro n s t _
+    show ⌈s = t ∧ n = 0⌉ ✶ F ==> ⌈f s = f t ∧ n = 0⌉ ✶ F
+    refine HProp.himpl_hstar_hpure_l (fun ⟨h1, h2⟩ => ?_)
+    exact HProp.himpl_hstar_hpure_r ⟨congrArg f h1, h2⟩ (HProp.himpl_refl _)
+  | succ k ih =>
+    intro n s t h0
+    show (∃✶ s', ∃✶ w, c s s' w ✶ Sep.wseg c k (n - w) s' t) ✶ F ==>
+      (∃✶ s', ∃✶ w, c (f s) s' w ✶ Sep.wseg c k (n - w) s' (f t)) ✶ F
+    rw [HProp.hstar_hexists]
+    refine HProp.himpl_hexists_l (fun s' => ?_)
+    rw [HProp.hstar_hexists]
+    refine HProp.himpl_hexists_l (fun w => ?_)
+    rw [HProp.hstar_hexists]
+    refine HProp.himpl_hexists_r (f s') ?_
+    rw [HProp.hstar_hexists]
+    refine HProp.himpl_hexists_r w ?_
+    rw [HProp.hstar_assoc, HProp.hstar_assoc]
+    refine HProp.himpl_trans (cell_far (hc s s' w) (hz s s' w) (safeFar_star_r hF)) ?_
+    refine HProp.himpl_hstar_hpure_l (fun hne => ?_)
+    refine HProp.himpl_trans (HProp.himpl_frame_l (himpl_pure_of (hp s s' w))) ?_
+    rw [HProp.hstar_assoc]
+    refine HProp.himpl_hstar_hpure_l (fun hpr => ?_)
+    refine HProp.himpl_frame_lr (hg s s' w h0) (ih (n - w) s' t ?_)
+    rw [hpr]
+    exact hne
+
+theorem hasLoc_wseg_last {σ : Type} (c : σ → σ → Int → HProp) (adr prv : σ → Loc)
+    (hc : ∀ s s' w, hasLoc (adr s) (c s s' w)) (hp : ∀ s s' w, holdsP (prv s' = adr s) (c s s' w)) :
+    ∀ (k : Nat) (n : Int) (s t : σ), hasLoc (prv t) (Sep.wseg c (k + 1) n s t)
+  | 0, n, s, t => by
+    intro h hh
+    obtain ⟨s', hh⟩ := HProp.hexists_elim hh
+    obtain ⟨w, hh⟩ := HProp.hexists_elim hh
+    obtain ⟨h1, h2, m1, m2, _, he⟩ := HProp.hstar_elim hh
+    obtain ⟨⟨hst, _⟩, _⟩ := HProp.hpure_elim_hempty m2
+    rw [he, ← hst, hp s s' w h1 m1]
+    exact Finmap.mem_union.2 (Or.inl (hc s s' w h1 m1))
+  | k + 1, n, s, t => by
+    show hasLoc (prv t) (∃✶ s', ∃✶ w, c s s' w ✶ Sep.wseg c (k + 1) (n - w) s' t)
+    exact hasLoc_hexists (fun s' => hasLoc_hexists (fun w =>
+      hasLoc_star_r (hasLoc_wseg_last c adr prv hc hp k (n - w) s' t)))
+
+theorem wseg_bk_zero {σ : Type} (c : σ → σ → Int → HProp) (adr prv : σ → Loc)
+    (hc : ∀ s s' w, hasLoc (adr s) (c s s' w)) (hp : ∀ s s' w, holdsP (prv s' = adr s) (c s s' w))
+    (F : HProp) (k : Nat) (n : Int) (s t : σ) (hl : hasLoc (prv t) F) :
+    holdsP (k = 0) (Sep.wseg c k n s t ✶ F) := by
+  intro h hh
+  cases k with
+  | zero => rfl
+  | succ k =>
+    obtain ⟨h1, h2, m1, m2, hd, _⟩ := HProp.hstar_elim hh
+    exact absurd (hl h2 m2) (hd _ (hasLoc_wseg_last c adr prv hc hp k n s t h1 m1))
+
+theorem holdsP_abs_prev {σ : Type} (c : σ → σ → Int → HProp) (adr prv : σ → Loc)
+    (hc : ∀ s s' w, hasLoc (adr s) (c s s' w)) (hp : ∀ s s' w, holdsP (prv s' = adr s) (c s s' w))
+    (X F : HProp) (st en : σ) (cond : Nat → Prop) (a : Loc)
+    (hA : X ==> ∃✶ k, ∃✶ n, Sep.wseg c k n st en ✶ ⌈cond k⌉) (hF : hasLoc a F) (h0 : prv st ≠ a) :
+    holdsP (a ≠ prv en) (X ✶ F) := by
+  intro h hh
+  obtain ⟨h1, h2, m1, m2, hd, _⟩ := HProp.hstar_elim hh
+  obtain ⟨k, hk⟩ := HProp.hexists_elim (hA h1 m1)
+  obtain ⟨n, hn⟩ := HProp.hexists_elim hk
+  obtain ⟨g1, g2, s1, _, hd2, he2⟩ := HProp.hstar_elim hn
+  cases k with
+  | zero =>
+    obtain ⟨⟨hst, _⟩, _⟩ := HProp.hpure_elim_hempty s1
+    rw [← hst]
+    exact fun e => h0 e.symm
+  | succ k =>
+    intro heq
+    have m := hasLoc_wseg_last c adr prv hc hp k n st en g1 s1
+    rw [← heq] at m
+    have : a ∈ h1 := by rw [he2]; exact Finmap.mem_union.2 (Or.inl m)
+    exact hd _ this (hF h2 m2)
+
+theorem hasLoc_wseg_pos {σ : Type} (c : σ → σ → Int → HProp) (loc : σ → Loc)
+    (hc : ∀ s s' w, hasLoc (loc s) (c s s' w)) (k : Nat) (n : Int) (s t : σ) (hk : 1 ≤ k) :
+    hasLoc (loc s) (Sep.wseg c k n s t) := by
+  obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+  show hasLoc (loc s) (∃✶ s', ∃✶ w, c s s' w ✶ Sep.wseg c k' (n - w) s' t)
+  exact hasLoc_hexists (fun s' => hasLoc_hexists (fun w => hasLoc_star_l (hc s s' w)))
+
+theorem hasLoc_wseg_ne {σ : Type} (c : σ → σ → Int → HProp) (loc : σ → Loc)
+    (hc : ∀ s s' w, hasLoc (loc s) (c s s' w)) (k : Nat) (n : Int) (s t : σ) (h : loc s ≠ loc t) :
+    hasLoc (loc s) (Sep.wseg c k n s t) := by
+  cases k with
+  | zero =>
+    intro _ hp
+    obtain ⟨⟨h1, _⟩, _⟩ := HProp.hpure_elim_hempty hp
+    exact absurd (congrArg loc h1) h
+  | succ k =>
+    exact hasLoc_hexists (fun s' => hasLoc_hexists (fun w => hasLoc_star_l (hc s s' w)))
+
+omit [Params] in
+theorem inv_len0 : (0 : Int) = ((0 : Nat) : Int) := rfl
+
+omit [Params] in
+theorem inv_hyp {p : Prop} (h : p) : p := h
+
+omit [Params] in
+theorem inv_ne_of_eq {x y : Nat} (h : x = y) (hy : y ≠ 0) : x ≠ 0 := h ▸ hy
+
+omit [Params] in
+theorem inv_len_step {m w : Int} {k : Nat} (hw : w = 1) (h : m = (k : Int)) :
+    m + w = ((k + 1 : Nat) : Int) := by
+  subst hw
+  rw [h]
+  push_cast
+  rfl
+
+omit [Params] in
+theorem inv_imp0 {α : Sort _} (x : α) : (0 : Nat) = 0 → x = x := fun _ => rfl
+
+omit [Params] in
+theorem inv_imp_step {α : Sort _} {k : Nat} (x y : α) : k + 1 = 0 → x = y :=
+  fun h => absurd h (Nat.succ_ne_zero k)
+
+omit [Params] in
+theorem inv_or0 (y : Nat) : (0 : Nat) = 0 ∨ y ≠ 0 := Or.inl rfl
+
+omit [Params] in
+theorem inv_or_step {k x y : Nat} (hz : x ≠ 0) (himp : k = 0 → x = y) (hor : k = 0 ∨ y ≠ 0) :
+    k + 1 = 0 ∨ y ≠ 0 := by
+  right
+  rcases hor with h | h
+  · rw [← himp h]
+    exact hz
+  · exact h
+
+omit [Params] in
+theorem inv_rel0 (x b : Int) : x - x = b * ((0 : Nat) : Int) := by simp
+
+omit [Params] in
+theorem inv_rel0z (x : Int) : x - x = 0 := by simp
+
+omit [Params] in
+theorem inv_rel0le (x b : Int) : x - x ≤ b * ((0 : Nat) : Int) := by simp
+
+omit [Params] in
+theorem inv_rel0zle (x : Int) : x - x ≤ 0 := by simp
+
+omit [Params] in
+theorem inv_rel_l {x y z b : Int} {k : Nat} (hr : x - y = b) (hi : y - z = b * (k : Int)) :
+    x - z = b * ((k + 1 : Nat) : Int) := by
+  rw [show x - z = (x - y) + (y - z) by omega, hr, hi]
+  push_cast
+  rw [Int.mul_add, Int.mul_one, Int.add_comm]
+
+omit [Params] in
+theorem inv_rel_r {x y z b : Int} {k : Nat} (hi : x - y = b * (k : Int)) (hr : y - z = b) :
+    x - z = b * ((k + 1 : Nat) : Int) := by
+  rw [show x - z = (x - y) + (y - z) by omega, hr, hi]
+  push_cast
+  rw [Int.mul_add, Int.mul_one]
+
+omit [Params] in
+theorem inv_rel_lz {x y z : Int} (hr : x - y = 0) (hi : y - z = 0) : x - z = 0 := by omega
+
+omit [Params] in
+theorem inv_rel_lle {x y z b : Int} {k : Nat} (hr : x - y ≤ b) (hi : y - z ≤ b * (k : Int)) :
+    x - z ≤ b * ((k + 1 : Nat) : Int) := by
+  have h := Int.add_le_add hr hi
+  rw [show x - y + (y - z) = x - z by omega] at h
+  push_cast
+  rw [Int.mul_add, Int.mul_one, Int.add_comm]
+  exact h
+
+omit [Params] in
+theorem inv_rel_rle {x y z b : Int} {k : Nat} (hi : x - y ≤ b * (k : Int)) (hr : y - z ≤ b) :
+    x - z ≤ b * ((k + 1 : Nat) : Int) := by
+  have h := Int.add_le_add hi hr
+  rw [show x - y + (y - z) = x - z by omega] at h
+  push_cast
+  rw [Int.mul_add, Int.mul_one]
+  exact h
+
+omit [Params] in
+theorem inv_rel_lzle {x y z : Int} (hr : x - y ≤ 0) (hi : y - z ≤ 0) : x - z ≤ 0 := by omega
+
+def hguard (P : Prop) (H : HProp) : HProp := fun h => P → H h
+
+theorem hguard_intro {P : Prop} {H R : HProp} (k : P → H ==> R) : H ==> hguard P R :=
+  fun h hh hp => k hp h hh
+
+theorem hguard_elim {P : Prop} {H : HProp} (hp : P) : hguard P H ==> H :=
+  fun _ hh => hh hp
+
+end Sep.Xsearch
