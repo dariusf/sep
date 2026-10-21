@@ -1554,7 +1554,7 @@ elab "xsearch_trivpure" : tactic => withMainContext do
       replaceMainGoal (g' :: r.mvarIds)
       let _ ← simpOnlyTarget #[``HProp.hstar_hempty_l, ``HProp.hstar_hempty_r]
 
-def exwitCore : TacticM Unit := withMainContext do
+def witDetermined : TacticM Unit := withMainContext do
   for _ in [0 : 12] do
     if ← pastGlobal then return ()
     let t ← instantiateMVars (← (← getMainGoal).getType)
@@ -1595,8 +1595,6 @@ def exwitCore : TacticM Unit := withMainContext do
       let prog ← tryTactic (evalTactic (← `(tactic| conv_rhs => simp only
         [Sep.Xsearch.hstar_hexists_rr, HProp.hstar_hexists, HProp.hstar_assoc])))
       unless prog do return ()
-
-elab "xsearch_exwit" : tactic => exwitCore
 
 def eqSubstCore : TacticM Unit := withMainContext do
   let goal ← getMainGoal
@@ -3031,19 +3029,61 @@ partial def cmItems (e : Expr) : Array Expr :=
   | (``HProp.hstar, #[_, a, b]) => cmItems a ++ cmItems b
   | _ => #[e]
 
-def witPairs (L : Array Expr) (r : Expr) (free : Expr → Bool) : Array (Nat × Expr) := Id.run do
+def witScore (l r : Expr) (free : Expr → Bool) : Option Nat := Id.run do
   let ra := r.getAppArgs
-  let mut out : Array (Nat × Expr) := #[]
-  for l in L do
-    let la := l.getAppArgs
-    unless la.size == ra.size && l.isAppOf ``HProp.hsingle == r.isAppOf ``HProp.hsingle do continue
-    let mut ok := true
-    let mut sc := 0
-    for m in [0 : ra.size] do
-      if free ra[m]! then continue
-      if ra[m]! == la[m]! then sc := sc + 1 else ok := false
-    if ok then out := out.push (sc, l)
-  return out
+  let la := l.getAppArgs
+  unless la.size == ra.size && l.getAppFn == r.getAppFn do return none
+  let mut sc := 0
+  for m in [0 : ra.size] do
+    if free ra[m]! then continue
+    if ra[m]! == la[m]! then sc := sc + 1 else return none
+  return some sc
+
+def witOrder (L : Array Expr) (r : Expr) (free : Expr → Bool) : Array Nat :=
+  let sc := (List.range L.size).toArray.map fun j =>
+    (j, match witScore L[j]! r free with
+      | some s => s + 1
+      | none => 0)
+  (sc.insertionSort (fun a b => a.2 > b.2)).map (·.1)
+
+def witRanked (L Rs : Array Expr) (m : Expr) (free : Expr → Bool) : Array Expr := Id.run do
+  let mut sc : Array (Expr × Nat × Nat) := #[]
+  for r in Rs do
+    let ra := r.getAppArgs
+    for p in [0 : ra.size] do
+      let a := ra[p]!
+      let off? : Option (Option Expr) :=
+        if a == m then some none
+        else if a.isAppOfArity ``HAdd.hAdd 6 && a.appFn!.appArg! == m && !free a.appArg! then
+          some (some a.appArg!)
+        else none
+      let some off := off? | continue
+      for l in L do
+        let some s := witScore l r free | continue
+        let v := l.getAppArgs[p]!
+        let c? := match off with
+          | none => some v
+          | some k => if v.isAppOfArity ``HAdd.hAdd 6 && v.appArg! == k then some v.appFn!.appArg! else none
+        let some c := c? | continue
+        if free c then continue
+        sc := match sc.findIdx? (·.1 == c) with
+          | some i => sc.modify i (fun (e, n, t) => (e, n + 1, t + s))
+          | none => sc.push (c, 1, s)
+  return (sc.insertionSort (fun a b => a.2.1 > b.2.1 || (a.2.1 == b.2.1 && a.2.2 > b.2.2))).map (·.1)
+
+def witInst (vals : Array Expr) : TacticM Unit := do
+  for v in vals do
+    withMainContext do
+    let g ← getMainGoal
+    let t ← instantiateMVars (← g.getType)
+    let some (lhs, rhs) := entailHead? t | throwError "wit: goal"
+    unless rhs.isAppOf ``HProp.hexists do throwError "wit: binder"
+    let lam := rhs.appArg!
+    let inst := t.getAppArgs[0]!
+    let body := (lam.bindingBody!.instantiate1 v)
+    let m ← g.withContext do mkFreshExprSyntheticOpaqueMVar (← mkAppM ``HProp.himpl #[lhs, body])
+    g.assign (← mkAppOptM ``HProp.himpl_hexists_r #[inst, lam.bindingDomain!, v, lhs, lam, m])
+    replaceMainGoal [m.mvarId!]
 
 partial def cellHeads (nr : Array Name) (e : Expr) : Nat :=
   let isHead := fun (s : Expr) =>
@@ -3664,7 +3704,7 @@ def cleanAll : TacticM Unit := allTry Sep.Xsimpl.xsimplClean
 
 def normGoals : TacticM Unit := do
   allTry distrCore
-  allTry exwitCore
+  allTry witDetermined
   Sep.Xsimpl.xsimplDriver none
   cleanAll
   let mut acc : List MVarId := []
@@ -3950,214 +3990,6 @@ def headIdxOf (p : Name) : MetaM Nat := do
     let some e := body.find? (fun e => e.isAppOfArity ``HProp.hsingle 3 && xs.contains e.appFn!.appArg!)
       | return 0
     return (xs.idxOf e.appFn!.appArg!)
-
-def exArgMatch (tgt r l : Expr) : Option (Option Expr) :=
-  if r == tgt then some (some l)
-  else if !r.hasLooseBVars then (if r == l then some none else none)
-  else if r.isAppOfArity ``HAdd.hAdd 6 && l.isAppOfArity ``HAdd.hAdd 6
-      && r.appArg! == l.appArg! && r.appFn!.appArg! == tgt then
-    some (some l.appFn!.appArg!)
-  else if r.getAppFn.isBVar || r.isBVar then some none
-  else if r.hasLooseBVar tgt.bvarIdx! then none
-  else some none
-
-def exVotes (L : List Expr) (D : Expr) : Array Expr := Id.run do
-  let (body, depth) := exPeel D
-  if depth == 0 then return #[]
-  let tgt : Expr := .bvar (depth - 1)
-  let R := Sep.Xsimpl.parseHstar body
-  unless R.any (fun it => it.isAppOf ``HProp.hsingle
-      && it.getAppArgs[it.getAppNumArgs - 2]? == some tgt) do return #[]
-  let mut votes : Array (Expr × Nat) := #[]
-  for r in R do
-    unless r.hasLooseBVar (depth - 1) do continue
-    let some hr := r.getAppFn.constName? | continue
-    let ra := r.getAppArgs
-    for l in L do
-      unless l.getAppFn.constName? == some hr && l.getAppNumArgs == ra.size do continue
-      let la := l.getAppArgs
-      let mut w : Option Expr := none
-      let mut ok := true
-      for i in [0 : ra.size] do
-        match exArgMatch tgt ra[i]! la[i]! with
-        | none => ok := false
-        | some none => pure ()
-        | some (some c) =>
-          if c.hasLooseBVars then ok := false
-          else match w with
-            | some w0 => if w0 != c then ok := false
-            | none => w := some c
-        unless ok do break
-      if ok then
-        if let some c := w then
-          votes := match votes.findIdx? (·.1 == c) with
-            | some j => votes.modify j (fun (e, k) => (e, k + 1))
-            | none => votes.push (c, 1)
-  return (votes.qsort (fun a b => a.2 > b.2)).map (·.1)
-
-def exChoice (side : Name) (w : Expr) : TacticM Unit := do
-  applyConstT side
-  withMainContext do
-  let g ← getMainGoal
-  let gs ← g.apply (← mkConstWithFreshMVarLevels ``HProp.himpl_hexists_r)
-  let mut rem : List MVarId := []
-  for gg in gs do
-    if ← gg.isAssigned then continue
-    if ← isProp (← gg.getType) then rem := rem ++ [gg]
-    else unless ← isDefEq (mkMVar gg) w do throwError "exc"
-  replaceMainGoal rem
-  evalTactic (← `(tactic| try beta_reduce))
-
-mutual
-
-partial def searchSolve (fuel : Nat) : TacticM Unit := do
-  checkDeadline
-  normGoals
-  let gs ← getUnsolvedGoals
-  if gs.isEmpty then return
-  if fuel == 0 then throwError "xsearch: depth exhausted"
-  for g in gs do
-    if ← g.isAssigned then continue
-    setGoals [g]
-    branchGoal fuel
-    unless (← getUnsolvedGoals).isEmpty do
-      throwError "xsearch: subgoal remained"
-  setGoals []
-
-partial def branchGoal (fuel : Nat) : TacticM Unit := do
-  checkDeadline
-  let fk ← failKey fuel
-  if let some k := fk then
-    if ← failSeen k then throwError "xsearch: known failure"
-  evalTactic (← `(tactic| try xsearch_distr))
-  let btg ← instantiateMVars (← (← getMainGoal).getType)
-  if (btg.find? (fun s => s.getAppFn.constName? == some ``hpack)).isSome
-      && (btg.find? (fun s =>
-        s.getAppFn.constName? == some ``HProp.hwand)).isNone then
-    let _ ← simpOnlyTarget #[``hpack_eq]
-  unless (← hasLocLocs).isEmpty do
-    evalTactic (← `(tactic| try xsearch_hfacts))
-  let g ← getMainGoal
-  let t ← instantiateMVars (← g.getType)
-  let some (lhs, rhs) := entailHead? t | throwError "xsearch: not an entailment"
-  if ← cmFind false then throwError "xsearch: countermodel"
-  let entries := xsearchUnfoldExt.getState (← getEnv)
-  let heads := entries.map (·.headFn)
-  let mut alts : Array (Bool × TacticM Unit) := #[]
-  if isDisj lhs then
-    alts := alts.push (false, applyConstT ``hdisj_elim)
-  else if isDisj rhs then
-    let args := rhs.getAppArgs
-    let n := args.size
-    let atoms := Sep.Xsimpl.parseHstar lhs
-    let sa := branchScoreD heads atoms args[n-2]!
-    let sb := branchScoreD heads atoms args[n-1]!
-    let l : TacticM Unit := applyConstT ``hdisj_left
-    let r : TacticM Unit := applyConstT ``hdisj_right
-    let side := fun (nm : Name) (D : Expr) (plain : TacticM Unit) =>
-      let ws := if t.hasExprMVar then #[] else exVotes atoms D
-      if ws.size ≥ 2 then ws.map (fun w => (false, exChoice nm w)) |>.push (false, plain)
-      else #[(false, plain)]
-    let la := side ``hdisj_left args[n-2]! l
-    let ra := side ``hdisj_right args[n-1]! r
-    if sa > sb || (sa == sb && absentPredsD heads atoms args[n-2]!
-        ≤ absentPredsD heads atoms args[n-1]!) then alts := la ++ ra
-    else alts := ra ++ la
-  else
-    let L := Sep.Xsimpl.parseHstar lhs
-    let Rs := Sep.Xsimpl.parseHstar rhs
-    let ptoLocs := ptoLocsOf lhs #[]
-    let occsR := collectOccs heads rhs #[]
-    let mut forced : Array Expr := #[]
-    for o in occsR do
-      let hi ←
-        match o.getAppFn.constName? with
-        | some nm => headIdxOf nm
-        | none => pure 0
-      match o.getAppArgs[hi]? with
-      | some a => if ptoLocs.any (· == a) then forced := forced.push o
-      | none => pure ()
-    let ivs ← if fuel ≥ 36 && !t.hasExprMVar then invAlts searchSolve heads lhs rhs L Rs
-      else pure #[]
-    for i in [0 : L.length] do
-      match wandParts? L[i]! with
-      | none => pure ()
-      | some (A, _) =>
-        alts := alts.push (false, wandAlt lhs rhs L i)
-        let As := Sep.Xsimpl.parseHstar A
-        if As.length ≥ 1 && As.length < L.length then
-          let mut ks : List Nat := []
-          let mut okS := true
-          let allPure := As.all (fun aa =>
-            aa.getAppFn.constName? == some ``HProp.hpure)
-          for aa in As do
-            if aa.getAppFn.constName? == some ``HProp.hpure then continue
-            match (List.range L.length).find? (fun m =>
-                m != i && !ks.contains m && L[m]! == aa) with
-            | some m => ks := ks ++ [m]
-            | none => okS := false
-          if okS && (!ks.isEmpty || allPure) && ks.length + 1 < L.length then
-            alts := alts.push (false, wandAltS lhs rhs L i ks)
-    let fdeep := (← forcedDepth.get) ≥ 6
-    for o in forced do
-      unless fdeep do alts := alts.push (true, rewriteOcc entries o)
-    let lhsOccs := collectOccs heads lhs #[]
-    for o in lhsOccs do
-      match o.getAppFn.constName? with
-      | some nm =>
-          if ← isFlatPred nm then alts := alts.push (false, rewriteOcc entries o)
-      | none => pure ()
-    let mut late : Array (Bool × TacticM Unit) := #[]
-    for o in lhsOccs do
-      match o.getAppFn.constName? with
-      | some nm =>
-          if !(← isFlatPred nm) && !(← isRecPred nm) then
-            late := late.push (false, rewriteOcc entries o)
-      | none => pure ()
-    let rwEarly := forced.isEmpty && !ptoLocs.isEmpty
-    alts := alts ++ (if rwEarly then occsR.map (fun o => (false, rewriteOcc entries o))
-      else #[]) ++ late
-    let Lnp := L.filter (fun a => !a.isAppOf ``HProp.hpure)
-    let inds : Array (Bool × TacticM Unit) := match Lnp with
-      | [A] => if (A.getAppFn.constName?.map heads.contains).getD false
-          && occsR.any (fun o => o.getAppFn != A.getAppFn)
-          then #[(false, indAlt A rhs)] else #[]
-      | _ => #[]
-    let pre := (← forallAlts lhs rhs L) ++ hwithAlts lhs rhs L Rs ++ specAlts lhs rhs L Rs ++ ivs
-    let early ← if t.hasExprMVar then pure #[] else earlyLhsOccs entries heads lhs rhs
-    alts := (early.map (fun o => (false, rewriteOcc entries o))) ++ pre ++ inds ++ alts
-    if forced.isEmpty then
-      unless rwEarly do
-        for o in occsR do
-          alts := alts.push (false, rewriteOcc entries o)
-      for o in collectOccs heads lhs #[] do
-        unless early.contains o do alts := alts.push (false, rewriteOcc entries o)
-  for (ai, (isF, alt)) in alts.zipIdx.map (fun (x,i) => (i,x)) do
-    checkDeadline
-    let s ← saveState
-    let oldDl ← searchDeadline.get
-    let sliced := isF && (← forcedDepth.get) == 0 && ai + 1 < alts.size
-    if isF then forcedDepth.modify (· + 1)
-    if sliced then
-      let now ← vclock
-      let gd ← globalDeadline.get
-      let slice := if gd > now then (gd - now) / 2 else 0
-      searchDeadline.set (min oldDl (now + max (min slice 1500) 600))
-    try
-      searchNodes.modify (fun n => n - 1)
-      alt
-      searchSolve (fuel - 1)
-      if isF then forcedDepth.modify (fun k => k - 1)
-      if sliced then searchDeadline.set oldDl
-      return
-    catch _ =>
-      if isF then forcedDepth.modify (fun k => k - 1)
-      if sliced then searchDeadline.set oldDl
-      s.restore
-  if let some k := fk then failAdd k
-  throwError "xsearch: no alternative succeeded"
-
-end
 
 def arIntT : Expr := mkConst ``Int
 
@@ -5055,18 +4887,20 @@ def arSolve (n0 : Expr) (pieces : Array ArPiece) (rpures : Array Expr) :
     s.restore
   return none
 
-partial def arAssign (L : Array Expr) (rs : List Expr) (used : Array Nat) : MetaM Bool := do
+partial def arAssign (L : Array Expr) (rs : List Expr) (used : Array Nat) (skip : Bool := false) :
+    MetaM Bool := do
   match rs with
   | [] => return true
   | r :: rest =>
-    for j in [0 : L.size] do
+    let r ← instantiateMVars r
+    for j in witOrder L r (·.hasExprMVar) do
       if used.contains j then continue
       unless L[j]!.getAppFn == r.getAppFn do continue
       let s ← saveState
       if ← (try checkpointDefEq (isDefEq r L[j]!) catch _ => pure false) then
-        if ← arAssign L rest (used.push j) then return true
+        if ← arAssign L rest (used.push j) skip then return true
       s.restore
-    return false
+    if skip then arAssign L rest used skip else return false
 
 partial def wgBranches (e : Expr) (acc : Array Expr) : Array Expr :=
   if isHorConst e && e.getAppNumArgs ≥ 2 then
@@ -8891,105 +8725,6 @@ def wgPrebuild (pl : WgPlan) : TacticM Unit := do
     if let some Q ← wgPOf pc.pred then
       let _ ← wgConcOf Q
 
-partial def witTuples (L Rs ms : Array Expr) (base : Array (Array Expr)) (bound cap i : Nat)
-    (acc : Array Expr) (out : Array (Array Expr)) : MetaM (Array (Array Expr)) := do
-  if out.size ≥ bound then return out
-  if i == ms.size then return out.push acc
-  let sub := fun (e : Expr) => e.replace (fun t => match ms.idxOf? t with
-    | some j => if j < acc.size then some acc[j]! else none
-    | none => none)
-  let free := fun (e : Expr) => (e.find? (ms.contains ·)).isSome
-  let m := ms[i]!
-  let mut sc : Array (Nat × Expr) := #[]
-  for r in Rs do
-    let r' := sub r
-    let ra := r'.getAppArgs
-    for pos in [0 : ra.size] do
-      unless ra[pos]! == m do continue
-      for (s, l) in witPairs L r' free do
-        if s > 0 then sc := sc.push (s, l.getAppArgs[pos]!)
-  let sorted := (sc.insertionSort (fun a b => a.1 > b.1)).map (·.2)
-  let mut cands : Array Expr := #[]
-  for c in sorted ++ base[i]! do
-    if !cands.contains c && cands.size < cap then cands := cands.push c
-  let mut o := out
-  for c in cands do
-    o ← witTuples L Rs ms base bound cap (i + 1) (acc.push c) o
-    if o.size ≥ bound then break
-  return o
-
-def witInst (vals : Array Expr) : TacticM Unit := do
-  for v in vals do
-    withMainContext do
-    let g ← getMainGoal
-    let t ← instantiateMVars (← g.getType)
-    let some (lhs, rhs) := entailHead? t | throwError "wit: goal"
-    unless rhs.isAppOf ``HProp.hexists do throwError "wit: binder"
-    let lam := rhs.appArg!
-    let inst := t.getAppArgs[0]!
-    let body := (lam.bindingBody!.instantiate1 v)
-    let m ← g.withContext do mkFreshExprSyntheticOpaqueMVar (← mkAppM ``HProp.himpl #[lhs, body])
-    g.assign (← mkAppOptM ``HProp.himpl_hexists_r #[inst, lam.bindingDomain!, v, lhs, lam, m])
-    replaceMainGoal [m.mvarId!]
-
-def witEnum (k : TacticM Unit) : TacticM Unit := do
-  let _ ← tryTactic (evalTactic (← `(tactic| conv_rhs => simp only
-    [Sep.Xsearch.hstar_hexists_rr, HProp.hstar_hexists, HProp.hstar_assoc])))
-  let tuples ← withMainContext do
-    let s ← saveState
-    let t ← instantiateMVars (← (← getMainGoal).getType)
-    if t.hasExprMVar then throwError "wit: mvars"
-    let some (lhs, rhs) := entailHead? t | throwError "wit: goal"
-    let (body, ms) ← arOpen rhs
-    if ms.isEmpty then throwError "wit: no binder"
-    let heads := (xsearchUnfoldExt.getState (← getEnv)).map (·.headFn)
-    let isPred := fun (e : Expr) => match e.getAppFn.constName? with
-      | some n => heads.contains n
-      | none => false
-    let Rs := (flatStar body #[]).filter (!·.isAppOf ``HProp.hpure)
-    let Ls := (flatStar lhs #[]).filter (!·.isAppOf ``HProp.hpure)
-    let ok := fun (e : Expr) => isPred e || e.isAppOf ``HProp.hsingle
-    unless Rs.all ok && !Ls.isEmpty && Ls.all ok && (Rs ++ Ls).any isPred do
-      throwError "wit: shape"
-    let mut roots : Array Expr := #[]
-    let mut holes : Array Expr := #[]
-    for x in Ls do
-      let xa := x.getAppArgs
-      for i in [0 : xa.size] do
-        unless ← isDefEq (← inferType xa[i]!) (mkConst ``Nat) do continue
-        if i == 0 then
-          unless roots.contains xa[i]! do roots := roots.push xa[i]!
-        else unless holes.contains xa[i]! do holes := holes.push xa[i]!
-    let nil := mkNatLit 0
-    let mut base : Array (Array Expr) := #[]
-    for m in ms do
-      unless ← isDefEq (← inferType m) (mkConst ``Nat) do throwError "wit: type"
-      unless Rs.any (fun r => r.getAppArgs.contains m) do throwError "wit: unused"
-      let atRoot := Rs.any (fun r => r.getAppArgs[0]? == some m)
-      base := base.push (if atRoot then roots ++ holes ++ #[nil] else holes ++ #[nil] ++ roots)
-    let terms := (roots ++ holes).foldl (fun acc e => if acc.contains e then acc else acc.push e) #[nil]
-    let out ← witTuples Ls Rs ms base (terms.size * ms.size + 1) terms.size 0 #[] #[]
-    s.restore
-    pure out
-  let gd ← globalDeadline.get
-  let saved ← getGoals
-  for i in [0 : tuples.size] do
-    let now ← vclock
-    if now ≥ gd then break
-    let s ← saveState
-    let ok ← try (do
-        witInst tuples[i]!
-        if ← goalRefuted then throwError "wit: refuted"
-        globalDeadline.set (if i + 1 == tuples.size then gd else now + (gd - now) / 2)
-        k
-        unless (← getUnsolvedGoals).isEmpty do throwError "wit: open"
-        pure true) catch _ => pure false
-    globalDeadline.set gd
-    if ok then return
-    s.restore
-    setGoals saved
-  throwError "wit: no witness"
-
 def wgCands (L : Array Expr) : MetaM (Array WgP) := do
   let mut cands : Array WgP := #[]
   for x in L do
@@ -9613,7 +9348,9 @@ def wgPass : TacticM Unit := do
   globalDeadline.set (now + (gd - now) * cands.size / (cands.size + 1))
   try wgPassBody cands finally globalDeadline.set gd
 
-elab "xsearch_wseg" : tactic => wgPass
+elab "xsearch_wseg" : tactic => do
+  witDetermined
+  wgPass
 
 partial def rhsVars (heads : Array Name) (e : Expr) (acc : Array Expr) :
     Array Expr :=
@@ -9710,11 +9447,6 @@ elab "xsearch_start" : tactic => do
   wgUsedCache.set #[]
   wgMCache.set #[]
 
-elab "xsearch_backtrack" : tactic => do
-  searchDeadline.set (← globalDeadline.get)
-  searchNodes.set 20000
-  searchSolve 40
-
 elab "xsearch_cmodel" : tactic => do
   if ← (try cmFind catch _ => pure false) then
     throwError "xsearch: countermodel"
@@ -9735,18 +9467,6 @@ elab_rules : tactic
     withEnableInfoTree false
       (if cheap then Sep.Xsimpl.withCheapCancel (evalTactic t) else evalTactic t)
 
-elab "xsearch_witness" : tactic => do
-  witEnum (do evalTactic (← `(tactic| first
-    | (xsimpl_core_with xsearch_unfold_step
-       all_goals (try xsimpl_clean)
-       xsearch_pure
-       done)
-    | (xsearch_wseg
-       first
-       | done
-       | xsearch_backtrack)
-    | xsearch_backtrack)))
-
 def witResidual : TacticM (Array Expr) := do
   let _ ← arOpenGoal
   withMainContext do
@@ -9755,15 +9475,7 @@ def witResidual : TacticM (Array Expr) := do
     let some (lhs, rhs) := entailHead? t | return #[]
     let L := (flatStar lhs #[]).filter (!·.isAppOf ``HProp.hpure)
     let R := (flatStar rhs #[]).filter (fun r => !r.isAppOf ``HProp.hpure && r.hasExprMVar)
-    let mut used : Array Nat := #[]
-    for r in R do
-      for j in [0 : L.size] do
-        if used.contains j || L[j]!.getAppFn != r.getAppFn then continue
-        let s ← saveState
-        if ← (try checkpointDefEq (isDefEq r L[j]!) catch _ => pure false) then
-          used := used.push j
-          break
-        s.restore
+    let _ ← arAssign L R.toList #[] true
     let mut res : Array Expr := #[]
     for c0 in pureProps (← instantiateMVars rhs) #[] do
       for c in pureConjs c0 #[] do
@@ -9776,45 +9488,82 @@ def witResidual : TacticM (Array Expr) := do
         unless closed || res.contains c do res := res.push c
     return res
 
-def witCaseTuples : TacticM (Array (Array Expr)) := withMainContext do
+partial def witTuples (L Rs ms : Array Expr) (base : Array (Array Expr)) (bound cap i : Nat)
+    (acc : Array Expr) (out : Array (Array Expr)) : Array (Array Expr) := Id.run do
+  if out.size ≥ bound then return out
+  if i == ms.size then return out.push acc
+  let sub := fun (e : Expr) => e.replace (fun t => match ms.idxOf? t with
+    | some j => if j < acc.size then some acc[j]! else none
+    | none => none)
+  let free := fun (e : Expr) => (e.find? (ms.contains ·)).isSome
+  let m := ms[i]!
+  let Rs' := (Rs.map sub).filter (·.getAppArgs.contains m)
+  let mut cands : Array Expr := #[]
+  for c in witRanked L Rs' m free ++ base[i]! do
+    if !cands.contains c && cands.size < cap then cands := cands.push c
+  let mut o := out
+  for c in cands do
+    o := witTuples L Rs ms base bound cap (i + 1) (acc.push c) o
+    if o.size ≥ bound then break
+  return o
+
+def witCands : TacticM (Bool × Array (Array Expr)) := withMainContext do
   let s ← saveState
   let t ← instantiateMVars (← (← getMainGoal).getType)
   if t.hasExprMVar then throwError "wit: mvars"
   let some (lhs, rhs) := entailHead? t | throwError "wit: goal"
-  let (body, ms) ← arOpen rhs
-  if ms.isEmpty then throwError "wit: no binder"
+  let (body, ms0) ← arOpen rhs
+  let heads := (xsearchUnfoldExt.getState (← getEnv)).map (·.headFn)
+  let isPred := fun (e : Expr) => match e.getAppFn.constName? with
+    | some n => heads.contains n
+    | none => false
   let Rs := (flatStar body #[]).filter (!·.isAppOf ``HProp.hpure)
   let Ls := (flatStar lhs #[]).filter (!·.isAppOf ``HProp.hpure)
+  let mut ms : Array Expr := #[]
+  for m in ms0 do
+    unless (← isDefEq (← inferType m) (mkConst ``Nat)) && Rs.any (·.getAppArgs.contains m) do break
+    ms := ms.push m
+  if ms.isEmpty then throwError "wit: no location binder"
+  let ok := fun (e : Expr) => isPred e || e.isAppOf ``HProp.hsingle
+  let shape := ms.size == ms0.size && Rs.all ok && !Ls.isEmpty && Ls.all ok && (Rs ++ Ls).any isPred
   let mut roots : Array Expr := #[]
+  let mut holes : Array Expr := #[]
   for x in Ls do
-    if let some r := x.getAppArgs[0]? then
-      if (← isDefEq (← inferType r) (mkConst ``Nat)) && !roots.contains r then roots := roots.push r
-  let cands := roots.push (mkNatLit 0)
-  let mut out : Array (Array Expr) := #[#[]]
-  for m in ms do
-    unless (← isDefEq (← inferType m) (mkConst ``Nat)) && Rs.any (fun r => r.getAppArgs.contains m) do break
-    let mut nxt : Array (Array Expr) := #[]
-    for pre in out do
-      for c in cands do nxt := nxt.push (pre.push c)
-    out := nxt
+    let xa := x.getAppArgs
+    for i in [0 : xa.size] do
+      unless ← isDefEq (← inferType xa[i]!) (mkConst ``Nat) do continue
+      if i == 0 then
+        unless roots.contains xa[i]! do roots := roots.push xa[i]!
+      else unless holes.contains xa[i]! do holes := holes.push xa[i]!
+  let nil := mkNatLit 0
+  let base := ms.map fun m =>
+    if Rs.any (fun r => r.getAppArgs[0]? == some m) then roots ++ holes ++ #[nil] else holes ++ #[nil] ++ roots
+  let terms := (roots ++ holes).foldl (fun acc e => if acc.contains e then acc else acc.push e) #[nil]
+  let out := witTuples Ls Rs ms base (terms.size * ms.size + 1) terms.size 0 #[] #[]
   s.restore
-  if out.all (·.isEmpty) then throwError "wit: no location binder"
-  return out
+  return (shape, out)
 
-def witCaseEngine : TacticM Unit := do
-  evalTactic (← `(tactic| first
-    | (xsimpl_core_with xsearch_unfold_step
-       all_goals (try xsimpl_clean)
-       xsearch_pure
-       done)
-    | (xsearch_wseg
-       first
-       | done
-       | xsearch_backtrack)
-    | xsearch_backtrack))
-  unless (← getUnsolvedGoals).isEmpty do throwError "wit: case open"
+def witStage1 (tuples : Array (Array Expr)) (k : TacticM Unit) : TacticM Unit := do
+  let gd ← globalDeadline.get
+  let saved ← getGoals
+  for i in [0 : tuples.size] do
+    let now ← vclock
+    if now ≥ gd then break
+    let s ← saveState
+    let ok ← try (do
+        witInst tuples[i]!
+        if ← goalRefuted then throwError "wit: refuted"
+        globalDeadline.set (if i + 1 == tuples.size then gd else now + (gd - now) / 2)
+        k
+        unless (← getUnsolvedGoals).isEmpty do throwError "wit: open"
+        pure true) catch _ => pure false
+    globalDeadline.set gd
+    if ok then return
+    s.restore
+    setGoals saved
+  throwError "wit: no witness"
 
-partial def witCaseRun (tuples : Array (Array Expr)) : TacticM Unit := do
+def witStage2 (tuples : Array (Array Expr)) : TacticM Unit := do
   let g ← getMainGoal
   let mut res : Array (Array Expr × Array Expr) := #[]
   for tp in tuples do
@@ -9832,25 +9581,46 @@ partial def witCaseRun (tuples : Array (Array Expr)) : TacticM Unit := do
     pure d
   let _ ← withMainContext (wgSide disj)
   let mut cur := g
-  let gd ← globalDeadline.get
+  let mut out : List MVarId := []
   for i in [0 : res.size] do
     let (tp, rs) := res[i]!
-    let now ← vclock
-    globalDeadline.set (now + (gd - now) / (res.size - i))
     if i + 1 == res.size then
       setGoals [cur]
       witInst tp
-      try witCaseEngine finally globalDeadline.set gd
-      return
-    let c ← cur.withContext (wgConj rs)
-    let (yes, no) ← cur.byCases c
-    setGoals [yes.mvarId]
-    witInst tp
-    try witCaseEngine finally globalDeadline.set gd
-    cur := no.mvarId
-  throwError "wit: case end"
+      out := out ++ (← getGoals)
+    else
+      let c ← cur.withContext (wgConj rs)
+      let (yes, no) ← cur.byCases c
+      setGoals [yes.mvarId]
+      witInst tp
+      out := out ++ (← getGoals)
+      cur := no.mvarId
+  setGoals out
 
-elab "xsearch_witcase" : tactic => do
+def witCasesRun (k : TacticM Unit) : TacticM Unit := do
+  let (_, tuples) ← witCands
+  witStage2 tuples
+  let gs := (← getGoals).toArray
+  let gd ← globalDeadline.get
+  for i in [0 : gs.size] do
+    let now ← vclock
+    globalDeadline.set (now + (gd - now) / (gs.size - i))
+    setGoals [gs[i]!]
+    try
+      k
+      unless (← getUnsolvedGoals).isEmpty do throwError "wit: case open"
+    finally globalDeadline.set gd
+  setGoals []
+
+def witSearch (k : TacticM Unit) (cases : Bool) : TacticM Unit := do
+  unless cases do
+    witDetermined
+    let _ ← tryTactic (evalTactic (← `(tactic| conv_rhs => simp only
+      [Sep.Xsearch.hstar_hexists_rr, HProp.hstar_hexists, HProp.hstar_assoc])))
+    let (shape, tuples) ← witCands
+    unless shape do throwError "wit: shape"
+    witStage1 tuples k
+    return
   let entries ← arEntries
   let heads := entries.map (·.headFn)
   let occs := (← wgLhs).filter fun x => match x.getAppFn.constName? with
@@ -9865,12 +9635,189 @@ elab "xsearch_witcase" : tactic => do
       for leaf in leaves do
         setGoals [leaf]
         if ← wgFalseClose then continue
-        let tuples ← witCaseTuples
-        witCaseRun tuples
+        witCasesRun k
       if (← getUnsolvedGoals).isEmpty then return
       s.restore
     catch _ => s.restore
-  throwError "wit: no case split"
+  throwError "wit: no witness"
+
+mutual
+
+partial def searchSolve (fuel : Nat) : TacticM Unit := do
+  checkDeadline
+  normGoals
+  let gs ← getUnsolvedGoals
+  if gs.isEmpty then return
+  if fuel == 0 then throwError "xsearch: depth exhausted"
+  for g in gs do
+    if ← g.isAssigned then continue
+    setGoals [g]
+    branchGoal fuel
+    unless (← getUnsolvedGoals).isEmpty do
+      throwError "xsearch: subgoal remained"
+  setGoals []
+
+partial def branchGoal (fuel : Nat) : TacticM Unit := do
+  checkDeadline
+  let fk ← failKey fuel
+  if let some k := fk then
+    if ← failSeen k then throwError "xsearch: known failure"
+  evalTactic (← `(tactic| try xsearch_distr))
+  let btg ← instantiateMVars (← (← getMainGoal).getType)
+  if (btg.find? (fun s => s.getAppFn.constName? == some ``hpack)).isSome
+      && (btg.find? (fun s =>
+        s.getAppFn.constName? == some ``HProp.hwand)).isNone then
+    let _ ← simpOnlyTarget #[``hpack_eq]
+  unless (← hasLocLocs).isEmpty do
+    evalTactic (← `(tactic| try xsearch_hfacts))
+  let g ← getMainGoal
+  let t ← instantiateMVars (← g.getType)
+  let some (lhs, rhs) := entailHead? t | throwError "xsearch: not an entailment"
+  if ← cmFind false then throwError "xsearch: countermodel"
+  let entries := xsearchUnfoldExt.getState (← getEnv)
+  let heads := entries.map (·.headFn)
+  let mut alts : Array (Bool × TacticM Unit) := #[]
+  if isDisj lhs then
+    alts := alts.push (false, applyConstT ``hdisj_elim)
+  else if isDisj rhs then
+    let args := rhs.getAppArgs
+    let n := args.size
+    let atoms := Sep.Xsimpl.parseHstar lhs
+    let sa := branchScoreD heads atoms args[n-2]!
+    let sb := branchScoreD heads atoms args[n-1]!
+    let l : TacticM Unit := applyConstT ``hdisj_left
+    let r : TacticM Unit := applyConstT ``hdisj_right
+    let side := fun (nm : Name) (D : Expr) (plain : TacticM Unit) =>
+      let (body, depth) := exPeel D
+      let tgt : Expr := .bvar (depth - 1)
+      let R := (Sep.Xsimpl.parseHstar body).toArray
+      let ws := if t.hasExprMVar || depth == 0 || !R.any (fun it => it.isAppOf ``HProp.hsingle
+          && it.getAppArgs[it.getAppNumArgs - 2]? == some tgt) then #[]
+        else witRanked atoms.toArray (R.filter (·.hasLooseBVar (depth - 1))) tgt (·.hasLooseBVars)
+      if ws.size ≥ 2 then ws.map (fun w => (false, do applyConstT nm; witInst #[w])) |>.push (false, plain)
+      else #[(false, plain)]
+    let la := side ``hdisj_left args[n-2]! l
+    let ra := side ``hdisj_right args[n-1]! r
+    if sa > sb || (sa == sb && absentPredsD heads atoms args[n-2]!
+        ≤ absentPredsD heads atoms args[n-1]!) then alts := la ++ ra
+    else alts := ra ++ la
+  else
+    let L := Sep.Xsimpl.parseHstar lhs
+    let Rs := Sep.Xsimpl.parseHstar rhs
+    let ptoLocs := ptoLocsOf lhs #[]
+    let occsR := collectOccs heads rhs #[]
+    let mut forced : Array Expr := #[]
+    for o in occsR do
+      let hi ←
+        match o.getAppFn.constName? with
+        | some nm => headIdxOf nm
+        | none => pure 0
+      match o.getAppArgs[hi]? with
+      | some a => if ptoLocs.any (· == a) then forced := forced.push o
+      | none => pure ()
+    let ivs ← if fuel ≥ 36 && !t.hasExprMVar then invAlts searchSolve heads lhs rhs L Rs
+      else pure #[]
+    for i in [0 : L.length] do
+      match wandParts? L[i]! with
+      | none => pure ()
+      | some (A, _) =>
+        alts := alts.push (false, wandAlt lhs rhs L i)
+        let As := Sep.Xsimpl.parseHstar A
+        if As.length ≥ 1 && As.length < L.length then
+          let mut ks : List Nat := []
+          let mut okS := true
+          let allPure := As.all (fun aa =>
+            aa.getAppFn.constName? == some ``HProp.hpure)
+          for aa in As do
+            if aa.getAppFn.constName? == some ``HProp.hpure then continue
+            match (List.range L.length).find? (fun m =>
+                m != i && !ks.contains m && L[m]! == aa) with
+            | some m => ks := ks ++ [m]
+            | none => okS := false
+          if okS && (!ks.isEmpty || allPure) && ks.length + 1 < L.length then
+            alts := alts.push (false, wandAltS lhs rhs L i ks)
+    let fdeep := (← forcedDepth.get) ≥ 6
+    for o in forced do
+      unless fdeep do alts := alts.push (true, rewriteOcc entries o)
+    let lhsOccs := collectOccs heads lhs #[]
+    for o in lhsOccs do
+      match o.getAppFn.constName? with
+      | some nm =>
+          if ← isFlatPred nm then alts := alts.push (false, rewriteOcc entries o)
+      | none => pure ()
+    let mut late : Array (Bool × TacticM Unit) := #[]
+    for o in lhsOccs do
+      match o.getAppFn.constName? with
+      | some nm =>
+          if !(← isFlatPred nm) && !(← isRecPred nm) then
+            late := late.push (false, rewriteOcc entries o)
+      | none => pure ()
+    let rwEarly := forced.isEmpty && !ptoLocs.isEmpty
+    alts := alts ++ (if rwEarly then occsR.map (fun o => (false, rewriteOcc entries o))
+      else #[]) ++ late
+    let Lnp := L.filter (fun a => !a.isAppOf ``HProp.hpure)
+    let inds : Array (Bool × TacticM Unit) := match Lnp with
+      | [A] => if (A.getAppFn.constName?.map heads.contains).getD false
+          && occsR.any (fun o => o.getAppFn != A.getAppFn)
+          then #[(false, indAlt A rhs)] else #[]
+      | _ => #[]
+    let pre := (← forallAlts lhs rhs L) ++ hwithAlts lhs rhs L Rs ++ specAlts lhs rhs L Rs ++ ivs
+    let early ← if t.hasExprMVar then pure #[] else earlyLhsOccs entries heads lhs rhs
+    alts := (early.map (fun o => (false, rewriteOcc entries o))) ++ pre ++ inds ++ alts
+    if forced.isEmpty then
+      unless rwEarly do
+        for o in occsR do
+          alts := alts.push (false, rewriteOcc entries o)
+      for o in collectOccs heads lhs #[] do
+        unless early.contains o do alts := alts.push (false, rewriteOcc entries o)
+  for (ai, (isF, alt)) in alts.zipIdx.map (fun (x,i) => (i,x)) do
+    checkDeadline
+    let s ← saveState
+    let oldDl ← searchDeadline.get
+    let sliced := isF && (← forcedDepth.get) == 0 && ai + 1 < alts.size
+    if isF then forcedDepth.modify (· + 1)
+    if sliced then
+      let now ← vclock
+      let gd ← globalDeadline.get
+      let slice := if gd > now then (gd - now) / 2 else 0
+      searchDeadline.set (min oldDl (now + max (min slice 1500) 600))
+    try
+      searchNodes.modify (fun n => n - 1)
+      alt
+      searchSolve (fuel - 1)
+      if isF then forcedDepth.modify (fun k => k - 1)
+      if sliced then searchDeadline.set oldDl
+      return
+    catch _ =>
+      if isF then forcedDepth.modify (fun k => k - 1)
+      if sliced then searchDeadline.set oldDl
+      s.restore
+  if let some k := fk then failAdd k
+  throwError "xsearch: no alternative succeeded"
+
+end
+
+elab "xsearch_backtrack" : tactic => do
+  searchDeadline.set (← globalDeadline.get)
+  searchNodes.set 20000
+  searchSolve 40
+
+def witEngine : TacticM Unit := do
+  evalTactic (← `(tactic| first
+    | (xsimpl_core_with xsearch_unfold_step
+       all_goals (try xsimpl_clean)
+       xsearch_pure
+       done)
+    | (xsearch_wseg
+       first
+       | done
+       | xsearch_backtrack)
+    | xsearch_backtrack))
+
+syntax "xsearch_wit" ("cases")? : tactic
+elab_rules : tactic
+  | `(tactic| xsearch_wit) => witSearch witEngine false
+  | `(tactic| xsearch_wit cases) => witSearch witEngine true
 
 syntax "xsearch" : tactic
 macro_rules
@@ -9887,7 +9834,6 @@ macro_rules
          try xsearch_trivpure
          try xsearch_macros
          try xsearch_trivpure
-         try xsearch_exwit
          try xsearch_pfacts
          try xsearch_facts
          first
@@ -9896,9 +9842,9 @@ macro_rules
             first
             | done
             | xsearch_backtrack)
-         | xsearch_witness
+         | xsearch_wit
          | xsearch_backtrack
-         | xsearch_witcase)))
+         | xsearch_wit cases)))
 
 -- # EVOLVE-BLOCK-END
 
