@@ -1507,12 +1507,6 @@ theorem hasLoc_disj {p : Loc} {H1 H2 : HProp} (h1 : hasLoc p H1)
   · exact h1 h hh
   · exact h2 h hh
 
-theorem hasLoc_pure_star {p : Loc} {P : Prop} {H : HProp}
-    (h : P → hasLoc p H) : hasLoc p (⌈P⌉ ✶ H) := by
-  intro hh hj
-  rcases (HProp.hstar_hpure_l P H hh).1 hj with ⟨hP, hH⟩
-  exact h hP hh hH
-
 theorem hasLoc_mono {p : Loc} {F G : HProp} (h : F ==> G) (hg : hasLoc p G) :
     hasLoc p F := fun hh hf => hg hh (h hh hf)
 
@@ -1559,9 +1553,6 @@ theorem neLocs_star_r {p q : Loc} {H1 H2 : HProp} (h : neLocs p q H2) :
 
 theorem neLocs_const {p q : Loc} {H : HProp} (h : p ≠ q) : neLocs p q H :=
   fun _ _ => h
-
-theorem neLocs_mono {p q : Loc} {F G : HProp} (h : F ==> G) (hg : neLocs p q G) :
-    neLocs p q F := fun hh hf => hg hh (h hh hf)
 
 theorem neLocs_disj {p q : Loc} {H1 H2 : HProp} (h1 : neLocs p q H1)
     (h2 : neLocs p q H2) : neLocs p q (hdisj H1 H2) := by
