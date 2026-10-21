@@ -189,6 +189,9 @@ theorem pure_r_intro {P : Prop} {H1 H2 : HProp} (hp : P) (h : H1 ==> H2) : H1 ==
   rw [HProp.hstar_comm]
   exact HProp.himpl_hstar_hpure_r hp h
 
+theorem pure_l_intro {P : Prop} {H1 H2 : HProp} (hp : P) (h : H1 ==> H2) : H1 ==> ⌈P⌉ ✶ H2 :=
+  HProp.himpl_hstar_hpure_r hp h
+
 theorem pure_r_elim {P : Prop} {H1 H2 : HProp} (h : P → H1 ==> H2) : H1 ✶ ⌈P⌉ ==> H2 := by
   rw [HProp.hstar_comm]
   exact HProp.himpl_hstar_hpure_l h
@@ -1770,8 +1773,15 @@ theorem star_pure_drop (H : HProp) (P : Prop) : H ✶ ⌈P⌉ ==> H := by
   rw [HProp.hstar_comm]
   exact HProp.himpl_hstar_hpure_l (fun _ => HProp.himpl_refl _)
 
-theorem pure_r_of_holds {H G : HProp} {P : Prop} (hp : holdsP P H) (h : H ==> G) : H ==> G ✶ ⌈P⌉ :=
-  fun k hk => Sep.pure_r_intro (hp k hk) h k hk
+theorem pures_emp_cons {P : Prop} {R : HProp} (h : R ==> emp) : ⌈P⌉ ✶ R ==> emp := by
+  rw [← HProp.hstar_hempty_l emp]
+  exact HProp.himpl_frame_lr (Sep.pDrop P) h
+
+theorem star_drop_emp {H R : HProp} (h : R ==> emp) : H ✶ R ==> H :=
+  HProp.himpl_trans (HProp.himpl_frame_r h) (by rw [HProp.hstar_hempty_r]; exact HProp.himpl_refl _)
+
+theorem pure_l_of_holds {H G : HProp} {P : Prop} (hp : holdsP P H) (h : H ==> G) : H ==> ⌈P⌉ ✶ G :=
+  fun k hk => Sep.pure_l_intro (hp k hk) h k hk
 
 theorem holdsP_mono_imp {P : Prop} {F G : HProp} (h : F ==> G) (hg : holdsP P G) : holdsP P F :=
   fun k hk => hg k (h k hk)
