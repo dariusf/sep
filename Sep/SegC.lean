@@ -193,170 +193,6 @@ theorem pure_r_elim {P : Prop} {H1 H2 : HProp} (h : P → H1 ==> H2) : H1 ✶ �
   rw [HProp.hstar_comm]
   exact HProp.himpl_hstar_hpure_l h
 
-theorem wseg_snoc0 {σ : Type} (c : σ → σ → Int → HProp) (k : Nat) (n w : Int) (s s' t : σ) :
-    c s s' w ✶ wseg c k n s' t ==> wseg c (k + 1) (n + w) s t := by
-  show _ ==> ∃✶ s'', ∃✶ w', c s s'' w' ✶ wseg c k (n + w - w') s'' t
-  refine HProp.himpl_hexists_r s' (HProp.himpl_hexists_r w ?_)
-  rw [show n + w - w = n by omega]
-  exact HProp.himpl_refl _
-
-theorem wseg_abs_core {α σ : Type} (P : α → HProp) (F : (α → HProp) → α → HProp)
-    (hind : ∀ X : α → HProp, (∀ b, F X b ==> X b) → ∀ a, P a ==> X a)
-    (c : σ → σ → Int → HProp) (st : α → σ) (rel : α → α → Int → Prop) (Q B : α → HProp)
-    (hstep : ∀ X a, F X a ==> wor (B a) (∃✶ a', ∃✶ w, ⌈rel a a' w⌉ ✶ (c (st a) (st a') w ✶ X a')))
-    (hbase : ∀ a, B a ==> Q a)
-    (hcons : ∀ a a' w, rel a a' w → c (st a) (st a') w ✶ Q a' ==> Q a) (a : α) : P a ==> Q a :=
-  hind Q (fun b => HProp.himpl_trans (hstep Q b) (wor_elim (hbase b)
-    (HProp.himpl_hexists_l (fun a' => HProp.himpl_hexists_l (fun w =>
-      HProp.himpl_hstar_hpure_l (fun hr => hcons b a' w hr)))))) a
-
-theorem wseg_cons_cnt {α σ : Type} (c : σ → σ → Int → HProp) (st en : α → σ) (nE : α → Int) (kmin : Nat)
-    (a a' : α) (w : Int) (hr : en a' = en a ∧ nE a = nE a' + w) :
-    c (st a) (st a') w ✶ (∃✶ k, wseg c k (nE a') (st a') (en a') ✶ ⌈kmin ≤ k⌉) ==>
-      ∃✶ k, wseg c k (nE a) (st a) (en a) ✶ ⌈kmin ≤ k⌉ := by
-  rw [HProp.hstar_comm, HProp.hstar_hexists]
-  refine HProp.himpl_hexists_l (fun k => ?_)
-  rw [HProp.hstar_comm, ← HProp.hstar_assoc]
-  refine pure_r_elim (fun _ => HProp.himpl_hexists_r (k + 1) (pure_r_intro (by omega) ?_))
-  rw [hr.2, ← hr.1]
-  exact wseg_snoc0 c k _ w _ _ _
-
-theorem wseg_cons_free {α σ : Type} (c : σ → σ → Int → HProp) (st en : α → σ) (kmin : Nat)
-    (a a' : α) (w : Int) (hr : en a' = en a) :
-    c (st a) (st a') w ✶ (∃✶ k, ∃✶ n, wseg c k n (st a') (en a') ✶ ⌈kmin ≤ k⌉) ==>
-      ∃✶ k, ∃✶ n, wseg c k n (st a) (en a) ✶ ⌈kmin ≤ k⌉ := by
-  rw [HProp.hstar_comm, HProp.hstar_hexists]
-  refine HProp.himpl_hexists_l (fun k => ?_)
-  rw [HProp.hstar_hexists]
-  refine HProp.himpl_hexists_l (fun n => ?_)
-  rw [HProp.hstar_comm, ← HProp.hstar_assoc]
-  refine pure_r_elim (fun _ => HProp.himpl_hexists_r (k + 1) (HProp.himpl_hexists_r (n + w)
-    (pure_r_intro (by omega) ?_)))
-  rw [← hr]
-  exact wseg_snoc0 c k _ w _ _ _
-
-theorem wseg_cons_cnt_m {α σ M : Type} (c : σ → σ → Int → HProp) (st : α → σ) (en : α → M → σ)
-    (nE : α → Int) (kmin : Nat) (a a' : α) (w : Int)
-    (hr : (∀ m, en a' m = en a m) ∧ nE a = nE a' + w) :
-    c (st a) (st a') w ✶ (∃✶ k, ∃✶ m, wseg c k (nE a') (st a') (en a' m) ✶ ⌈kmin ≤ k⌉) ==>
-      ∃✶ k, ∃✶ m, wseg c k (nE a) (st a) (en a m) ✶ ⌈kmin ≤ k⌉ := by
-  rw [HProp.hstar_comm, HProp.hstar_hexists]
-  refine HProp.himpl_hexists_l (fun k => ?_)
-  rw [HProp.hstar_hexists]
-  refine HProp.himpl_hexists_l (fun m => ?_)
-  rw [HProp.hstar_comm, ← HProp.hstar_assoc]
-  refine pure_r_elim (fun _ => HProp.himpl_hexists_r (k + 1) (HProp.himpl_hexists_r m
-    (pure_r_intro (by omega) ?_)))
-  rw [hr.2, ← hr.1 m]
-  exact wseg_snoc0 c k _ w _ _ _
-
-theorem wseg_cons_free_m {α σ M : Type} (c : σ → σ → Int → HProp) (st : α → σ) (en : α → M → σ)
-    (kmin : Nat) (a a' : α) (w : Int) (hr : ∀ m, en a' m = en a m) :
-    c (st a) (st a') w ✶ (∃✶ k, ∃✶ n, ∃✶ m, wseg c k n (st a') (en a' m) ✶ ⌈kmin ≤ k⌉) ==>
-      ∃✶ k, ∃✶ n, ∃✶ m, wseg c k n (st a) (en a m) ✶ ⌈kmin ≤ k⌉ := by
-  rw [HProp.hstar_comm, HProp.hstar_hexists]
-  refine HProp.himpl_hexists_l (fun k => ?_)
-  rw [HProp.hstar_hexists]
-  refine HProp.himpl_hexists_l (fun n => ?_)
-  rw [HProp.hstar_hexists]
-  refine HProp.himpl_hexists_l (fun m => ?_)
-  rw [HProp.hstar_comm, ← HProp.hstar_assoc]
-  refine pure_r_elim (fun _ => HProp.himpl_hexists_r (k + 1) (HProp.himpl_hexists_r (n + w)
-    (HProp.himpl_hexists_r m (pure_r_intro (by omega) ?_))))
-  rw [← hr m]
-  exact wseg_snoc0 c k _ w _ _ _
-
-theorem wseg_cons_free_mt {α σ M : Type} (c : σ → σ → Int → HProp) (st : α → σ) (en : α → M → σ)
-    (T : α → M → HProp) (kmin : Nat) (a a' : α) (w : Int)
-    (hr : (∀ m, en a' m = en a m) ∧ (∀ m, T a' m = T a m)) :
-    c (st a) (st a') w ✶ (∃✶ k, ∃✶ n, ∃✶ m, wseg c k n (st a') (en a' m) ✶ (T a' m ✶ ⌈kmin ≤ k⌉)) ==>
-      ∃✶ k, ∃✶ n, ∃✶ m, wseg c k n (st a) (en a m) ✶ (T a m ✶ ⌈kmin ≤ k⌉) := by
-  rw [HProp.hstar_comm, HProp.hstar_hexists]
-  refine HProp.himpl_hexists_l (fun k => ?_)
-  rw [HProp.hstar_hexists]
-  refine HProp.himpl_hexists_l (fun n => ?_)
-  rw [HProp.hstar_hexists]
-  refine HProp.himpl_hexists_l (fun m => ?_)
-  rw [HProp.hstar_comm]
-  rw [hr.2 m, hr.1 m]
-  refine HProp.himpl_hexists_r (k + 1) (HProp.himpl_hexists_r (n + w) (HProp.himpl_hexists_r m ?_))
-  rw [← HProp.hstar_assoc]
-  refine HProp.himpl_frame_lr (wseg_snoc0 c k n w _ _ _) ?_
-  exact pure_r_elim (fun _ => pure_r_intro (by omega) (HProp.himpl_refl _))
-
-theorem wseg_base0_cnt {σ : Type} (c : σ → σ → Int → HProp) (s t : σ) (n : Int) :
-    ⌈s = t ∧ n = 0⌉ ==> ∃✶ k, wseg c k n s t ✶ ⌈0 ≤ k⌉ :=
-  HProp.himpl_hexists_r 0 (pure_r_intro (Nat.le_refl 0) (HProp.himpl_refl _))
-
-theorem wseg_base0_free {σ : Type} (c : σ → σ → Int → HProp) (s t : σ) :
-    ⌈s = t⌉ ==> ∃✶ k, ∃✶ n, wseg c k n s t ✶ ⌈0 ≤ k⌉ := by
-  refine HProp.himpl_hexists_r 0 (HProp.himpl_hexists_r 0 (pure_r_intro (Nat.le_refl 0) ?_))
-  intro h hh
-  obtain ⟨hp, he⟩ := HProp.hpure_elim_hempty hh
-  exact HProp.hpure_intro_hempty he ⟨hp, rfl⟩
-
-theorem wseg_base1_cnt {σ : Type} (c : σ → σ → Int → HProp) (s t : σ) (n : Int) :
-    (∃✶ w, ⌈n = w⌉ ✶ c s t w) ==> ∃✶ k, wseg c k n s t ✶ ⌈1 ≤ k⌉ := by
-  refine HProp.himpl_hexists_l (fun w => ?_)
-  refine HProp.himpl_hstar_hpure_l (fun hn => ?_)
-  refine HProp.himpl_hexists_r 1 (pure_r_intro (Nat.le_refl 1) ?_)
-  rw [hn]
-  exact wseg_cell c s t w
-
-theorem wseg_base1_free {σ : Type} (c : σ → σ → Int → HProp) (s t : σ) :
-    (∃✶ w, c s t w) ==> ∃✶ k, ∃✶ n, wseg c k n s t ✶ ⌈1 ≤ k⌉ := by
-  refine HProp.himpl_hexists_l (fun w => ?_)
-  refine HProp.himpl_hexists_r 1 (HProp.himpl_hexists_r w (pure_r_intro (Nat.le_refl 1) ?_))
-  exact wseg_cell c s t w
-
-theorem wseg_base0_cnt_m {σ M : Type} (c : σ → σ → Int → HProp) (s : σ) (t : M → σ) (n : Int) :
-    (∃✶ m, ⌈s = t m ∧ n = 0⌉) ==> ∃✶ k, ∃✶ m, wseg c k n s (t m) ✶ ⌈0 ≤ k⌉ :=
-  HProp.himpl_hexists_l (fun m => HProp.himpl_hexists_r 0 (HProp.himpl_hexists_r m
-    (pure_r_intro (Nat.le_refl 0) (HProp.himpl_refl _))))
-
-theorem wseg_base0_free_m {σ M : Type} (c : σ → σ → Int → HProp) (s : σ) (t : M → σ) :
-    (∃✶ m, ⌈s = t m⌉) ==> ∃✶ k, ∃✶ n, ∃✶ m, wseg c k n s (t m) ✶ ⌈0 ≤ k⌉ :=
-  HProp.himpl_hexists_l (fun m => HProp.himpl_trans (wseg_base0_free c s (t m))
-    (HProp.himpl_hexists_l (fun k => HProp.himpl_hexists_r k (HProp.himpl_hexists_l (fun n =>
-      HProp.himpl_hexists_r n (HProp.himpl_hexists_r m (HProp.himpl_refl _)))))))
-
-theorem wseg_base1_cnt_m {σ M : Type} (c : σ → σ → Int → HProp) (s : σ) (t : M → σ) (n : Int) :
-    (∃✶ m, ∃✶ w, ⌈n = w⌉ ✶ c s (t m) w) ==> ∃✶ k, ∃✶ m, wseg c k n s (t m) ✶ ⌈1 ≤ k⌉ :=
-  HProp.himpl_hexists_l (fun m => HProp.himpl_trans (wseg_base1_cnt c s (t m) n)
-    (HProp.himpl_hexists_l (fun k => HProp.himpl_hexists_r k (HProp.himpl_hexists_r m
-      (HProp.himpl_refl _)))))
-
-theorem wseg_base1_free_m {σ M : Type} (c : σ → σ → Int → HProp) (s : σ) (t : M → σ) :
-    (∃✶ m, ∃✶ w, c s (t m) w) ==> ∃✶ k, ∃✶ n, ∃✶ m, wseg c k n s (t m) ✶ ⌈1 ≤ k⌉ :=
-  HProp.himpl_hexists_l (fun m => HProp.himpl_trans (wseg_base1_free c s (t m))
-    (HProp.himpl_hexists_l (fun k => HProp.himpl_hexists_r k (HProp.himpl_hexists_l (fun n =>
-      HProp.himpl_hexists_r n (HProp.himpl_hexists_r m (HProp.himpl_refl _)))))))
-
-theorem wseg_base0_free_mt {σ M : Type} (c : σ → σ → Int → HProp) (s : σ) (t : M → σ) (T : M → HProp) :
-    (∃✶ m, ⌈s = t m⌉ ✶ T m) ==> ∃✶ k, ∃✶ n, ∃✶ m, wseg c k n s (t m) ✶ (T m ✶ ⌈0 ≤ k⌉) := by
-  refine HProp.himpl_hexists_l (fun m => ?_)
-  refine HProp.himpl_hexists_r 0 (HProp.himpl_hexists_r 0 (HProp.himpl_hexists_r m ?_))
-  refine HProp.himpl_hstar_hpure_l (fun hs => ?_)
-  show T m ==> ⌈s = t m ∧ (0 : Int) = 0⌉ ✶ (T m ✶ ⌈0 ≤ 0⌉)
-  refine HProp.himpl_hstar_hpure_r ⟨hs, rfl⟩ ?_
-  rw [HProp.hstar_comm (T m)]
-  exact HProp.himpl_hstar_hpure_r (Nat.le_refl 0) (HProp.himpl_refl _)
-
-theorem wseg_base1_free_mt {σ M : Type} (c : σ → σ → Int → HProp) (s : σ) (t : M → σ) (T : M → HProp) :
-    (∃✶ m, ∃✶ w, c s (t m) w ✶ T m) ==> ∃✶ k, ∃✶ n, ∃✶ m, wseg c k n s (t m) ✶ (T m ✶ ⌈1 ≤ k⌉) := by
-  refine HProp.himpl_hexists_l (fun m => HProp.himpl_hexists_l (fun w => ?_))
-  refine HProp.himpl_hexists_r 1 (HProp.himpl_hexists_r w (HProp.himpl_hexists_r m ?_))
-  refine HProp.himpl_frame_lr (wseg_cell c s (t m) w) ?_
-  rw [HProp.hstar_comm (T m)]
-  exact HProp.himpl_hstar_hpure_r (Nat.le_refl 1) (HProp.himpl_refl _)
-
-theorem wseg_base2_free {σ : Type} (c : σ → σ → Int → HProp) (s t : σ) :
-    (∃✶ u, ∃✶ w1, ∃✶ w2, c s u w1 ✶ c u t w2) ==> ∃✶ k, ∃✶ n, wseg c k n s t ✶ ⌈2 ≤ k⌉ := by
-  refine HProp.himpl_hexists_l (fun u => HProp.himpl_hexists_l (fun w1 => HProp.himpl_hexists_l (fun w2 => ?_)))
-  refine HProp.himpl_hexists_r 2 (HProp.himpl_hexists_r (w2 + w1) (pure_r_intro (Nat.le_refl 2) ?_))
-  refine HProp.himpl_trans (HProp.himpl_frame_r (wseg_cell c u t w2)) ?_
-  exact wseg_snoc0 c 1 w2 w1 s u t
-
 theorem wseg_two_elim {σ : Type} (c : σ → σ → Int → HProp) (n : Int) (s t : σ) :
     wseg c 2 n s t ==> ∃✶ u, ∃✶ w, c s u w ✶ c u t (n - w) := by
   show (∃✶ u, ∃✶ w, c s u w ✶ wseg c 1 (n - w) u t) ==> _
@@ -386,60 +222,6 @@ theorem pNthK_getD {α : Type} (l : List α) (n : Nat) (d : α) : pNthK l n d = 
     cases n with
     | zero => rfl
     | succ k => exact ih k
-
-noncomputable def pItem (C : Nat → Nat → HProp) (X : Nat → Nat → Nat → HProp) (it : Option Nat) (x y : Nat) : HProp :=
-  Option.rec (motive := fun _ => HProp) (C x y) (fun j => X j x y) it
-
-noncomputable def pChain (C : Nat → Nat → HProp) (X : Nat → Nat → Nat → HProp) (f : Nat → Nat)
-    (b : List (Option Nat)) : Nat → Nat → Nat → HProp :=
-  List.rec (motive := fun _ => Nat → Nat → Nat → HProp) (fun _ x y => ⌈x = y⌉)
-    (fun it r ih i x y => List.rec (motive := fun _ => HProp) (pItem C X it x y)
-      (fun _ _ _ => pItem C X it x (f i) ✶ ih (i + 1) (f i) y) r) b
-
-def pF (C : Nat → Nat → HProp) (B : List (List (List (Option Nat))))
-    (X : Nat × Nat × Nat → HProp) (a : Nat × Nat × Nat) : HProp :=
-  fun h => ∃ b ∈ pNthK B a.1 [], ∃ f : Nat → Nat, pChain C (fun j x y => X (j, x, y)) f b 0 a.2.1 a.2.2 h
-
-def pG (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (a : Nat × Nat × Nat) : HProp :=
-  fun h => ∀ X : Nat × Nat × Nat → HProp, (∀ b, pF C B X b ==> X b) → X a h
-
-theorem pItem_mono (C : Nat → Nat → HProp) {X Y : Nat → Nat → Nat → HProp}
-    (hXY : ∀ j x y, X j x y ==> Y j x y) : ∀ (it : Option Nat) (x y : Nat), pItem C X it x y ==> pItem C Y it x y
-  | none, _, _ => HProp.himpl_refl _
-  | some j, x, y => hXY j x y
-
-theorem pChain_mono (C : Nat → Nat → HProp) {X Y : Nat → Nat → Nat → HProp} (f : Nat → Nat)
-    (hXY : ∀ j x y, X j x y ==> Y j x y) :
-    ∀ (b : List (Option Nat)) (i x y : Nat), pChain C X f b i x y ==> pChain C Y f b i x y
-  | [], _, _, _ => HProp.himpl_refl _
-  | [it], _, x, y => pItem_mono C hXY it x y
-  | it :: it2 :: r, i, x, y =>
-    HProp.himpl_frame_lr (pItem_mono C hXY it x (f i)) (pChain_mono C f hXY (it2 :: r) (i + 1) (f i) y)
-
-theorem pF_mono (C : Nat → Nat → HProp) (B : List (List (List (Option Nat))))
-    {X Y : Nat × Nat × Nat → HProp} (hXY : ∀ a, X a ==> Y a) (a : Nat × Nat × Nat) :
-    pF C B X a ==> pF C B Y a := by
-  intro h ⟨b, hb, f, hh⟩
-  exact ⟨b, hb, f, pChain_mono C f (fun j x y => hXY (j, x, y)) b 0 a.2.1 a.2.2 h hh⟩
-
-theorem pG_induct (C : Nat → Nat → HProp) (B : List (List (List (Option Nat))))
-    (X : Nat × Nat × Nat → HProp) (hX : ∀ b, pF C B X b ==> X b) (a : Nat × Nat × Nat) :
-    pG C B a ==> X a := fun _ hh => hh X hX
-
-theorem pG_pre (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (a : Nat × Nat × Nat) :
-    pF C B (pG C B) a ==> pG C B a := by
-  intro h hh X hX
-  exact hX a h (pF_mono C B (fun b => pG_induct C B X hX b) a h hh)
-
-theorem pF_intro {C : Nat → Nat → HProp} {B : List (List (List (Option Nat)))}
-    {X : Nat × Nat × Nat → HProp} {j x y : Nat} {b : List (Option Nat)} (hb : b ∈ pNthK B j [])
-    (f : Nat → Nat) : pChain C (fun j x y => X (j, x, y)) f b 0 x y ==> pF C B X (j, x, y) :=
-  fun _ hh => ⟨b, hb, f, hh⟩
-
-theorem pG_intro {C : Nat → Nat → HProp} {B : List (List (List (Option Nat)))}
-    {j x y : Nat} {b : List (Option Nat)} (hb : b ∈ pNthK B j []) (f : Nat → Nat) {H : HProp}
-    (h : H ==> pChain C (fun j x y => pG C B (j, x, y)) f b 0 x y) : H ==> pG C B (j, x, y) :=
-  HProp.himpl_trans h (HProp.himpl_trans (pF_intro hb f) (pG_pre C B (j, x, y)))
 
 omit [Params] in
 theorem pAll_nil {α : Type} {P : α → Prop} : ∀ b ∈ ([] : List α), P b := by
@@ -479,158 +261,17 @@ theorem pLen_intro (B : List (List (List (Option Nat)))) (i k : Nat)
   obtain ⟨b, hb, hl⟩ := h
   exact hS i k ⟨b, hb, pLenC_mono (fun j k' hj => hj S hS) b k hl⟩
 
-theorem pKN_intro {W : Nat → Int → HProp} {P : Nat → Prop} {h : Heap} (k : Nat) (n : Int)
-    (hw : W k n h) (hp : P k) : (∃✶ k, ∃✶ n, W k n ✶ ⌈P k⌉) h :=
-  HProp.hexists_intro k _ (HProp.hexists_intro n _ ((HProp.hstar_hpure_r (P k) (W k n) h).2 ⟨hw, hp⟩))
+theorem wseg_inv1 {σ : Type} (c : σ → σ → Int → HProp) (hc : ∀ s s' w h, c s s' w h → w = 1)
+    (k : Nat) (n : Int) (s t : σ) : ∀ h, wseg c k n s t h → n = (k : Int) ∧ (k = 0 → s = t) :=
+  wseg_inv c (fun _ _ w => w = 1) (fun k s t n => n = (k : Int) ∧ (k = 0 → s = t)) hc
+    (fun _ => ⟨rfl, fun _ => rfl⟩)
+    (fun k _ _ _ w m hw hi => ⟨by rw [hi.1, hw]; push_cast; rfl, fun h => absurd h (Nat.succ_ne_zero k)⟩) k n s t
 
-theorem pKN_elim {W : Nat → Int → HProp} {P : Nat → Prop} {h : Heap}
-    (hh : (∃✶ k, ∃✶ n, W k n ✶ ⌈P k⌉) h) : ∃ k n, W k n h ∧ P k := by
-  obtain ⟨k, hh⟩ := HProp.hexists_elim hh
-  obtain ⟨n, hh⟩ := HProp.hexists_elim hh
-  exact ⟨k, n, (HProp.hstar_hpure_r (P k) (W k n) h).1 hh⟩
-
-theorem pCell_seg (C : Nat → Nat → HProp) (x u : Nat) : C x u ==> wseg (pCell C) 1 1 x u := by
-  refine HProp.himpl_trans ?_ (wseg_cell (pCell C) x u 1)
-  intro h hh
-  exact HProp.hexists_intro u _ ((HProp.hstar_hpure_r _ _ h).2 ⟨hh, rfl, rfl⟩)
-
-theorem pItem_abs (C : Nat → Nat → HProp) (S : Nat → Nat → Prop) (M : Nat → Nat → Nat → HProp)
-    (hM : ∀ j x y, M j x y ==> ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈S j k⌉) :
-    ∀ (it : Option Nat) (x y : Nat),
-      pItem C M it x y ==> ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈pLenC S [it] k⌉
-  | none, x, y => by
-    intro h hh
-    exact pKN_intro 1 1 (pCell_seg C x y h hh) ⟨0, rfl, rfl⟩
-  | some j, x, y => by
-    intro h hh
-    obtain ⟨k, n, hw, hk⟩ := pKN_elim (hM j x y h hh)
-    exact pKN_intro k n hw ⟨k, 0, rfl, hk, rfl⟩
-
-omit [Params] in
-theorem pLenC_cons (S : Nat → Nat → Prop) (it : Option Nat) (r : List (Option Nat)) (k1 k2 : Nat)
-    (h1 : pLenC S [it] k1) (h2 : pLenC S r k2) : pLenC S (it :: r) (k1 + k2) := by
-  cases it with
-  | none =>
-    obtain ⟨k', hk, hz⟩ := h1
-    have hz' : k' = 0 := hz
-    exact ⟨k2, by omega, h2⟩
-  | some j =>
-    obtain ⟨a, b, hk, hj, hz⟩ := h1
-    have hz' : b = 0 := hz
-    exact ⟨a, k2, by omega, hj, h2⟩
-
-theorem pChain_abs (C : Nat → Nat → HProp) (S : Nat → Nat → Prop) (M : Nat → Nat → Nat → HProp)
-    (hM : ∀ j x y, M j x y ==> ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈S j k⌉) (f : Nat → Nat) :
-    ∀ (b : List (Option Nat)) (i x y : Nat),
-      pChain C M f b i x y ==> ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈pLenC S b k⌉
-  | [], _, x, y => by
-    intro h hh
-    obtain ⟨hxy, he⟩ := HProp.hpure_elim_hempty hh
-    exact pKN_intro 0 0 (wseg_nil (pCell C) 0 x y hxy rfl h he) (show pLenC S [] 0 from rfl)
-  | [it], _, x, y => pItem_abs C S M hM it x y
-  | it :: it2 :: r, i, x, y => by
-    intro h hh
-    obtain ⟨h1, h2, m1, m2, hd, he⟩ := HProp.hstar_elim hh
-    obtain ⟨k1, n1, hw1, hk1⟩ := pKN_elim (pItem_abs C S M hM it x (f i) h1 m1)
-    obtain ⟨k2, n2, hw2, hk2⟩ := pKN_elim (pChain_abs C S M hM f (it2 :: r) (i + 1) (f i) y h2 m2)
-    have := wseg_join (pCell C) k1 k2 n1 n2 x (f i) y h (he ▸ HProp.hstar_intro hw1 hw2 hd)
-    exact pKN_intro (k1 + k2) (n1 + n2) this (pLenC_cons S it (it2 :: r) k1 k2 hk1 hk2)
-
-theorem pAbs (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (j x y : Nat) :
-    pG C B (j, x, y) ==> ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈pLen B j k⌉ := by
-  refine pG_induct C B (fun a => ∃✶ k, ∃✶ n, wseg (pCell C) k n a.2.1 a.2.2 ✶ ⌈pLen B a.1 k⌉) ?_ (j, x, y)
-  intro c h ⟨b, hb, f, hh⟩
-  obtain ⟨k, n, hw, hk⟩ := pKN_elim (pChain_abs C (pLen B)
-    (fun j x y => ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈pLen B j k⌉)
-    (fun j x y => HProp.himpl_refl _) f b 0 c.2.1 c.2.2 h hh)
-  exact pKN_intro k n hw (pLen_intro B c.1 k ⟨b, hb, hk⟩)
-
-theorem pChain_congr (C : Nat → Nat → HProp) (X : Nat → Nat → Nat → HProp) (f g : Nat → Nat) :
-    ∀ (b : List (Option Nat)) (i x y : Nat), (∀ l, i ≤ l → f l = g l) →
-      pChain C X f b i x y = pChain C X g b i x y
-  | [], _, _, _, _ => rfl
-  | [_], _, _, _, _ => rfl
-  | it :: it2 :: r, i, x, y, h => by
-    show pItem C X it x (f i) ✶ pChain C X f (it2 :: r) (i + 1) (f i) y =
-      pItem C X it x (g i) ✶ pChain C X g (it2 :: r) (i + 1) (g i) y
-    rw [h i (Nat.le_refl i), pChain_congr C X f g (it2 :: r) (i + 1) (g i) y
-      (fun l hl => h l (by omega))]
-
-theorem pItem_conc (C : Nat → Nat → HProp) (S : Nat → Nat → Prop) (M : Nat → Nat → Nat → HProp)
-    (hM : ∀ j k, S j k → ∀ n x y, wseg (pCell C) k n x y ==> M j x y) :
-    ∀ (it : Option Nat) (k : Nat), pLenC S [it] k → ∀ n x y, wseg (pCell C) k n x y ==> pItem C M it x y
-  | none, k, ⟨k', hk, hz⟩, n, x, y => by
-    have hz' : k' = 0 := hz
-    subst hz' hk
-    intro h hh
-    obtain ⟨u, hh⟩ := HProp.hexists_elim (wseg_uncell (pCell C) x y n h hh)
-    obtain ⟨h1, h2, m1, m2, hd, he⟩ := HProp.hstar_elim hh
-    obtain ⟨⟨hyu, _⟩, he2⟩ := HProp.hpure_elim m2
-    subst he2 hyu
-    rw [he, Finmap.union_empty]
-    exact m1
-  | some j, k, ⟨k1, k2, hk, hj, hz⟩, n, x, y => by
-    have hz' : k2 = 0 := hz
-    subst hz'
-    rw [Nat.add_zero] at hk
-    subst hk
-    exact hM j _ hj n x y
-
-theorem pChain_conc (C : Nat → Nat → HProp) (S : Nat → Nat → Prop) (M : Nat → Nat → Nat → HProp)
-    (hM : ∀ j k, S j k → ∀ n x y, wseg (pCell C) k n x y ==> M j x y) :
-    ∀ (b : List (Option Nat)) (i k : Nat), pLenC S b k → ∀ n x y,
-      wseg (pCell C) k n x y ==> fun h => ∃ f : Nat → Nat, pChain C M f b i x y h
-  | [], _, k, hk, n, x, y => by
-    have hk' : k = 0 := hk
-    subst hk'
-    intro h hh
-    obtain ⟨⟨hxy, _⟩, he⟩ := HProp.hpure_elim_hempty hh
-    exact ⟨id, HProp.hpure_intro_hempty he hxy⟩
-  | [it], _, k, hk, n, x, y => by
-    intro h hh
-    exact ⟨id, pItem_conc C S M hM it k hk n x y h hh⟩
-  | it :: it2 :: r, i, k, hk, n, x, y => by
-    have hsplit : ∃ k1 k2, k = k1 + k2 ∧ pLenC S [it] k1 ∧ pLenC S (it2 :: r) k2 := by
-      cases it with
-      | none =>
-        obtain ⟨k', hk', hr⟩ := hk
-        exact ⟨1, k', by omega, ⟨0, rfl, rfl⟩, hr⟩
-      | some j =>
-        obtain ⟨k1, k2, hk', hj, hr⟩ := hk
-        exact ⟨k1, k2, hk', ⟨k1, 0, rfl, hj, rfl⟩, hr⟩
-    obtain ⟨k1, k2, hk12, h1, h2⟩ := hsplit
-    subst hk12
-    intro h hh
-    obtain ⟨t, hh⟩ := HProp.hexists_elim (wseg_split (pCell C) k1 k2 n x y h hh)
-    obtain ⟨m, hh⟩ := HProp.hexists_elim hh
-    obtain ⟨ha, hb, ma, mb, hd, he⟩ := HProp.hstar_elim hh
-    obtain ⟨f', hf'⟩ := pChain_conc C S M hM (it2 :: r) (i + 1) k2 h2 (n - m) t y hb mb
-    refine ⟨fun l => if l = i then t else f' l, ?_⟩
-    show (pItem C M it x (if i = i then t else f' i) ✶
-      pChain C M (fun l => if l = i then t else f' l) (it2 :: r) (i + 1) (if i = i then t else f' i) y) h
-    rw [ite_eq_left rfl, pChain_congr C M (fun l => if l = i then t else f' l) f' (it2 :: r) (i + 1) t y
-      (fun l hl => ite_eq_right (by omega))]
-    exact he ▸ HProp.hstar_intro (pItem_conc C S M hM it k1 h1 m x t ha ma) hf' hd
-
-theorem pConc (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (j k : Nat) (hk : pLen B j k)
-    (n : Int) (x y : Nat) : wseg (pCell C) k n x y ==> pG C B (j, x, y) := by
-  refine hk (fun j k => ∀ n x y, wseg (pCell C) k n x y ==> pG C B (j, x, y)) ?_ n x y
-  intro i k ⟨b, hb, hl⟩ n x y h hh
-  obtain ⟨f, hf⟩ := pChain_conc C _ (fun j x y => pG C B (j, x, y)) (fun j k hj => hj) b 0 k hl n x y h hh
-  exact pG_pre C B (i, x, y) h ⟨b, hb, f, hf⟩
-
-theorem pInv (C : Nat → Nat → HProp) (k : Nat) (n : Int) (s t : Nat) :
-    ∀ h, wseg (pCell C) k n s t h → n = (k : Int) ∧ (k = 0 → s = t) := by
-  intro h hh
-  have := wseg_inv (pCell C) (fun _ _ w => w = 1) (fun k s t n => n = (k : Int) ∧ (k = 0 → s = t))
-    (fun s s' w h hc => by
-      obtain ⟨u, hc⟩ := HProp.hexists_elim hc
-      obtain ⟨_, _, _, m2, _, _⟩ := HProp.hstar_elim hc
-      exact (HProp.hpure_elim m2).1.2)
-    (fun s => ⟨rfl, fun _ => rfl⟩)
-    (fun k s s' t w m hw hi => ⟨by rw [hi.1, hw]; push_cast; rfl, fun h => absurd h (Nat.succ_ne_zero k)⟩)
-    k n s t h hh
-  exact this
+theorem pCell_w (C : Nat → Nat → HProp) : ∀ (s s' : Nat) (w : Int) h, pCell C s s' w h → w = 1 := by
+  intro s s' w h hc
+  obtain ⟨u, hc⟩ := HProp.hexists_elim hc
+  obtain ⟨_, _, _, m2, _, _⟩ := HProp.hstar_elim hc
+  exact (HProp.hpure_elim m2).1.2
 
 def pNth {α : Type} : List α → Nat → α → α
   | [], _, d => d
@@ -1324,55 +965,10 @@ theorem pAllIdx_lt (P : Nat → Prop) : ∀ i n, pAllIdx P i n → ∀ j, i ≤ 
     · exact hj ▸ hp
     · exact pAllIdx_lt P (i + 1) n hr j (by omega) (by omega)
 
-def pNone : Nat → Nat → HProp := fun _ _ => ⌈False⌉
-
-theorem pG_conc (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (Ms : List (Nat → Nat → HProp))
-    (H : pAllIdx (fun j => ∀ b ∈ pNthK B j [], ∀ (f : Nat → Nat) (x y : Nat),
-      pChain C (fun j x y => (pNthK Ms j pNone) x y) f b 0 x y ==> (pNthK Ms j pNone) x y) 0 (pLenK B))
-    (j x y : Nat) : pG C B (j, x, y) ==> (pNthK Ms j pNone) x y := by
-  refine pG_induct C B (fun a => (pNthK Ms a.1 pNone) a.2.1 a.2.2) ?_ (j, x, y)
-  intro c h ⟨b, hb, f, hh⟩
-  have hi : c.1 < B.length := by
-    by_contra hc
-    rw [pNthK_getD, List.getD_eq_getElem?_getD, List.getElem?_eq_none (Nat.le_of_not_lt hc)] at hb
-    cases hb
-  exact pAllIdx_lt _ 0 (pLenK B) H c.1 (Nat.zero_le _) (by rw [pLenK_eq]; omega) b hb f c.2.1 c.2.2 h hh
-
 theorem pEqSymm (a b : Nat) : (⌈a = b⌉ : HProp) ==> ⌈b = a⌉ := by
   intro h hh
   obtain ⟨he, hh⟩ := HProp.hpure_elim_hempty hh
   exact HProp.hpure_intro_hempty hh he.symm
-
-theorem pAbsPhi (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat))
-    (hA : pChkAK B prof = true) (j m p : Nat) (rs : List Nat) (hpr : pNthK prof j pDflt = (m, p, rs)) (x y : Nat) :
-    pG C B (j, x, y) ==> ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈phiI m p rs (k : Int)⌉ := by
-  rw [pChkAK_eq] at hA
-  rw [pNthK_getD] at hpr
-  refine HProp.himpl_trans (pAbs C B j x y) ?_
-  intro h hh
-  obtain ⟨k, n, hw, hk⟩ := pKN_elim hh
-  have hs := pChkA_sound B prof hA j k hk
-  simp only [pSet, hpr] at hs
-  exact pKN_intro k n hw (phiI_of_inS hs)
-
-theorem pConcPhi (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat))
-    (rk : List Nat) (N : Nat) (sps : List Nat)
-    (cert : List (List (Nat × Nat × List (Option Nat)) × List (Nat × Nat × Nat × List (Option Nat))))
-    (hC : pChkCK B prof rk N sps cert = true) (j m p : Nat) (rs : List Nat) (hj : Nat.blt j (pLenK B) = true)
-    (hpr : pNthK prof j pDflt = (m, p, rs)) (k : Nat) (n : Int) (x y : Nat) (hk : phiI m p rs (k : Int)) :
-    wseg (pCell C) k n x y ==> pG C B (j, x, y) := by
-  rw [pChkCK_eq] at hC
-  rw [pNthK_getD] at hpr
-  rw [Nat.blt_eq, pLenK_eq] at hj
-  have hc' := hC
-  simp only [pChkC, pNth_eq, pMemB_eq, pblt, pbeq, List.all_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hc'
-  obtain ⟨⟨⟨⟨⟨⟨_, _⟩, h1⟩, _⟩, _⟩, _⟩, _⟩ := hc' j (List.mem_range.mpr hj)
-  rw [hpr] at h1
-  have hin : inS m p rs k = true := inS_of_phiI (fun hp1 => by
-    subst hp1
-    simpa using h1) hk
-  have hin' : inSp prof j k = true := by simp only [inSp, pNth_eq, hpr]; exact hin
-  exact pConc C B j k (pChkC_sound B prof rk N sps cert hC _ j k rfl hj hin') n x y
 
 theorem pDrop (P : Prop) : (⌈P⌉ : HProp) ==> emp := by
   intro h hh
@@ -1387,26 +983,6 @@ theorem pDupNe (a b : Nat) : (⌈a ≠ b⌉ : HProp) ==> ⌈a ≠ b⌉ ✶ ⌈b 
   intro h hh
   obtain ⟨hp, he⟩ := HProp.hpure_elim_hempty hh
   exact (HProp.hstar_hpure_l _ _ h).2 ⟨hp, HProp.hpure_intro_hempty he (Ne.symm hp)⟩
-
-theorem pAbsLe (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat))
-    (hA : pChkAK B prof = true) (j m : Nat) (rs : List Nat) (hpr : pNthK prof j pDflt = (m, 1, rs)) (x y : Nat) :
-    pG C B (j, x, y) ==> ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈m ≤ k⌉ := by
-  rw [pChkAK_eq] at hA
-  rw [pNthK_getD] at hpr
-  refine HProp.himpl_trans (pAbs C B j x y) ?_
-  intro h hh
-  obtain ⟨k, n, hw, hk⟩ := pKN_elim hh
-  have hs := pChkA_sound B prof hA j k hk
-  simp only [pSet, hpr, inS, pble, Bool.and_eq_true, decide_eq_true_eq] at hs
-  exact pKN_intro k n hw hs.1
-
-theorem pConcLe (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat))
-    (rk : List Nat) (N : Nat) (sps : List Nat)
-    (cert : List (List (Nat × Nat × List (Option Nat)) × List (Nat × Nat × Nat × List (Option Nat))))
-    (hC : pChkCK B prof rk N sps cert = true) (j m : Nat) (rs : List Nat) (hj : Nat.blt j (pLenK B) = true)
-    (hpr : pNthK prof j pDflt = (m, 1, rs)) (k : Nat) (n : Int) (x y : Nat) (hk : m ≤ k) :
-    wseg (pCell C) k n x y ==> pG C B (j, x, y) :=
-  pConcPhi C B prof rk N sps cert hC j m 1 rs hj hpr k n x y (Int.ofNat_le.mpr hk)
 
 end Sep
 
@@ -1946,66 +1522,12 @@ theorem hguard_intro {P : Prop} {H R : HProp} (k : P → H ==> R) : H ==> hguard
 theorem hguard_elim {P : Prop} {H : HProp} (hp : P) : hguard P H ==> H :=
   fun _ hh => hh hp
 
-theorem wseg_abs_with {α σ : Type} (F : (α → HProp) → α → HProp)
-    (hmono : ∀ X Y : α → HProp, (∀ a, X a ==> Y a) → ∀ a, F X a ==> F Y a)
-    (hfold : ∀ a, F (lfpG F) a ==> lfpG F a)
-    (c : σ → σ → Int → HProp) (st : α → σ) (rel : α → α → Int → Prop) (Q B : α → HProp)
-    (hstep : ∀ a, F (fun b => hwith (lfpG F b) (Q b)) a ==> wor (B a)
-      (∃✶ a', ∃✶ w, ⌈rel a a' w⌉ ✶ (c (st a) (st a') w ✶ hwith (lfpG F a') (Q a'))))
-    (hbase : ∀ a, B a ==> Q a)
-    (hcons : ∀ a a' w, rel a a' w → c (st a) (st a') w ✶ Q a' ==> Q a) (a : α) : lfpG F a ==> Q a :=
-  lfpG_induct_with F Q hmono hfold (fun b => HProp.himpl_trans (hstep b) (wor_elim (hbase b)
-    (HProp.himpl_hexists_l (fun a' => HProp.himpl_hexists_l (fun w =>
-      HProp.himpl_hstar_hpure_l (fun hr => HProp.himpl_trans
-        (HProp.himpl_frame_r (hwith_r _ _)) (hcons b a' w hr))))))) a
-
-theorem wseg_conc_core {α σ J : Type} (P : α → HProp) (c : σ → σ → Int → HProp) (st : α → σ)
-    (N : α → J → Int) (E : α → J → σ) (T : α → J → HProp) (nx : α → σ → Int → α) (jx : J → Int → J)
-    (kmin : Nat) (I : Nat → σ → σ → Int → Prop) (hI : ∀ k n s t, holdsP (I k s t n) (wseg c k n s t))
-    (hst : ∀ a s' w, holdsP (st (nx a s' w) = s') (c (st a) s' w))
-    (hN : ∀ a j s' w, N (nx a s' w) (jx j w) = N a j - w)
-    (hE : ∀ a j s' w, E (nx a s' w) (jx j w) = E a j)
-    (hT : ∀ a j s' w, T (nx a s' w) (jx j w) = T a j)
-    (hb : ∀ a j, wseg c kmin (N a j) (st a) (E a j) ✶ T a j ==> P a)
-    (h1 : ∀ a s' w k j, I k s' (E a j) (N a j - w) → c (st a) s' w ✶ P (nx a s' w) ==> P a) :
-    ∀ k a j, kmin ≤ k → wseg c k (N a j) (st a) (E a j) ✶ T a j ==> P a := by
-  intro k
-  induction k with
-  | zero =>
-    intro a j hk
-    have : kmin = 0 := by omega
-    subst this
-    exact hb a j
-  | succ k ih =>
-    intro a j hk
-    rcases Nat.lt_or_ge k kmin with hlt | hge
-    · have : kmin = k + 1 := by omega
-      subst this
-      exact hb a j
-    · show (∃✶ s', ∃✶ w, c (st a) s' w ✶ wseg c k (N a j - w) s' (E a j)) ✶ T a j ==> P a
-      rw [HProp.hstar_hexists]
-      refine HProp.himpl_hexists_l (fun s' => ?_)
-      rw [HProp.hstar_hexists]
-      refine HProp.himpl_hexists_l (fun w => ?_)
-      rw [HProp.hstar_assoc]
-      intro h hh
-      obtain ⟨h1', h2', m1, m2, hd, hu⟩ := HProp.hstar_elim hh
-      obtain ⟨g1, g2, n1, n2, hd2, hu2⟩ := HProp.hstar_elim m2
-      have e1 := hst a s' w h1' m1
-      have iv := hI k _ _ _ g1 n1
-      have r := ih (nx a s' w) (jx j w) hge
-      rw [hN, hE, hT, e1] at r
-      rw [hu]
-      exact h1 a s' w k j iv _ (HProp.hstar_intro m1 (r _ m2) hd)
-
 theorem view_hexists {H X : HProp} {R V C : Int → HProp} (h : H ==> ∃✶ w, R w ✶ (V w ✶ X))
     (hv : ∀ w, V w ==> C w) : H ==> ∃✶ w, R w ✶ (C w ✶ X) :=
   HProp.himpl_trans h (HProp.himpl_hexists_l (fun w => HProp.himpl_hexists_r w
     (HProp.himpl_frame_r (HProp.himpl_frame_l (hv w)))))
 
 theorem holdsP_true {H : HProp} : holdsP True H := fun _ _ => trivial
-
-theorem holdsP_of {P : Prop} {H : HProp} (p : P) : holdsP P H := fun _ _ => p
 
 theorem star_emp_r (H : HProp) : H ==> H ✶ emp := by
   rw [HProp.hstar_hempty_r]
@@ -2018,5 +1540,715 @@ theorem star_emp_elim (H : HProp) : H ✶ emp ==> H := by
 theorem hdisj_star_elim {A B K H : HProp} (h1 : A ✶ K ==> H) (h2 : B ✶ K ==> H) : hdisj A B ✶ K ==> H := by
   rw [hdisj_star_l]
   exact hdisj_elim h1 h2
+
+noncomputable def gChain {σ : Type} (c : σ → σ → Int → HProp) (X : Nat → σ → σ → Int → HProp)
+    (b : List (Option Nat)) : σ → σ → Int → HProp :=
+  List.rec (motive := fun _ => σ → σ → Int → HProp) (fun s t n => ⌈s = t ∧ n = 0⌉)
+    (fun it _ ih s t n => Option.rec (motive := fun _ => HProp)
+      (∃✶ s', ∃✶ w, c s s' w ✶ ih s' t (n - w))
+      (fun j => ∃✶ s', ∃✶ m, X j s s' m ✶ ih s' t (n - m)) it) b
+
+def gA {σ : Type} (c : σ → σ → Int → HProp) (B : List (List (List (Option Nat))))
+    (j : Nat) (s t : σ) (n : Int) : HProp :=
+  ∃✶ k, wseg c k n s t ✶ ⌈pLen B j k⌉
+
+def gAny (B : List (List (List (Option Nat)))) (j : Nat) (f : List (Option Nat) → HProp) : HProp :=
+  fun h => ∃ b ∈ pNthK B j [], f b h
+
+def gQ {ι σ J : Type} (c : σ → σ → Int → HProp) (B : List (List (List (Option Nat))))
+    (mem : ι → Nat) (st : ι → σ) (E : ι → J → σ) (N : ι → J → Int) (T : ι → J → HProp) (a : ι) : HProp :=
+  ∃✶ j, gA c B (mem a) (st a) (E a j) (N a j) ✶ T a j
+
+theorem gK_intro {W : Nat → HProp} {P : Nat → Prop} {h : Heap} (k : Nat) (hw : W k h) (hp : P k) :
+    (∃✶ k, W k ✶ ⌈P k⌉) h :=
+  HProp.hexists_intro k _ ((HProp.hstar_hpure_r (P k) (W k) h).2 ⟨hw, hp⟩)
+
+theorem gK_elim {W : Nat → HProp} {P : Nat → Prop} {h : Heap} (hh : (∃✶ k, W k ✶ ⌈P k⌉) h) :
+    ∃ k, W k h ∧ P k := by
+  obtain ⟨k, hh⟩ := HProp.hexists_elim hh
+  exact ⟨k, (HProp.hstar_hpure_r (P k) (W k) h).1 hh⟩
+
+theorem gChain_abs {σ : Type} (c : σ → σ → Int → HProp) (B : List (List (List (Option Nat)))) :
+    ∀ (b : List (Option Nat)) (s t : σ) (n : Int),
+      gChain c (gA c B) b s t n ==> ∃✶ k, wseg c k n s t ✶ ⌈pLenC (pLen B) b k⌉
+  | [], s, t, n => by
+    intro h hh
+    exact gK_intro 0 hh (show pLenC (pLen B) [] 0 from rfl)
+  | none :: r, s, t, n => by
+    intro h hh
+    obtain ⟨s', hh⟩ := HProp.hexists_elim hh
+    obtain ⟨w, hh⟩ := HProp.hexists_elim hh
+    obtain ⟨h1, h2, m1, m2, hd, he⟩ := HProp.hstar_elim hh
+    obtain ⟨k, hw, hk⟩ := gK_elim (gChain_abs c B r s' t (n - w) h2 m2)
+    refine gK_intro (k + 1) ?_ ⟨k, rfl, hk⟩
+    show (∃✶ s'', ∃✶ w', c s s'' w' ✶ wseg c k (n - w') s'' t) h
+    exact HProp.hexists_intro s' _ (HProp.hexists_intro w _ (he ▸ HProp.hstar_intro m1 hw hd))
+  | some j :: r, s, t, n => by
+    intro h hh
+    obtain ⟨s', hh⟩ := HProp.hexists_elim hh
+    obtain ⟨m, hh⟩ := HProp.hexists_elim hh
+    obtain ⟨h1, h2, m1, m2, hd, he⟩ := HProp.hstar_elim hh
+    obtain ⟨k1, hw1, hk1⟩ := gK_elim m1
+    obtain ⟨k2, hw2, hk2⟩ := gK_elim (gChain_abs c B r s' t (n - m) h2 m2)
+    have hj := wseg_join c k1 k2 m (n - m) s s' t h (he ▸ HProp.hstar_intro hw1 hw2 hd)
+    rw [show m + (n - m) = n by omega] at hj
+    exact gK_intro (k1 + k2) hj ⟨k1, k2, rfl, hk1, hk2⟩
+
+theorem gAny_abs {σ : Type} (c : σ → σ → Int → HProp) (B : List (List (List (Option Nat))))
+    (j : Nat) (s t : σ) (n : Int) :
+    gAny B j (fun b => gChain c (gA c B) b s t n) ==> gA c B j s t n := by
+  intro h ⟨b, hb, hh⟩
+  obtain ⟨k, hw, hk⟩ := gK_elim (gChain_abs c B b s t n h hh)
+  exact gK_intro k hw (pLen_intro B j k ⟨b, hb, hk⟩)
+
+theorem gAbs {κ ι σ J : Type} (P : κ → HProp) (G : (κ → HProp) → κ → HProp)
+    (hind : ∀ M : κ → HProp, (∀ a, G M a ==> M a) → ∀ a, P a ==> M a) (emb : κ → ι)
+    (c : σ → σ → Int → HProp) (B : List (List (List (Option Nat)))) (mem : ι → Nat) (st : ι → σ)
+    (E : ι → J → σ) (N : ι → J → Int) (T : ι → J → HProp)
+    (hstep : ∀ a, G (fun b => gQ c B mem st E N T (emb b)) a ==>
+      ∃✶ j, gAny B (mem (emb a)) (fun b => gChain c (gA c B) b (st (emb a)) (E (emb a) j) (N (emb a) j)) ✶
+        T (emb a) j)
+    (a : κ) : P a ==> gQ c B mem st E N T (emb a) :=
+  hind _ (fun b => HProp.himpl_trans (hstep b) (HProp.himpl_hexists_l (fun j =>
+    HProp.himpl_hexists_r j (HProp.himpl_frame_l
+      (gAny_abs c B (mem (emb b)) (st (emb b)) (E (emb b) j) (N (emb b) j)))))) a
+
+theorem gAbsP {ι σ J : Type} (c : σ → σ → Int → HProp) (B : List (List (List (Option Nat))))
+    (mem : ι → Nat) (st : ι → σ) (E : ι → J → σ) (N : ι → J → Int) (T : ι → J → HProp)
+    (a : ι) (R : Nat → J → HProp) (hR : ∀ k j, pLen B (mem a) k → T a j ==> R k j) :
+    gQ c B mem st E N T a ==> ∃✶ k, ∃✶ j, wseg c k (N a j) (st a) (E a j) ✶ R k j := by
+  refine HProp.himpl_hexists_l (fun j => ?_)
+  intro h hh
+  obtain ⟨h1, h2, m1, m2, hd, he⟩ := HProp.hstar_elim hh
+  obtain ⟨k, hw, hk⟩ := gK_elim m1
+  exact HProp.hexists_intro k _ (HProp.hexists_intro j _ (he ▸ HProp.hstar_intro hw (hR k j hk h2 m2) hd))
+
+theorem gAny_intro {B : List (List (List (Option Nat)))} {j : Nat} {f : List (Option Nat) → HProp}
+    {b : List (Option Nat)} (hb : b ∈ pNthK B j []) : f b ==> gAny B j f :=
+  fun _ hh => ⟨b, hb, hh⟩
+
+theorem gChain_step {ι σ J : Type} (c : σ → σ → Int → HProp) (B : List (List (List (Option Nat))))
+    (mem : ι → Nat) (st : ι → σ) (E : ι → J → σ) (N : ι → J → Int) (T : ι → J → HProp)
+    (a a' : ι) (w : Int) (jm : J → J)
+    (hr : ∀ j', E a' j' = E a (jm j') ∧ T a' j' = T a (jm j') ∧ N a (jm j') = N a' j' + w) :
+    c (st a) (st a') w ✶ gQ c B mem st E N T a' ==>
+      ∃✶ j, gChain c (gA c B) [none, some (mem a')] (st a) (E a j) (N a j) ✶ T a j := by
+  rw [HProp.hstar_comm]
+  show (∃✶ j', gA c B (mem a') (st a') (E a' j') (N a' j') ✶ T a' j') ✶ c (st a) (st a') w ==> _
+  rw [HProp.hstar_hexists]
+  refine HProp.himpl_hexists_l (fun j' => HProp.himpl_hexists_r (jm j') ?_)
+  obtain ⟨hE, hT, hN⟩ := hr j'
+  rw [← hT, HProp.hstar_comm, ← HProp.hstar_assoc]
+  refine HProp.himpl_frame_l ?_
+  show c (st a) (st a') w ✶ gA c B (mem a') (st a') (E a' j') (N a' j') ==>
+    ∃✶ s', ∃✶ w', c (st a) s' w' ✶ (∃✶ s'', ∃✶ m, gA c B (mem a') s' s'' m ✶
+      ⌈s'' = E a (jm j') ∧ N a (jm j') - w' - m = 0⌉)
+  refine HProp.himpl_hexists_r (st a') (HProp.himpl_hexists_r w (HProp.himpl_frame_r ?_))
+  exact HProp.himpl_hexists_r (E a' j') (HProp.himpl_hexists_r (N a' j')
+    (pure_r_intro ⟨hE, by omega⟩ (HProp.himpl_refl _)))
+
+def gCons {α : Type} (x : α) (f : Nat → α) : Nat → α := fun i => Nat.casesOn (motive := fun _ => α) i x f
+
+noncomputable def gChainC {ι σ : Type} (cv : σ → σ → Int → HProp) (P : ι → HProp)
+    (arg : Nat → Bool → σ → σ → Int → ι) (b : List (Option Nat)) :
+    (Nat → σ) → (Nat → Int) → HProp → σ → σ → Int → HProp :=
+  List.rec (motive := fun _ => (Nat → σ) → (Nat → Int) → HProp → σ → σ → Int → HProp)
+    (fun _ _ TT _ _ _ => TT)
+    (fun it r ih f g TT s t n => List.rec (motive := fun _ => HProp)
+      (Option.rec (motive := fun _ => HProp) (cv s t n ✶ TT) (fun j => P (arg j true s t n)) it)
+      (fun _ _ _ => Option.rec (motive := fun _ => HProp)
+        (cv s (f 0) (g 0) ✶ ih (fun i => f (i + 1)) (fun i => g (i + 1)) TT (f 0) t (n - g 0))
+        (fun j => P (arg j false s (f 0) (g 0)) ✶
+          ih (fun i => f (i + 1)) (fun i => g (i + 1)) TT (f 0) t (n - g 0)) it) r) b
+
+def gChainI {σ : Type} (I : Nat → σ → σ → Int → Prop) (b : List (Option Nat)) :
+    (Nat → σ) → (Nat → Int) → (Nat → Nat) → σ → σ → Int → Prop :=
+  List.rec (motive := fun _ => (Nat → σ) → (Nat → Int) → (Nat → Nat) → σ → σ → Int → Prop)
+    (fun _ _ _ s t n => s = t ∧ n = 0)
+    (fun it r ih f g kf s t n => List.rec (motive := fun _ => Prop)
+      (Option.rec (motive := fun _ => Prop) True (fun _ => I (kf 0) s t n) it)
+      (fun _ _ _ => Option.rec (motive := fun _ => Prop)
+        (ih (fun i => f (i + 1)) (fun i => g (i + 1)) (fun i => kf (i + 1)) (f 0) t (n - g 0))
+        (fun _ => I (kf 0) s (f 0) (g 0) ∧
+          ih (fun i => f (i + 1)) (fun i => g (i + 1)) (fun i => kf (i + 1)) (f 0) t (n - g 0)) it) r) b
+
+def gNL (nl : Nat → Bool) (b : List (Option Nat)) : Bool :=
+  List.rec (motive := fun _ => Bool) true
+    (fun it r ih => List.rec (motive := fun _ => Bool) true
+      (fun _ _ _ => Option.rec (motive := fun _ => Bool) ih (fun j => nl j && ih) it) r) b
+
+def gNLB (nl : Nat → Bool) (B : List (List (List (Option Nat)))) : Bool := B.all (fun bs => bs.all (gNL nl))
+
+omit [Params] in
+theorem gNLB_true (B : List (List (List (Option Nat)))) : gNLB (fun _ => true) B = true := by
+  have h : ∀ b, gNL (fun _ => true) b = true := by
+    intro b
+    induction b with
+    | nil => rfl
+    | cons it r ih =>
+      cases r with
+      | nil => rfl
+      | cons it2 r2 =>
+        cases it with
+        | none => exact ih
+        | some j => exact (Bool.true_and _).trans ih
+  simp [gNLB, h]
+
+theorem gConc {ι σ J : Type} (c : σ → σ → Int → HProp) (B : List (List (List (Option Nat))))
+    (mem : ι → Nat) (st : ι → σ) (E : ι → J → σ) (N : ι → J → Int) (T : ι → J → HProp)
+    (arg : ι → J → Nat → Bool → σ → σ → Int → ι × J)
+    (hmem : ∀ a jj j l s s' m, j < B.length → mem (arg a jj j l s s' m).1 = j)
+    (I : Nat → σ → σ → Int → Prop) (hI : ∀ k n s t, holdsP (I k s t n) (wseg c k n s t))
+    (nl : Nat → Bool) (hnl : gNLB nl B = true)
+    (hf : ∀ a jj j s s' m k, nl j = true → I k s s' m →
+      st (arg a jj j false s s' m).1 = s ∧ N (arg a jj j false s s' m).1 (arg a jj j false s s' m).2 = m ∧
+      E (arg a jj j false s s' m).1 (arg a jj j false s s' m).2 = s' ∧
+      T (arg a jj j false s s' m).1 (arg a jj j false s s' m).2 = emp)
+    (ht : ∀ a jj j s m k, I k s (E a jj) m →
+      st (arg a jj j true s (E a jj) m).1 = s ∧
+      N (arg a jj j true s (E a jj) m).1 (arg a jj j true s (E a jj) m).2 = m ∧
+      E (arg a jj j true s (E a jj) m).1 (arg a jj j true s (E a jj) m).2 = E a jj ∧
+      T (arg a jj j true s (E a jj) m).1 (arg a jj j true s (E a jj) m).2 = T a jj)
+    (cv : σ → σ → Int → HProp) (hcv : ∀ s t n, c s t n ==> cv s t n) (P : ι → HProp)
+    (hbr : ∀ a jj, ∀ b ∈ pNthK B (mem a) [], ∀ f g kf, gChainI I b f g kf (st a) (E a jj) (N a jj) →
+      gChainC cv P (fun j l s s' m => (arg a jj j l s s' m).1) b f g (T a jj) (st a) (E a jj) (N a jj) ==> P a)
+    (k : Nat) (a : ι) (jj : J) (hk : pLen B (mem a) k) :
+    wseg c k (N a jj) (st a) (E a jj) ✶ T a jj ==> P a := by
+  refine (hk (fun j k => j < B.length ∧
+    ∀ a jj, mem a = j → wseg c k (N a jj) (st a) (E a jj) ✶ T a jj ==> P a) ?_).2 a jj rfl
+  intro i k ⟨b, hb, hl⟩
+  have hi : i < B.length := by
+    rw [pNthK_getD] at hb
+    by_contra hc
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (Nat.le_of_not_lt hc)] at hb
+    cases hb
+  refine ⟨hi, fun a jj hma => ?_⟩
+  subst hma
+  let S := fun j k => j < B.length ∧
+    ∀ a jj, mem a = j → wseg c k (N a jj) (st a) (E a jj) ✶ T a jj ==> P a
+  have call : ∀ j k1, S j k1 → ∀ (l : Bool) (s s' : σ) (m : Int) (TT : HProp),
+      st (arg a jj j l s s' m).1 = s ∧ N (arg a jj j l s s' m).1 (arg a jj j l s s' m).2 = m ∧
+      E (arg a jj j l s s' m).1 (arg a jj j l s s' m).2 = s' ∧
+      T (arg a jj j l s s' m).1 (arg a jj j l s s' m).2 = TT →
+      wseg c k1 m s s' ✶ TT ==> P (arg a jj j l s s' m).1 := by
+    intro j k1 hS l s s' m TT ⟨hs, hn, he, ht⟩
+    have := hS.2 (arg a jj j l s s' m).1 (arg a jj j l s s' m).2 (hmem _ _ _ _ _ _ _ hS.1)
+    rw [hn, hs, he, ht] at this
+    exact this
+  let ag := fun j l s s' m => (arg a jj j l s s' m).1
+  have chain : ∀ (b : List (Option Nat)) (k : Nat), gNL nl b = true → pLenC S b k → ∀ (s : σ) (n : Int),
+      wseg c k n s (E a jj) ✶ T a jj ==>
+        ∃✶ f, ∃✶ g, ∃✶ kf, ⌈gChainI I b f g kf s (E a jj) n⌉ ✶
+          gChainC cv P ag b f g (T a jj) s (E a jj) n := by
+    intro b
+    induction b with
+    | nil =>
+      intro k _ hk s n
+      have hk' : k = 0 := hk
+      subst hk'
+      exact HProp.himpl_hexists_r (fun _ => s) (HProp.himpl_hexists_r (fun _ => 0)
+        (HProp.himpl_hexists_r (fun _ => 0) (HProp.himpl_refl _)))
+    | cons it r ih =>
+      intro k hnb hk s n
+      cases r with
+      | nil =>
+        cases it with
+        | none =>
+          obtain ⟨k', hk', hr⟩ := hk
+          have hk0 : k' = 0 := hr
+          subst hk' hk0
+          refine HProp.himpl_hexists_r (fun _ => s) (HProp.himpl_hexists_r (fun _ => 0)
+            (HProp.himpl_hexists_r (fun _ => 0) ?_))
+          refine HProp.himpl_hstar_hpure_r trivial ?_
+          exact HProp.himpl_frame_l (HProp.himpl_trans (wseg_uncell c s (E a jj) n) (hcv s (E a jj) n))
+        | some j =>
+          obtain ⟨k1, k2, hk12, hS, hr⟩ := hk
+          have hk2 : k2 = 0 := hr
+          subst hk12 hk2
+          refine HProp.himpl_hexists_r (fun _ => s) (HProp.himpl_hexists_r (fun _ => 0)
+            (HProp.himpl_hexists_r (fun _ => k1) ?_))
+          refine himpl_of_holds (holdsP_star_l (hI k1 n s (E a jj))) (fun hi => ?_)
+          refine HProp.himpl_hstar_hpure_r hi ?_
+          exact call j k1 hS true s (E a jj) n (T a jj) (ht a jj j s n k1 hi)
+      | cons it2 r2 =>
+        cases it with
+        | none =>
+          obtain ⟨k', hk', hr⟩ := hk
+          subst hk'
+          show (∃✶ s', ∃✶ w, c s s' w ✶ wseg c k' (n - w) s' (E a jj)) ✶ T a jj ==> _
+          rw [HProp.hstar_hexists]
+          refine HProp.himpl_hexists_l (fun s' => ?_)
+          rw [HProp.hstar_hexists]
+          refine HProp.himpl_hexists_l (fun w => ?_)
+          rw [HProp.hstar_assoc]
+          refine HProp.himpl_trans (HProp.himpl_frame_lr (hcv s s' w) (ih k' hnb hr s' (n - w))) ?_
+          rw [HProp.hstar_comm, HProp.hstar_hexists]
+          refine HProp.himpl_hexists_l (fun f => HProp.himpl_hexists_r (gCons s' f) ?_)
+          rw [HProp.hstar_hexists]
+          refine HProp.himpl_hexists_l (fun g => HProp.himpl_hexists_r (gCons w g) ?_)
+          rw [HProp.hstar_hexists]
+          refine HProp.himpl_hexists_l (fun kf => HProp.himpl_hexists_r (gCons 0 kf) ?_)
+          rw [HProp.hstar_comm]
+          exact perm_swap _ _ _
+        | some j =>
+          obtain ⟨k1, k2, hk12, hS, hr⟩ := hk
+          subst hk12
+          have hnb' : nl j = true ∧ gNL nl (it2 :: r2) = true := Bool.and_eq_true _ _ ▸ hnb
+          refine HProp.himpl_trans (HProp.himpl_frame_l (wseg_split c k1 k2 n s (E a jj))) ?_
+          rw [HProp.hstar_hexists]
+          refine HProp.himpl_hexists_l (fun s' => ?_)
+          rw [HProp.hstar_hexists]
+          refine HProp.himpl_hexists_l (fun m => ?_)
+          rw [HProp.hstar_assoc]
+          refine himpl_of_holds (holdsP_star_l (hI k1 m s s')) (fun hi => ?_)
+          refine HProp.himpl_trans (HProp.himpl_frame_lr (HProp.himpl_trans (star_emp_r _)
+            (call j k1 hS false s s' m emp (hf a jj j s s' m k1 hnb'.1 hi)))
+            (ih k2 hnb'.2 hr s' (n - m))) ?_
+          rw [HProp.hstar_comm, HProp.hstar_hexists]
+          refine HProp.himpl_hexists_l (fun f => HProp.himpl_hexists_r (gCons s' f) ?_)
+          rw [HProp.hstar_hexists]
+          refine HProp.himpl_hexists_l (fun g => HProp.himpl_hexists_r (gCons m g) ?_)
+          rw [HProp.hstar_hexists]
+          refine HProp.himpl_hexists_l (fun kf => HProp.himpl_hexists_r (gCons k1 kf) ?_)
+          rw [HProp.hstar_comm]
+          refine HProp.himpl_trans (perm_swap _ _ _) ?_
+          refine HProp.himpl_hstar_hpure_l (fun hr' => HProp.himpl_hstar_hpure_r ⟨hi, hr'⟩ ?_)
+          exact HProp.himpl_refl _
+  have hgb : gNL nl b = true := by
+    rw [pNthK_getD, List.getD_eq_getElem?_getD] at hb
+    cases hB : B[mem a]? with
+    | none => rw [hB] at hb; cases hb
+    | some bs =>
+      rw [hB] at hb
+      exact List.all_eq_true.1 (List.all_eq_true.1 hnl bs (List.mem_of_getElem? hB)) b hb
+  refine HProp.himpl_trans (chain b k hgb hl (st a) (N a jj)) ?_
+  refine HProp.himpl_hexists_l (fun f => HProp.himpl_hexists_l (fun g => HProp.himpl_hexists_l (fun kf => ?_)))
+  exact HProp.himpl_hstar_hpure_l (fun hc => hbr a jj b hb f g kf hc)
+
+omit [Params] in
+theorem gPhiA (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat))
+    (hA : pChkAK B prof = true) (j m p : Nat) (rs : List Nat) (hpr : pNthK prof j pDflt = (m, p, rs))
+    (k : Nat) (hk : pLen B j k) : phiI m p rs (k : Int) := by
+  rw [pChkAK_eq] at hA
+  rw [pNthK_getD] at hpr
+  have hs := pChkA_sound B prof hA j k hk
+  simp only [pSet, hpr] at hs
+  exact phiI_of_inS hs
+
+omit [Params] in
+theorem gLeA (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat))
+    (hA : pChkAK B prof = true) (j m : Nat) (rs : List Nat) (hpr : pNthK prof j pDflt = (m, 1, rs))
+    (k : Nat) (hk : pLen B j k) : m ≤ k := by
+  rw [pChkAK_eq] at hA
+  rw [pNthK_getD] at hpr
+  have hs := pChkA_sound B prof hA j k hk
+  simp only [pSet, hpr, inS, pble, Bool.and_eq_true, decide_eq_true_eq] at hs
+  exact hs.1
+
+omit [Params] in
+theorem gPhiC (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat))
+    (rk : List Nat) (N : Nat) (sps : List Nat)
+    (cert : List (List (Nat × Nat × List (Option Nat)) × List (Nat × Nat × Nat × List (Option Nat))))
+    (hC : pChkCK B prof rk N sps cert = true) (j m p : Nat) (rs : List Nat) (hj : Nat.blt j (pLenK B) = true)
+    (hpr : pNthK prof j pDflt = (m, p, rs)) (k : Nat) (hk : phiI m p rs (k : Int)) : pLen B j k := by
+  rw [pChkCK_eq] at hC
+  rw [pNthK_getD] at hpr
+  rw [Nat.blt_eq, pLenK_eq] at hj
+  have hc' := hC
+  simp only [pChkC, pNth_eq, pMemB_eq, pblt, pbeq, List.all_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hc'
+  obtain ⟨⟨⟨⟨⟨⟨_, _⟩, h1⟩, _⟩, _⟩, _⟩, _⟩ := hc' j (List.mem_range.mpr hj)
+  rw [hpr] at h1
+  have hin : inS m p rs k = true := inS_of_phiI (fun hp1 => by
+    subst hp1
+    simpa using h1) hk
+  have hin' : inSp prof j k = true := by simp only [inSp, pNth_eq, hpr]; exact hin
+  exact pChkC_sound B prof rk N sps cert hC _ j k rfl hj hin'
+
+omit [Params] in
+theorem pLenC_rep (S : Nat → Nat → Prop) : ∀ (n k : Nat), pLenC S (List.replicate n none) k ↔ k = n
+  | 0, k => Iff.rfl
+  | n + 1, k => by
+    show (∃ k', k = k' + 1 ∧ pLenC S (List.replicate n none) k') ↔ k = n + 1
+    constructor
+    · intro ⟨k', hk, hr⟩
+      rw [(pLenC_rep S n k').1 hr] at hk
+      exact hk
+    · intro hk
+      exact ⟨n, hk, (pLenC_rep S n n).2 rfl⟩
+
+omit [Params] in
+theorem pLen_lin (B : List (List (List (Option Nat)))) (j kmin : Nat)
+    (hB : pNthK B j [] = [List.replicate kmin none, [none, some j]]) (k : Nat) :
+    pLen B j k ↔ kmin ≤ k := by
+  constructor
+  · intro hk
+    refine hk (fun i k => i = j → kmin ≤ k) ?_ rfl
+    intro i k ⟨b, hb, hl⟩ hij
+    subst hij
+    rw [hB] at hb
+    rcases List.mem_cons.1 hb with hb | hb
+    · subst hb
+      exact Nat.le_of_eq ((pLenC_rep _ kmin k).1 hl).symm
+    · rcases List.mem_cons.1 hb with hb | hb
+      · subst hb
+        obtain ⟨k', hk', k1, k2, hk12, hS, hz⟩ := hl
+        have hz' : k2 = 0 := hz
+        have := hS rfl
+        omega
+      · cases hb
+  · intro hk
+    obtain ⟨d, rfl⟩ := Nat.exists_eq_add_of_le hk
+    induction d with
+    | zero =>
+      refine pLen_intro B j (kmin + 0) ⟨List.replicate kmin none, by rw [hB]; simp, ?_⟩
+      exact (pLenC_rep _ kmin _).2 rfl
+    | succ d ih =>
+      refine pLen_intro B j (kmin + (d + 1)) ⟨[none, some j], by rw [hB]; simp, ?_⟩
+      exact ⟨kmin + d, by omega, kmin + d, 0, rfl, ih (by omega), rfl⟩
+
+noncomputable def gChainL {σ : Type} (Lc : σ → σ → HProp) (Lx : Nat → σ → σ → HProp)
+    (b : List (Option Nat)) : (Nat → σ) → σ → σ → HProp :=
+  List.rec (motive := fun _ => (Nat → σ) → σ → σ → HProp) (fun _ s t => ⌈s = t⌉)
+    (fun it r ih f s t => List.rec (motive := fun _ => HProp)
+      (Option.rec (motive := fun _ => HProp) (Lc s t) (fun j => Lx j s t) it)
+      (fun _ _ _ => Option.rec (motive := fun _ => HProp) (Lc s (f 0)) (fun j => Lx j s (f 0)) it ✶
+        ih (fun i => f (i + 1)) (f 0) t) r) b
+
+theorem gChainL_abs {ι σ J : Type} (c : σ → σ → Int → HProp) (B : List (List (List (Option Nat))))
+    (mem : ι → Nat) (st : ι → σ) (E : ι → J → σ) (N : ι → J → Int) (T : ι → J → HProp)
+    (Lc : σ → σ → HProp) (arg : Nat → σ → σ → ι) (hc : ∀ s t, Lc s t ==> ∃✶ w, c s t w)
+    (hmem : ∀ j s t, mem (arg j s t) = j) (hst : ∀ j s t, st (arg j s t) = s)
+    (hE : ∀ j s t jj, E (arg j s t) jj = t) (hT : ∀ j s t jj, T (arg j s t) jj = emp) :
+    ∀ (b : List (Option Nat)) (f : Nat → σ) (s t : σ),
+      gChainL Lc (fun j s t => gQ c B mem st E N T (arg j s t)) b f s t ==> ∃✶ n, gChain c (gA c B) b s t n := by
+  have one : ∀ (it : Option Nat) (s s' t : σ) (r : List (Option Nat)) (R : HProp),
+      (R ==> ∃✶ n, gChain c (gA c B) r s' t n) →
+      Option.rec (motive := fun _ => HProp) (Lc s s') (fun j => gQ c B mem st E N T (arg j s s')) it ✶ R ==>
+        ∃✶ n, gChain c (gA c B) (it :: r) s t n := by
+    intro it s s' t r R hR
+    refine HProp.himpl_trans (HProp.himpl_frame_r hR) ?_
+    rw [HProp.hstar_comm, HProp.hstar_hexists]
+    refine HProp.himpl_hexists_l (fun n => ?_)
+    cases it with
+    | none =>
+      show gChain c (gA c B) r s' t n ✶ Lc s s' ==> _
+      refine HProp.himpl_trans (HProp.himpl_frame_r (hc s s')) ?_
+      rw [HProp.hstar_comm, HProp.hstar_hexists]
+      refine HProp.himpl_hexists_l (fun w => HProp.himpl_hexists_r (w + n) ?_)
+      show c s s' w ✶ gChain c (gA c B) r s' t n ==>
+        ∃✶ s'', ∃✶ w', c s s'' w' ✶ gChain c (gA c B) r s'' t (w + n - w')
+      refine HProp.himpl_hexists_r s' (HProp.himpl_hexists_r w ?_)
+      rw [show w + n - w = n by omega]
+      exact HProp.himpl_refl _
+    | some j =>
+      show gChain c (gA c B) r s' t n ✶ gQ c B mem st E N T (arg j s s') ==> _
+      rw [HProp.hstar_comm]
+      show (∃✶ jj, gA c B (mem (arg j s s')) (st (arg j s s')) (E (arg j s s') jj) (N (arg j s s') jj) ✶
+        T (arg j s s') jj) ✶ _ ==> _
+      rw [HProp.hstar_hexists]
+      refine HProp.himpl_hexists_l (fun jj => HProp.himpl_hexists_r (N (arg j s s') jj + n) ?_)
+      rw [hT, hE, hmem, hst, HProp.hstar_hempty_r]
+      show gA c B j s s' (N (arg j s s') jj) ✶ gChain c (gA c B) r s' t n ==>
+        ∃✶ s'', ∃✶ m, gA c B j s s'' m ✶ gChain c (gA c B) r s'' t (N (arg j s s') jj + n - m)
+      refine HProp.himpl_hexists_r s' (HProp.himpl_hexists_r (N (arg j s s') jj) ?_)
+      rw [show N (arg j s s') jj + n - N (arg j s s') jj = n by omega]
+      exact HProp.himpl_refl _
+  intro b
+  induction b with
+  | nil =>
+    intro f s t h hh
+    obtain ⟨hst, he⟩ := HProp.hpure_elim_hempty hh
+    exact HProp.hexists_intro 0 _ (HProp.hpure_intro_hempty he ⟨hst, rfl⟩)
+  | cons it r ih =>
+    intro f s t
+    cases r with
+    | nil =>
+      refine HProp.himpl_trans (star_emp_r _) (one it s t t [] emp ?_)
+      exact HProp.himpl_hexists_r 0 (HProp.himpl_hempty_hpure ⟨rfl, rfl⟩)
+    | cons it2 r2 =>
+      exact one it s (f 0) t (it2 :: r2) _ (ih (fun i => f (i + 1)) (f 0) t)
+
+theorem gAnyL {ι σ J : Type} (c : σ → σ → Int → HProp) (B : List (List (List (Option Nat))))
+    (mem : ι → Nat) (st : ι → σ) (E : ι → J → σ) (N : ι → J → Int) (T : ι → J → HProp)
+    (Lc : σ → σ → HProp) (arg : Nat → σ → σ → ι) (hc : ∀ s t, Lc s t ==> ∃✶ w, c s t w)
+    (hmem : ∀ j s t, mem (arg j s t) = j) (hst : ∀ j s t, st (arg j s t) = s)
+    (hE : ∀ j s t jj, E (arg j s t) jj = t) (hT : ∀ j s t jj, T (arg j s t) jj = emp)
+    {j : Nat} {b : List (Option Nat)} (hb : b ∈ pNthK B j []) (f : Nat → σ) (s t : σ) :
+    gChainL Lc (fun j s t => gQ c B mem st E N T (arg j s t)) b f s t ==>
+      ∃✶ n, gAny B j (fun b => gChain c (gA c B) b s t n) ✶ emp :=
+  HProp.himpl_trans (gChainL_abs c B mem st E N T Lc arg hc hmem hst hE hT b f s t)
+    (HProp.himpl_hexists_l (fun n => HProp.himpl_hexists_r n
+      (HProp.himpl_trans (gAny_intro (f := fun b => gChain c (gA c B) b s t n) hb) (star_emp_r _))))
+
+omit [Params] in
+theorem gAllIdx (B : List (List (List (Option Nat)))) (Q : Nat → List (Option Nat) → Prop)
+    (H : pAllIdx (fun j => ∀ b ∈ pNthK B j [], Q j b) 0 (pLenK B)) :
+    ∀ j, ∀ b ∈ pNthK B j [], Q j b := by
+  intro j b hb
+  have hj : j < B.length := by
+    rw [pNthK_getD] at hb
+    by_contra hc
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (Nat.le_of_not_lt hc)] at hb
+    cases hb
+  exact pAllIdx_lt _ 0 (pLenK B) H j (Nat.zero_le _) (by rw [pLenK_eq]; omega) b hb
+
+theorem pCell_intro (C : Nat → Nat → HProp) (s t : Nat) : C s t ==> ∃✶ w, pCell C s t w :=
+  HProp.himpl_hexists_r 1 (HProp.himpl_hexists_r t (HProp.himpl_trans (star_emp_r _)
+    (HProp.himpl_frame_r (HProp.himpl_hempty_hpure ⟨rfl, rfl⟩))))
+
+theorem pCell_view (C : Nat → Nat → HProp) (s t : Nat) (n : Int) : pCell C s t n ==> C s t :=
+  HProp.himpl_hexists_l (fun _ => pure_r_elim (fun ⟨h1, _⟩ => h1 ▸ HProp.himpl_refl _))
+
+theorem gChainC_L (C : Nat → Nat → HProp) (Lx : Nat → Nat → Nat → HProp) :
+    ∀ (b : List (Option Nat)) (f : Nat → Nat) (g : Nat → Int) (kf : Nat → Nat) (x y : Nat) (n : Int),
+      gChainI (fun _ _ _ _ => True) b f g kf x y n →
+      gChainC (fun s t _ => C s t) (fun a : Nat × Nat × Nat => Lx a.1 a.2.1 a.2.2)
+        (fun j _ s s' _ => (j, s, s')) b f g emp x y n ==> gChainL C Lx b f x y := by
+  intro b
+  induction b with
+  | nil =>
+    intro f g kf x y n hi
+    exact HProp.himpl_hempty_hpure hi.1
+  | cons it r ih =>
+    intro f g kf x y n hi
+    cases r with
+    | nil =>
+      cases it with
+      | none => exact star_emp_elim _
+      | some j => exact HProp.himpl_refl _
+    | cons it2 r2 =>
+      cases it with
+      | none => exact HProp.himpl_frame_r (ih (fun i => f (i + 1)) (fun i => g (i + 1)) (fun i => kf (i + 1)) _ _ _ hi)
+      | some j => exact HProp.himpl_frame_r (ih (fun i => f (i + 1)) (fun i => g (i + 1)) (fun i => kf (i + 1)) _ _ _ hi.2)
+
+theorem gConcPG (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (Lx : Nat → Nat → Nat → HProp)
+    (H : pAllIdx (fun j => ∀ b ∈ pNthK B j [], ∀ (f : Nat → Nat) (x y : Nat),
+      gChainL C Lx b f x y ==> Lx j x y) 0 (pLenK B))
+    (k j x y : Nat) (n : Int) (hk : pLen B j k) : wseg (pCell C) k n x y ==> Lx j x y := by
+  refine HProp.himpl_trans (star_emp_r _) ?_
+  refine gConc (pCell C) B (fun a : Nat × Nat × Nat => a.1) (fun a => a.2.1) (fun a (_ : Int) => a.2.2)
+    (fun _ j => j) (fun _ _ => emp) (fun _ _ j _ s s' m => ((j, s, s'), m)) (fun _ _ _ _ _ _ _ _ => rfl)
+    (fun _ _ _ _ => True) (fun _ _ _ _ => holdsP_true) (fun _ => true) (gNLB_true B)
+    (fun _ _ _ _ _ _ _ _ _ => ⟨rfl, rfl, rfl, rfl⟩) (fun _ _ _ _ _ _ _ => ⟨rfl, rfl, rfl, rfl⟩)
+    (fun s t _ => C s t) (pCell_view C) (fun a => Lx a.1 a.2.1 a.2.2) ?_ k (j, x, y) n hk
+  intro a jj b hb f g kf hi
+  exact HProp.himpl_trans (gChainC_L C Lx b f g kf _ _ _ hi)
+    (gAllIdx B (fun j b => ∀ (f : Nat → Nat) (x y : Nat), gChainL C Lx b f x y ==> Lx j x y) H a.1 b hb f a.2.1 a.2.2)
+
+def gQP (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (a : Nat × Nat × Nat) : HProp :=
+  gQ (pCell C) B (fun a : Nat × Nat × Nat => a.1) (fun a => a.2.1) (fun a (_ : Int) => a.2.2) (fun _ j => j)
+    (fun _ _ => emp) a
+
+def gAnyP (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (a : Nat × Nat × Nat) : HProp :=
+  ∃✶ n, gAny B a.1 (fun b => gChain (pCell C) (gA (pCell C) B) b a.2.1 a.2.2 n) ✶ emp
+
+theorem gAnyPG (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) {j : Nat} {b : List (Option Nat)}
+    (hb : b ∈ pNthK B j []) (f : Nat → Nat) (x y : Nat) :
+    gChainL C (fun j s t => gQP C B (j, s, t)) b f x y ==> gAnyP C B (j, x, y) :=
+  gAnyL (pCell C) B (fun a : Nat × Nat × Nat => a.1) (fun a => a.2.1) (fun a (_ : Int) => a.2.2) (fun _ j => j)
+    (fun _ _ => emp) C (fun j s t => (j, s, t)) (pCell_intro C) (fun _ _ _ => rfl) (fun _ _ _ => rfl)
+    (fun _ _ _ _ => rfl) (fun _ _ _ _ => rfl) hb f x y
+
+theorem gAbsPG {κ : Type} (P : κ → HProp) (G : (κ → HProp) → κ → HProp)
+    (hind : ∀ M : κ → HProp, (∀ a, G M a ==> M a) → ∀ a, P a ==> M a) (emb : κ → Nat × Nat × Nat)
+    (C : Nat → Nat → HProp) (B : List (List (List (Option Nat))))
+    (hstep : ∀ a, G (fun b => gQP C B (emb b)) a ==> gAnyP C B (emb a))
+    (a : κ) : P a ==> gQP C B (emb a) :=
+  gAbs P G hind emb (pCell C) B (fun a : Nat × Nat × Nat => a.1) (fun a => a.2.1) (fun a (_ : Int) => a.2.2)
+    (fun _ j => j) (fun _ _ => emp) hstep a
+
+theorem gAbsPGPhi (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat))
+    (hA : pChkAK B prof = true) (j m p : Nat) (rs : List Nat) (hpr : pNthK prof j pDflt = (m, p, rs)) (x y : Nat) :
+    gQP C B (j, x, y) ==> ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈phiI m p rs (k : Int)⌉ :=
+  gAbsP (pCell C) B (fun a : Nat × Nat × Nat => a.1) (fun a => a.2.1) (fun a (_ : Int) => a.2.2) (fun _ j => j)
+    (fun _ _ => emp) (j, x, y) (fun k _ => ⌈phiI m p rs (k : Int)⌉)
+    (fun k _ hk => HProp.himpl_hempty_hpure (gPhiA B prof hA j m p rs hpr k hk))
+
+theorem gAbsPGLe (C : Nat → Nat → HProp) (B : List (List (List (Option Nat)))) (prof : List (Nat × Nat × List Nat))
+    (hA : pChkAK B prof = true) (j m : Nat) (rs : List Nat) (hpr : pNthK prof j pDflt = (m, 1, rs)) (x y : Nat) :
+    gQP C B (j, x, y) ==> ∃✶ k, ∃✶ n, wseg (pCell C) k n x y ✶ ⌈m ≤ k⌉ :=
+  gAbsP (pCell C) B (fun a : Nat × Nat × Nat => a.1) (fun a => a.2.1) (fun a (_ : Int) => a.2.2) (fun _ j => j)
+    (fun _ _ => emp) (j, x, y) (fun k _ => ⌈m ≤ k⌉)
+    (fun k _ hk => HProp.himpl_hempty_hpure (gLeA B prof hA j m rs hpr k hk))
+
+theorem holdsP_and {P Q : Prop} {H : HProp} (h1 : holdsP P H) (h2 : holdsP Q H) : holdsP (P ∧ Q) H :=
+  fun h hh => ⟨h1 h hh, h2 h hh⟩
+
+theorem wseg_cst {σ K : Type} (c : σ → σ → Int → HProp) (p : σ → K)
+    (hc : ∀ s s' w, holdsP (p s' = p s) (c s s' w)) (k : Nat) (n : Int) (s t : σ) :
+    holdsP (p t = p s) (wseg c k n s t) :=
+  wseg_inv c (fun s s' _ => p s' = p s) (fun _ s t _ => p t = p s) (fun s s' w h hh => hc s s' w h hh)
+    (fun _ => rfl) (fun _ _ _ _ _ _ h1 h2 => h2.trans h1) k n s t
+
+def gLin (kmin : Nat) : List (List (List (Option Nat))) := [[List.replicate kmin none, [none, some 0]]]
+
+theorem wseg_one {σ : Type} (c : σ → σ → Int → HProp) (s t : σ) (n : Int) : c s t n ==> wseg c 1 n s t :=
+  HProp.himpl_hexists_r t (HProp.himpl_hexists_r n (HProp.himpl_trans (star_emp_r _)
+    (HProp.himpl_frame_r (HProp.himpl_hempty_hpure ⟨rfl, by omega⟩))))
+
+theorem gChainC_rep {ι σ : Type} (c : σ → σ → Int → HProp) (P : ι → HProp)
+    (arg : Nat → Bool → σ → σ → Int → ι) (I : Nat → σ → σ → Int → Prop) :
+    ∀ (kmin : Nat) (f : Nat → σ) (g : Nat → Int) (kf : Nat → Nat) (TT : HProp) (s t : σ) (n : Int),
+      gChainI I (List.replicate kmin none) f g kf s t n →
+      gChainC c P arg (List.replicate kmin none) f g TT s t n ==> wseg c kmin n s t ✶ TT := by
+  intro kmin
+  induction kmin with
+  | zero =>
+    intro f g kf TT s t n hi
+    exact HProp.himpl_hstar_hpure_r hi (HProp.himpl_refl _)
+  | succ k ih =>
+    intro f g kf TT s t n hi
+    cases k with
+    | zero => exact HProp.himpl_frame_l (wseg_one c s t n)
+    | succ k =>
+      refine HProp.himpl_trans (HProp.himpl_frame_r (ih (fun i => f (i + 1)) (fun i => g (i + 1))
+        (fun i => kf (i + 1)) TT (f 0) t (n - g 0) hi)) ?_
+      rw [← HProp.hstar_assoc]
+      refine HProp.himpl_frame_l ?_
+      exact HProp.himpl_hexists_r (f 0) (HProp.himpl_hexists_r (g 0) (HProp.himpl_refl _))
+
+noncomputable def gBase {σ : Type} (c : σ → σ → Int → HProp) (k : Nat) : σ → σ → Int → HProp :=
+  Nat.rec (motive := fun _ => σ → σ → Int → HProp) (fun s t n => ⌈s = t ∧ n = 0⌉)
+    (fun k ih s t n => Nat.rec (motive := fun _ => HProp) (c s t n)
+      (fun _ _ => ∃✶ s', ∃✶ w, c s s' w ✶ ih s' t (n - w)) k) k
+
+theorem gBase_chain {σ : Type} (c : σ → σ → Int → HProp) (X : Nat → σ → σ → Int → HProp) :
+    ∀ (k : Nat) (s t : σ) (n : Int), gBase c k s t n ==> gChain c X (List.replicate k none) s t n := by
+  intro k
+  induction k with
+  | zero => intro s t n; exact HProp.himpl_refl _
+  | succ k ih =>
+    intro s t n
+    cases k with
+    | zero =>
+      show c s t n ==> ∃✶ s', ∃✶ w, c s s' w ✶ ⌈s' = t ∧ n - w = 0⌉
+      exact HProp.himpl_hexists_r t (HProp.himpl_hexists_r n (HProp.himpl_trans (star_emp_r _)
+        (HProp.himpl_frame_r (HProp.himpl_hempty_hpure ⟨rfl, by omega⟩))))
+    | succ k =>
+      show (∃✶ s', ∃✶ w, c s s' w ✶ gBase c (k + 1) s' t (n - w)) ==>
+        ∃✶ s', ∃✶ w, c s s' w ✶ gChain c X (List.replicate (k + 1) none) s' t (n - w)
+      exact HProp.himpl_hexists_l (fun s' => HProp.himpl_hexists_r s' (HProp.himpl_hexists_l (fun w =>
+        HProp.himpl_hexists_r w (HProp.himpl_frame_r (ih s' t (n - w))))))
+
+theorem gAbsG {α σ J : Type} (P : α → HProp) (G : (α → HProp) → α → HProp)
+    (hind : ∀ M : α → HProp, (∀ a, G M a ==> M a) → ∀ a, P a ==> M a)
+    (c : σ → σ → Int → HProp) (kmin : Nat) (st : α → σ) (E : α → J → σ) (N : α → J → Int)
+    (T : α → J → HProp) (rel : α → α → Int → Prop) (jm : α → α → Int → J → J)
+    (hrel : ∀ a a' w, rel a a' w → ∀ j', E a' j' = E a (jm a a' w j') ∧ T a' j' = T a (jm a a' w j') ∧
+      N a (jm a a' w j') = N a' j' + w) (L : α → HProp)
+    (hL : ∀ a, L a ==> gQ c (gLin kmin) (fun _ => 0) st E N T a)
+    (hstep : ∀ a, G (gQ c (gLin kmin) (fun _ => 0) st E N T) a ==>
+      wor (∃✶ j, gBase c kmin (st a) (E a j) (N a j) ✶ T a j)
+        (∃✶ a', ∃✶ w, ⌈rel a a' w⌉ ✶ (c (st a) (st a') w ✶ L a')))
+    (a : α) : P a ==> gQ c (gLin kmin) (fun _ => 0) st E N T a := by
+  have hb0 : List.replicate kmin none ∈ pNthK (gLin kmin) 0 [] := List.mem_cons_self
+  have hb1 : [none, some 0] ∈ pNthK (gLin kmin) 0 [] := List.mem_cons_of_mem _ List.mem_cons_self
+  refine gAbs P G hind (fun a => a) c (gLin kmin) (fun _ => 0) st E N T (fun b => ?_) a
+  refine HProp.himpl_trans (hstep b) (wor_elim ?_ ?_)
+  · refine HProp.himpl_hexists_l (fun j => HProp.himpl_hexists_r j (HProp.himpl_frame_l ?_))
+    exact HProp.himpl_trans (gBase_chain c (gA c (gLin kmin)) kmin _ _ _)
+      (gAny_intro (f := fun b' => gChain c (gA c (gLin kmin)) b' (st b) (E b j) (N b j)) hb0)
+  · refine HProp.himpl_hexists_l (fun a' => HProp.himpl_hexists_l (fun w => HProp.himpl_hstar_hpure_l (fun hr => ?_)))
+    refine HProp.himpl_trans (HProp.himpl_frame_r (hL a')) ?_
+    refine HProp.himpl_trans (gChain_step c (gLin kmin) (fun _ => 0) st E N T b a' w (jm b a' w) (hrel b a' w hr)) ?_
+    refine HProp.himpl_hexists_l (fun j => HProp.himpl_hexists_r j (HProp.himpl_frame_l ?_))
+    exact gAny_intro (f := fun b' => gChain c (gA c (gLin kmin)) b' (st b) (E b j) (N b j)) hb1
+
+theorem gAbsGP {α σ J : Type} (c : σ → σ → Int → HProp) (kmin : Nat) (st : α → σ) (E : α → J → σ)
+    (N : α → J → Int) (T : α → J → HProp) (a : α) (R : Nat → J → HProp)
+    (hR : ∀ k j, kmin ≤ k → T a j ==> R k j) :
+    gQ c (gLin kmin) (fun _ => 0) st E N T a ==> ∃✶ k, ∃✶ j, wseg c k (N a j) (st a) (E a j) ✶ R k j :=
+  gAbsP c (gLin kmin) (fun _ => 0) st E N T a R
+    (fun k j hk => hR k j ((pLen_lin (gLin kmin) 0 kmin rfl k).1 hk))
+
+theorem gAbsGT {α σ J : Type} (P : α → HProp) (G : (α → HProp) → α → HProp)
+    (hind : ∀ M : α → HProp, (∀ a, G M a ==> M a) → ∀ a, P a ==> M a)
+    (c : σ → σ → Int → HProp) (kmin : Nat) (st : α → σ) (E : α → J → σ) (N : α → J → Int)
+    (T : α → J → HProp) (jm : α → α → Int → J → J)
+    (hstep : ∀ a, G (gQ c (gLin kmin) (fun _ => 0) st E N T) a ==>
+      wor (∃✶ j, gBase c kmin (st a) (E a j) (N a j) ✶ T a j)
+        (∃✶ a', ∃✶ w, ⌈∀ j', E a' j' = E a (jm a a' w j') ∧ T a' j' = T a (jm a a' w j') ∧
+          N a (jm a a' w j') = N a' j' + w⌉ ✶ (c (st a) (st a') w ✶ gQ c (gLin kmin) (fun _ => 0) st E N T a')))
+    (a : α) (R : Nat → J → HProp) (hR : ∀ k j, kmin ≤ k → T a j ==> R k j) :
+    P a ==> ∃✶ k, ∃✶ j, wseg c k (N a j) (st a) (E a j) ✶ R k j :=
+  HProp.himpl_trans (gAbsG P G hind c kmin st E N T _ jm (fun _ _ _ h => h) _ (fun _ => HProp.himpl_refl _) hstep a)
+    (gAbsGP c kmin st E N T a R hR)
+
+theorem gAbsGTW {α σ J : Type} (P : α → HProp) (G : (α → HProp) → α → HProp)
+    (hind : ∀ M : α → HProp, (∀ a, G M a ==> M a) → ∀ a, P a ==> M a)
+    (c : σ → σ → Int → HProp) (kmin : Nat) (st : α → σ) (E : α → J → σ) (N : α → J → Int)
+    (T : α → J → HProp) (jm : α → α → Int → J → J)
+    (hstep : ∀ a, G (gQ c (gLin kmin) (fun _ => 0) st E N T) a ==>
+      wor (∃✶ j, gBase c kmin (st a) (E a j) (N a j) ✶ T a j)
+        (∃✶ a', ∃✶ w, ⌈∀ j', E a' j' = E a (jm a a' w j') ∧ T a' j' = T a (jm a a' w j') ∧
+          N a (jm a a' w j') = N a' j' + w⌉ ✶
+            (c (st a) (st a') w ✶ hwith (P a') (gQ c (gLin kmin) (fun _ => 0) st E N T a'))))
+    (a : α) (R : Nat → J → HProp) (hR : ∀ k j, kmin ≤ k → T a j ==> R k j) :
+    P a ==> ∃✶ k, ∃✶ j, wseg c k (N a j) (st a) (E a j) ✶ R k j :=
+  HProp.himpl_trans (gAbsG P G hind c kmin st E N T _ jm (fun _ _ _ h => h) _ (fun _ => hwith_r _ _) hstep a)
+    (gAbsGP c kmin st E N T a R hR)
+
+theorem gAbsGTU {α σ : Type} (P : α → HProp) (G : (α → HProp) → α → HProp)
+    (hind : ∀ M : α → HProp, (∀ a, G M a ==> M a) → ∀ a, P a ==> M a)
+    (c : σ → σ → Int → HProp) (kmin : Nat) (st : α → σ) (E : α → Unit → σ) (N : α → Unit → Int)
+    (T : α → Unit → HProp) (jm : α → α → Int → Unit → Unit)
+    (hstep : ∀ a, G (gQ c (gLin kmin) (fun _ => 0) st E N T) a ==>
+      wor (∃✶ j, gBase c kmin (st a) (E a j) (N a j) ✶ T a j)
+        (∃✶ a', ∃✶ w, ⌈∀ j', E a' j' = E a (jm a a' w j') ∧ T a' j' = T a (jm a a' w j') ∧
+          N a (jm a a' w j') = N a' j' + w⌉ ✶ (c (st a) (st a') w ✶ gQ c (gLin kmin) (fun _ => 0) st E N T a')))
+    (a : α) (R : Nat → HProp) (hR : ∀ k, kmin ≤ k → T a () ==> R k) :
+    P a ==> ∃✶ k, wseg c k (N a ()) (st a) (E a ()) ✶ R k :=
+  HProp.himpl_trans (HProp.himpl_trans (gAbsG P G hind c kmin st E N T _ jm (fun _ _ _ h => h) _ (fun _ => HProp.himpl_refl _) hstep a)
+    (gAbsGP c kmin st E N T a (fun k _ => R k) (fun k _ hk => hR k hk)))
+    (HProp.himpl_hexists_l (fun k => HProp.himpl_hexists_r k (HProp.himpl_hexists_l (fun _ => HProp.himpl_refl _))))
+
+theorem gAbsGTWU {α σ : Type} (P : α → HProp) (G : (α → HProp) → α → HProp)
+    (hind : ∀ M : α → HProp, (∀ a, G M a ==> M a) → ∀ a, P a ==> M a)
+    (c : σ → σ → Int → HProp) (kmin : Nat) (st : α → σ) (E : α → Unit → σ) (N : α → Unit → Int)
+    (T : α → Unit → HProp) (jm : α → α → Int → Unit → Unit)
+    (hstep : ∀ a, G (gQ c (gLin kmin) (fun _ => 0) st E N T) a ==>
+      wor (∃✶ j, gBase c kmin (st a) (E a j) (N a j) ✶ T a j)
+        (∃✶ a', ∃✶ w, ⌈∀ j', E a' j' = E a (jm a a' w j') ∧ T a' j' = T a (jm a a' w j') ∧
+          N a (jm a a' w j') = N a' j' + w⌉ ✶
+            (c (st a) (st a') w ✶ hwith (P a') (gQ c (gLin kmin) (fun _ => 0) st E N T a'))))
+    (a : α) (R : Nat → HProp) (hR : ∀ k, kmin ≤ k → T a () ==> R k) :
+    P a ==> ∃✶ k, wseg c k (N a ()) (st a) (E a ()) ✶ R k :=
+  HProp.himpl_trans (HProp.himpl_trans (gAbsG P G hind c kmin st E N T _ jm (fun _ _ _ h => h) _ (fun _ => hwith_r _ _) hstep a)
+    (gAbsGP c kmin st E N T a (fun k _ => R k) (fun k _ hk => hR k hk)))
+    (HProp.himpl_hexists_l (fun k => HProp.himpl_hexists_r k (HProp.himpl_hexists_l (fun _ => HProp.himpl_refl _))))
+
+omit [Params] in
+theorem gNLB_lin (kmin : Nat) : gNLB (fun _ => false) (gLin kmin) = true := by
+  have h : ∀ k, gNL (fun _ => false) (List.replicate k none) = true := by
+    intro k
+    induction k with
+    | zero => rfl
+    | succ k ih =>
+      cases k with
+      | zero => rfl
+      | succ k => exact ih
+  simp [gNLB, gLin, h]
+  rfl
+
+theorem gConcG {α σ J : Type} (P : α → HProp) (c : σ → σ → Int → HProp) (kmin : Nat) (st : α → σ)
+    (E : α → J → σ) (N : α → J → Int) (T : α → J → HProp) (cal : α → J → σ → Int → α × J)
+    (I : Nat → σ → σ → Int → Prop) (hI : ∀ k n s t, holdsP (I k s t n) (wseg c k n s t))
+    (ht : ∀ a jj s m k, I k s (E a jj) m → st (cal a jj s m).1 = s ∧ N (cal a jj s m).1 (cal a jj s m).2 = m ∧
+      E (cal a jj s m).1 (cal a jj s m).2 = E a jj ∧ T (cal a jj s m).1 (cal a jj s m).2 = T a jj)
+    (hb : ∀ a jj, wseg c kmin (N a jj) (st a) (E a jj) ✶ T a jj ==> P a)
+    (h1 : ∀ a jj s' w k, I k s' (E a jj) (N a jj - w) → c (st a) s' w ✶ P (cal a jj s' (N a jj - w)).1 ==> P a)
+    (k : Nat) (a : α) (jj : J) (hk : kmin ≤ k) : wseg c k (N a jj) (st a) (E a jj) ✶ T a jj ==> P a :=
+  gConc c (gLin kmin) (fun _ => 0) st E N T (fun a jj _ _ s _ m => cal a jj s m)
+    (fun _ _ _ _ _ _ _ hj => (Nat.lt_one_iff.1 hj).symm) I hI (fun _ => false) (gNLB_lin kmin)
+    (fun _ _ _ _ _ _ _ h => absurd h Bool.false_ne_true) (fun a jj _ s m k hi => ht a jj s m k hi)
+    c (fun _ _ _ => HProp.himpl_refl _) P
+    (fun a jj b hb' f g kf hi => by
+      change b ∈ [List.replicate kmin none, [none, some 0]] at hb'
+      rcases List.mem_cons.1 hb' with rfl | hb'
+      · exact HProp.himpl_trans (gChainC_rep c P _ I kmin f g kf (T a jj) _ _ _ hi) (hb a jj)
+      · rcases List.mem_cons.1 hb' with rfl | hb'
+        · exact h1 a jj (f 0) (g 0) (kf (0 + 1)) hi
+        · cases hb')
+    k a jj ((pLen_lin (gLin kmin) 0 kmin rfl k).2 hk)
 
 end Sep.Xsearch
