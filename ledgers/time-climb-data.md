@@ -1,6 +1,6 @@
 # Solving time, proofs and code size against agent hours
 
-Raw data behind the chart "xsearch solving time against hours of agent work" (claude.ai artifact VFZJr2ctCgiqdifgdw34KE). One row per accepted step of the time climb (climb 1, steps 20 to T6) and of climb 2. Measurements on the Linux i7-13700, 5 s cap per problem.
+Raw data behind the chart "xsearch solving time against hours of agent work" (`ledgers/time-climb-chart.html`, a standalone page with the same rows embedded). One row per accepted step of the time climb (climb 1, steps 20 to T6) and of climb 2. Measurements on the Linux i7-13700, 5 s cap per problem.
 
 ## Columns
 
