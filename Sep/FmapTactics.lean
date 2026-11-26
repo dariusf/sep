@@ -1,5 +1,10 @@
-import Sep.FinmapExt
-import Lean
+module
+
+public import Sep.FinmapExt
+public import Lean
+public meta import Lean
+
+public section
 
 open Lean Meta Elab Tactic
 
@@ -44,7 +49,7 @@ macro_rules
         Finmap.disjoint_empty_right, and_true, true_and] <;> tauto
     ))
 
-def unionArgs? (e : Expr) : MetaM (Option (Expr × Expr)) := do
+meta def unionArgs? (e : Expr) : MetaM (Option (Expr × Expr)) := do
   let e := e.consumeMData
   unless e.isAppOfArity ``Finmap.union 5 || e.isAppOfArity ``Union.union 4 do
     return none
@@ -53,12 +58,12 @@ def unionArgs? (e : Expr) : MetaM (Option (Expr × Expr)) := do
   let args := e.getAppArgs
   return some (args[args.size - 2]!, args[args.size - 1]!)
 
-def eqRhs (proof : Expr) : MetaM Expr := do
+meta def eqRhs (proof : Expr) : MetaM Expr := do
   let some (_, _, rhs) := (← whnf (← inferType proof)).eq?
     | throwError m!"expected an equality proof, got {proof}"
   return rhs
 
-partial def moveToFront (atom : Expr) (tree : Expr) (disjointMvars : IO.Ref (List MVarId)) :
+meta partial def moveToFront (atom : Expr) (tree : Expr) (disjointMvars : IO.Ref (List MVarId)) :
     MetaM (Expr × Expr) := do
   let tree := tree.consumeMData
   if (← isDefEq atom tree) then
@@ -87,7 +92,7 @@ partial def moveToFront (atom : Expr) (tree : Expr) (disjointMvars : IO.Ref (Lis
 
   throwError m!"Atom {atom} not found in tree {tree}"
 
-partial def matchTrees (lhs rhs : Expr) (disjointMvars : IO.Ref (List MVarId)) : MetaM Expr := do
+meta partial def matchTrees (lhs rhs : Expr) (disjointMvars : IO.Ref (List MVarId)) : MetaM Expr := do
   let lhs := lhs.consumeMData
   let rhs := rhs.consumeMData
   if (← isDefEq lhs rhs) then

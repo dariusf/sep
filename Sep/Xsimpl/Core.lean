@@ -1,5 +1,10 @@
-import Sep.SepLogic
-import Batteries.Data.List.Perm
+module
+
+public import Sep.SepLogic
+public import Batteries.Data.List.Perm
+public meta import Lean
+
+public section
 
 open Lean Meta Elab Tactic
 
@@ -19,19 +24,19 @@ register_simp_attr xsimpl_unfold_class
 
 open SepLogic
 
-initialize cheapCancel : IO.Ref Bool ← IO.mkRef false
+meta initialize cheapCancel : IO.Ref Bool ← IO.mkRef false
 
-def withCheapCancel {α : Type} (x : TacticM α) : TacticM α := do
+meta def withCheapCancel {α : Type} (x : TacticM α) : TacticM α := do
   let old ← cheapCancel.get
   cheapCancel.set true
   try x finally cheapCancel.set old
 
-def cheapDefEq (a b : Expr) : MetaM Bool := do
+meta def cheapDefEq (a b : Expr) : MetaM Bool := do
   if a == b then return true
   if !(← cheapCancel.get) || a.hasMVar || b.hasMVar then isDefEq a b
   else withReducible (isDefEq a b)
 
-def headMayMatch (h t : Expr) : MetaM Bool := do
+meta def headMayMatch (h t : Expr) : MetaM Bool := do
   if h.hasMVar || t.hasMVar then return true
   let .const c2 _ := t.getAppFn | return true
   if ← isReducible c2 then return true
@@ -42,7 +47,7 @@ def headMayMatch (h t : Expr) : MetaM Bool := do
   | .mvar _ => return true
   | _ => return false
 
-def cheapAssumptionCore (g : MVarId) : MetaM Bool := do
+meta def cheapAssumptionCore (g : MVarId) : MetaM Bool := do
   unless ← cheapCancel.get do return ← g.assumptionCore
   let t ← instantiateMVars (← g.getType)
   let r ← (← getLCtx).findDeclRevM? fun d => do
@@ -245,13 +250,13 @@ end NativeLemmas
 
 /-- The ambient separation logic of a goal: its carrier, `SepLogic` instance and
     universe levels, read off the goal's `Entails` application. -/
-structure SepCtx where
+meta structure SepCtx where
   levels : List Level
   carrier : Expr
   inst : Expr
 
 /-- Recognise `SepLogic.Entails α inst H1 H2`. -/
-def matchEntails? (e : Expr) : Option (SepCtx × Expr × Expr) :=
+meta def matchEntails? (e : Expr) : Option (SepCtx × Expr × Expr) :=
   match e.consumeMData with
   | .app (.app (.app (.app (.const n ls) carrier) inst) lhs) rhs =>
     if n == ``SepLogic.Entails then
@@ -260,7 +265,7 @@ def matchEntails? (e : Expr) : Option (SepCtx × Expr × Expr) :=
   | _ => none
 
 /-- Recognise `SepLogic.star α inst H1 H2`, returning the instance found there. -/
-def matchStar? (e : Expr) : Option (SepCtx × Expr × Expr) :=
+meta def matchStar? (e : Expr) : Option (SepCtx × Expr × Expr) :=
   match e.consumeMData with
   | .app (.app (.app (.app (.const n ls) carrier) inst) H1) H2 =>
     if n == ``SepLogic.star then
@@ -268,24 +273,24 @@ def matchStar? (e : Expr) : Option (SepCtx × Expr × Expr) :=
     else none
   | _ => none
 
-def isEmp (e : Expr) : Bool :=
+meta def isEmp (e : Expr) : Bool :=
   e.consumeMData.getAppFn.isConstOf ``SepLogic.emp
 
-def isSpure (e : Expr) : Bool :=
+meta def isSpure (e : Expr) : Bool :=
   e.consumeMData.getAppFn.isConstOf ``SepLogic.spure
 
 /-- Parse `H1 ∗ H2 ∗ ... ∗ emp` into `[H1, H2, ...]` (not including trailing `emp`). -/
-partial def parseStar (e : Expr) : List Expr :=
+meta partial def parseStar (e : Expr) : List Expr :=
   match matchStar? e with
   | some (_, H1, H2) => H1 :: parseStar H2
   | none => if isEmp e then [] else [e]
 
-private def mkStar (c : SepCtx) (H1 H2 : Expr) : MetaM Expr :=
+private meta def mkStar (c : SepCtx) (H1 H2 : Expr) : MetaM Expr :=
   mkAppOptM ``SepLogic.star #[some c.carrier, some c.inst, some H1, some H2]
 
 /-- Move `atom` to the front of a star chain `tree`, returning `(newTree, proof : tree = newTree)`.
     `newTree` starts with `atom`. Fails if `atom` is not in the chain. -/
-partial def starMoveToFront (_c : SepCtx) (atom : Expr) (tree : Expr) : MetaM (Expr × Expr) := do
+meta partial def starMoveToFront (_c : SepCtx) (atom : Expr) (tree : Expr) : MetaM (Expr × Expr) := do
   let tree := tree.consumeMData
   match matchStar? tree with
   | some (c1, H1, H2) =>
@@ -328,7 +333,7 @@ partial def starMoveToFront (_c : SepCtx) (atom : Expr) (tree : Expr) : MetaM (E
       throwError "starMoveToFront: {← ppExpr atom} not found in chain {← ppExpr tree}"
 
 /-- Rewrite the LHS of the current entailment goal to `newLhs`, given `lhs = newLhs`. -/
-private def replaceLhs (goal : MVarId) (c : SepCtx) (newLhs rhs proof : Expr) : MetaM MVarId := do
+private meta def replaceLhs (goal : MVarId) (c : SepCtx) (newLhs rhs proof : Expr) : MetaM MVarId := do
   let newGoalType ← mkAppOptM ``SepLogic.Entails
     #[some c.carrier, some c.inst, some newLhs, some rhs]
   let newGoalMVar ← mkFreshExprMVar newGoalType
@@ -341,7 +346,7 @@ private def replaceLhs (goal : MVarId) (c : SepCtx) (newLhs rhs proof : Expr) : 
 -- ============================================================
 
 /-- Try to cancel matching items between LHS and RHS of an entailment goal. -/
-def xsimplCancelAllCore : TacticM Unit := withMainContext do
+meta def xsimplCancelAllCore : TacticM Unit := withMainContext do
   let mut progress := false
   let mut cont := true
   while cont do
@@ -411,7 +416,7 @@ def xsimplCancelAllCore : TacticM Unit := withMainContext do
 
 elab "xsimpl_cancel_all_core" : tactic => xsimplCancelAllCore
 
-def xsimplCancelWandCore : TacticM Unit := withMainContext do
+meta def xsimplCancelWandCore : TacticM Unit := withMainContext do
   let mut progress := false
   let mut cont := true
   while cont do
@@ -469,7 +474,7 @@ elab "xsimpl_cancel_wand_core" : tactic => xsimplCancelWandCore
 -- ============================================================
 
 /-- The `rfl`-lemmas tagged with a simp attribute, as `(lhs head, name)` pairs. -/
-def taggedLemmas (attr : Name) : MetaM (Array Name) := do
+meta def taggedLemmas (attr : Name) : MetaM (Array Name) := do
   let some ext ← getSimpExtension? attr | throwError "unknown simp attribute {attr}"
   let thms ← ext.getTheorems
   return thms.lemmaNames.fold (init := #[]) fun acc o =>
@@ -480,7 +485,7 @@ def taggedLemmas (attr : Name) : MetaM (Array Name) := do
 /-- Rewrite `e` with the `rfl`-lemmas tagged `attr`, oriented left to right.
     Unlike `simp only`, this survives lemmas whose two sides are definitionally
     equal, which is exactly the case for the fold/unfold bridge. -/
-private partial def lemmaLhsHead? (ty : Expr) : Option Name :=
+private meta partial def lemmaLhsHead? (ty : Expr) : Option Name :=
   match ty with
   | .forallE _ _ b _ => lemmaLhsHead? b
   | e =>
@@ -490,7 +495,7 @@ private partial def lemmaLhsHead? (ty : Expr) : Option Name :=
       if fn.isConst then some fn.constName! else none
     | none => none
 
-def rewriteWithRfl (lemmas : Array Name) (e : Expr) : MetaM Expr := do
+meta def rewriteWithRfl (lemmas : Array Name) (e : Expr) : MetaM Expr := do
   let mut byHead : NameMap (Array Name) := {}
   for n in lemmas do
     let cinfo ← getConstInfo n
@@ -517,7 +522,7 @@ def rewriteWithRfl (lemmas : Array Name) (e : Expr) : MetaM Expr := do
 /-- Force every `SepLogic` operation in `e` to mention the same instance, by
     unifying the universe levels of all class-projection occurrences. Returns
     `false` if they cannot be reconciled (e.g. existentials at two universes). -/
-partial def unifyClassLevels (e : Expr) : MetaM Bool := do
+meta partial def unifyClassLevels (e : Expr) : MetaM Bool := do
   let mut ref : Option (List Level) := none
   let mut ok := true
   for c in collectConsts e do
@@ -553,11 +558,11 @@ where
     | _ => acc
 
 /-- Is `n` one of the `SepLogic` operation projections? -/
-def isClassOpName (n : Name) : Bool :=
+meta def isClassOpName (n : Name) : Bool :=
   n == ``SepLogic.star || n == ``SepLogic.emp || n == ``SepLogic.spure ||
   n == ``SepLogic.ex || n == ``SepLogic.wand || n == ``SepLogic.Entails
 
-partial def replaceInstances (ref : List Level) (inst : Expr) (e : Expr) : Expr :=
+meta partial def replaceInstances (ref : List Level) (inst : Expr) (e : Expr) : Expr :=
   match e with
   | .app .. =>
     let fn := e.getAppFn
@@ -584,7 +589,7 @@ partial def replaceInstances (ref : List Level) (inst : Expr) (e : Expr) : Expr 
     occurrence, and those can sit at different universes, which stops the class
     lemmas from applying. Returns `none` if no single instance fits (e.g. two
     existentials at different universes). -/
-def uniformizeInstances (e : Expr) : MetaM (Option Expr) := do
+meta def uniformizeInstances (e : Expr) : MetaM (Option Expr) := do
   let occs := classOpOccurrences e
   if occs.isEmpty then return none
   let exLevels := occs.filterMap fun occ => if occ.1 == ``SepLogic.ex then some occ.2 else none
@@ -628,7 +633,7 @@ where
 
 /-- Rewrite the goal with the lemmas tagged `attr`, make its `SepLogic`
     instances uniform, and `change` to the result. -/
-def changeWithRfl (attr : Name) (uniformize : Bool) : TacticM Unit := withMainContext do
+meta def changeWithRfl (attr : Name) (uniformize : Bool) : TacticM Unit := withMainContext do
   let lemmas ← taggedLemmas attr
   let goal ← getMainGoal
   let target ← goal.getType >>= instantiateMVars
@@ -673,12 +678,12 @@ macro_rules
       ])
     ))
 
-def hasExHead (items : List Expr) : Bool :=
+meta def hasExHead (items : List Expr) : Bool :=
   items.any fun i =>
     let fn := i.consumeMData.getAppFn
     fn.isConstOf ``SepLogic.ex || fn.isConstOf ``SepLogic.spure
 
-private def movePureToFront (onLhs : Bool) : TacticM Unit := withMainContext do
+private meta def movePureToFront (onLhs : Bool) : TacticM Unit := withMainContext do
   let goal ← getMainGoal
   let goalType ← goal.getType >>= instantiateMVars
   let some (c, lhs, rhs) := matchEntails? goalType | throwError "not an entailment"
@@ -702,7 +707,7 @@ private def movePureToFront (onLhs : Bool) : TacticM Unit := withMainContext do
 elab "xsimpl_pure_front_lhs" : tactic => movePureToFront true
 elab "xsimpl_pure_front_rhs" : tactic => movePureToFront false
 
-def xsimplInstantiateStepCore : TacticM Unit := withMainContext do
+meta def xsimplInstantiateStepCore : TacticM Unit := withMainContext do
   let goal ← getMainGoal
   let goalType ← goal.getType >>= instantiateMVars
   let some (_, _, rhs) := matchEntails? goalType | throwError "not an entailment"
@@ -724,7 +729,7 @@ def xsimplInstantiateStepCore : TacticM Unit := withMainContext do
 
 elab "xsimpl_instantiate_step_core" : tactic => xsimplInstantiateStepCore
 
-def xsimplExtractStepCore : TacticM Unit := withMainContext do
+meta def xsimplExtractStepCore : TacticM Unit := withMainContext do
   let goal ← getMainGoal
   let goalType ← goal.getType >>= instantiateMVars
   let some (_, lhs, _) := matchEntails? goalType | throwError "not an entailment"
@@ -747,7 +752,7 @@ def xsimplExtractStepCore : TacticM Unit := withMainContext do
 elab "xsimpl_extract_step_core" : tactic => xsimplExtractStepCore
 
 /-- Recognise `SepLogic.wand α inst H1 H2`. -/
-def matchWand? (e : Expr) : Option (Expr × Expr) :=
+meta def matchWand? (e : Expr) : Option (Expr × Expr) :=
   match e.consumeMData.getAppFnArgs with
   | (``SepLogic.wand, #[_, _, H1, H2]) => some (H1, H2)
   | _ => none
@@ -756,7 +761,7 @@ def matchWand? (e : Expr) : Option (Expr × Expr) :=
     Fires only when the whole RHS is a wand, i.e. the RHS star chain has a single
     remaining item and that item is `P1 -∗ P2`: then `H ==> P1 -∗ P2` becomes
     `H ∗ P1 ==> P2`. It cannot loop, since each step strips one wand. -/
-def xsimplWandIntroCore : TacticM Unit := withMainContext do
+meta def xsimplWandIntroCore : TacticM Unit := withMainContext do
   let goal ← getMainGoal
   let goalType ← goal.getType >>= instantiateMVars
   let some (_, _, rhs) := matchEntails? goalType | throwError "not an entailment"
@@ -768,7 +773,7 @@ def xsimplWandIntroCore : TacticM Unit := withMainContext do
 
 elab "xsimpl_wand_intro_core" : tactic => xsimplWandIntroCore
 
-def affineInst? (carrier : Expr) : MetaM (Option Expr) := do
+meta def affineInst? (carrier : Expr) : MetaM (Option Expr) := do
   let info ← getConstInfo ``AffineSepLogic
   let lvls ← info.levelParams.mapM fun _ => mkFreshLevelMVar
   Lean.Meta.synthInstance? (mkAppN (mkConst ``AffineSepLogic lvls) #[carrier])
@@ -801,7 +806,7 @@ macro_rules
 /-- Run `t`, and fail unless it changed the goals.  `xsimpl_core` drives its
 steps with `repeat`, which stops only on failure, so a step that succeeds without
 progress would not terminate. -/
-def withProgress (t : TacticM Unit) : TacticM Unit := do
+meta def withProgress (t : TacticM Unit) : TacticM Unit := do
   let before ← (← getGoals).mapM fun g => do instantiateMVars (← g.getType)
   t
   let after ← (← getGoals).mapM fun g => do instantiateMVars (← g.getType)
@@ -826,20 +831,20 @@ macro_rules
       ))
     ))
 
-structure NOp where
+meta structure NOp where
   name : Name
   arity : Nat
   pos : Array Nat
   deriving Inhabited, BEq
 
-def classOpOperands (n : Name) : Option (Array Nat) :=
+meta def classOpOperands (n : Name) : Option (Array Nat) :=
   if n == ``SepLogic.star || n == ``SepLogic.wand || n == ``SepLogic.Entails then some #[2, 3]
   else if n == ``SepLogic.emp then some #[]
   else if n == ``SepLogic.spure then some #[2]
   else if n == ``SepLogic.ex then some #[2, 3]
   else none
 
-def foldEntry (n : Name) : MetaM (Option (Name × NOp)) := do
+meta def foldEntry (n : Name) : MetaM (Option (Name × NOp)) := do
   let ci ← getConstInfo n
   forallTelescope ci.type fun _ body => do
     let some (_, lhs, rhs) := body.eq? | return none
@@ -857,10 +862,10 @@ def foldEntry (n : Name) : MetaM (Option (Name × NOp)) := do
       pos := pos.push j
     return some (cn, { name := ln, arity := largs.size, pos })
 
-initialize foldEntryCache : IO.Ref (Array Name × Array (Name × NOp × Name)) ←
+meta initialize foldEntryCache : IO.Ref (Array Name × Array (Name × NOp × Name)) ←
   IO.mkRef (#[], #[])
 
-def foldEntries : MetaM (Array (Name × NOp × Name)) := do
+meta def foldEntries : MetaM (Array (Name × NOp × Name)) := do
   let names ← taggedLemmas `xsimpl_fold
   let (k, v) ← foldEntryCache.get
   if k == names then return v
@@ -870,7 +875,7 @@ def foldEntries : MetaM (Array (Name × NOp × Name)) := do
   foldEntryCache.set (names, out)
   return out
 
-structure NCtx where
+meta structure NCtx where
   carrier : Expr
   u : Level
   entOp : NOp
@@ -888,14 +893,14 @@ structure NCtx where
   inst0 : Expr
   deriving Inhabited
 
-initialize nctxCache :
+meta initialize nctxCache :
     IO.Ref (Name × Array (Name × NOp × Name) × Array (Expr × Option NCtx)) ←
   IO.mkRef (.anonymous, #[], #[])
 
-initialize ninstCache : IO.Ref (Name × Array (Expr × Level × Option Expr)) ←
+meta initialize ninstCache : IO.Ref (Name × Array (Expr × Level × Option Expr)) ←
   IO.mkRef (.anonymous, #[])
 
-def sepInstAt (carrier : Expr) (u lv : Level) : MetaM (Option Expr) := do
+meta def sepInstAt (carrier : Expr) (u lv : Level) : MetaM (Option Expr) := do
   let m := (← getEnv).mainModule
   let (m0, cache) ← ninstCache.get
   let cache := if m0 == m then cache else #[]
@@ -908,7 +913,7 @@ def sepInstAt (carrier : Expr) (u lv : Level) : MetaM (Option Expr) := do
     ninstCache.set (m, cache.push (carrier, lv, r))
     return r
 
-def foldTemplate (lem : Name) (carrier : Expr) (op : NOp) (byOperand : Bool) :
+meta def foldTemplate (lem : Name) (carrier : Expr) (op : NOp) (byOperand : Bool) :
     MetaM (Option (Expr × Array Expr)) := withNewMCtxDepth do
   let ci ← getConstInfo lem
   let lvls ← ci.levelParams.mapM fun _ => mkFreshLevelMVar
@@ -933,7 +938,7 @@ def foldTemplate (lem : Name) (carrier : Expr) (op : NOp) (byOperand : Bool) :
   if fn.hasMVar then return none
   return some (fn, args)
 
-def buildNCtx (entries : Array (Name × NOp × Name)) (carrier : Expr) (ent : NOp) :
+meta def buildNCtx (entries : Array (Name × NOp × Name)) (carrier : Expr) (ent : NOp) :
     MetaM (Option NCtx) := do
   let some u ← (try some <$> getDecLevel carrier catch _ => pure none) | return none
   if u.hasMVar then return none
@@ -977,7 +982,7 @@ def buildNCtx (entries : Array (Name × NOp × Name)) (carrier : Expr) (ent : NO
     lv0 := lv0,
     inst0 := inst0 }
 
-def nctxFor? (t : Expr) : MetaM (Option (NCtx × Expr × Expr)) := do
+meta def nctxFor? (t : Expr) : MetaM (Option (NCtx × Expr × Expr)) := do
   let .const hn _ := t.getAppFn | return none
   if isClassOpName hn then return none
   let entries ← foldEntries
@@ -1000,12 +1005,12 @@ def nctxFor? (t : Expr) : MetaM (Option (NCtx × Expr × Expr)) := do
     nctxCache.set (m, entries, cache.push (carrier, c?))
     return c?.map (·, l, r)
 
-def hasClassOp (e : Expr) : Bool :=
+meta def hasClassOp (e : Expr) : Bool :=
   (e.find? fun s => match s with
     | .const n _ => isClassOpName n
     | _ => false).isSome
 
-def classNCtx? (t : Expr) : Option (NCtx × Expr × Expr) := do
+meta def classNCtx? (t : Expr) : Option (NCtx × Expr × Expr) := do
   let (sc, l, r) ← matchEntails? t
   let [u, v] := sc.levels | none
   let op2 := fun (n : Name) => ({ name := n, arity := 4, pos := #[2, 3] } : NOp)
@@ -1028,7 +1033,7 @@ def classNCtx? (t : Expr) : Option (NCtx × Expr × Expr) := do
     inst0 := sc.inst }
   return (c, l, r)
 
-def sepGoal? (g : MVarId) : MetaM (Option (MVarId × NCtx × Expr × Expr)) := g.withContext do
+meta def sepGoal? (g : MVarId) : MetaM (Option (MVarId × NCtx × Expr × Expr)) := g.withContext do
   let mut g := g
   let mut t ← instantiateMVars (← g.getType)
   if hasClassOp t then
@@ -1042,61 +1047,61 @@ def sepGoal? (g : MVarId) : MetaM (Option (MVarId × NCtx × Expr × Expr)) := g
 
 namespace NCtx
 
-def isOp (op : NOp) (e : Expr) : Bool := e.isAppOfArity op.name op.arity
+meta def isOp (op : NOp) (e : Expr) : Bool := e.isAppOfArity op.name op.arity
 
-def arg (op : NOp) (e : Expr) (i : Nat) : Expr := e.getArg! op.pos[i]!
+meta def arg (op : NOp) (e : Expr) (i : Nat) : Expr := e.getArg! op.pos[i]!
 
-def mkStar (c : NCtx) (a b : Expr) : Expr :=
+meta def mkStar (c : NCtx) (a b : Expr) : Expr :=
   mkAppN c.starFn ((c.starArgs.set! c.starOp.pos[0]! a).set! c.starOp.pos[1]! b)
 
-def mkEnt (c : NCtx) (a b : Expr) : Expr :=
+meta def mkEnt (c : NCtx) (a b : Expr) : Expr :=
   mkAppN c.entFn ((c.entArgs.set! c.entOp.pos[0]! a).set! c.entOp.pos[1]! b)
 
-def starL (c : NCtx) : List Expr → Expr
+meta def starL (c : NCtx) : List Expr → Expr
   | [] => c.empE
   | [a] => a
   | a :: r => c.mkStar a (c.starL r)
 
-def starLeft (c : NCtx) (xs : Array Expr) : Expr := Id.run do
+meta def starLeft (c : NCtx) (xs : Array Expr) : Expr := Id.run do
   let mut acc := xs[0]!
   for i in [1 : xs.size] do
     acc := c.mkStar acc xs[i]!
   return acc
 
-def lem (c : NCtx) (n : Name) (args : Array Expr) : Expr :=
+meta def lem (c : NCtx) (n : Name) (args : Array Expr) : Expr :=
   mkAppN (mkConst n [c.u, c.lv0]) (#[c.carrier, c.inst0] ++ args)
 
-def lemAt (c : NCtx) (lv : Level) (inst : Expr) (n : Name) (args : Array Expr) : Expr :=
+meta def lemAt (c : NCtx) (lv : Level) (inst : Expr) (n : Name) (args : Array Expr) : Expr :=
   mkAppN (mkConst n [c.u, lv]) (#[c.carrier, inst] ++ args)
 
-def trans (c : NCtx) (a b d p q : Expr) : Expr := c.lem ``nt_trans #[a, b, d, p, q]
+meta def trans (c : NCtx) (a b d p q : Expr) : Expr := c.lem ``nt_trans #[a, b, d, p, q]
 
-def transO (c : NCtx) (a b d : Expr) (p : Option Expr) (q : Expr) : Expr :=
+meta def transO (c : NCtx) (a b d : Expr) (p : Option Expr) (q : Expr) : Expr :=
   match p with
   | none => q
   | some p => c.trans a b d p q
 
-def transO' (c : NCtx) (a b d : Expr) (p : Expr) (q : Option Expr) : Expr :=
+meta def transO' (c : NCtx) (a b d : Expr) (p : Expr) (q : Option Expr) : Expr :=
   match q with
   | none => p
   | some q => c.trans a b d p q
 
-def eqTrans (c : NCtx) (a b d p q : Expr) : Expr :=
+meta def eqTrans (c : NCtx) (a b d p q : Expr) : Expr :=
   mkAppN (mkConst ``Eq.trans [c.u.succ]) #[c.carrier, a, b, d, p, q]
 
-def eqSymm (c : NCtx) (a b p : Expr) : Expr :=
+meta def eqSymm (c : NCtx) (a b p : Expr) : Expr :=
   mkAppN (mkConst ``Eq.symm [c.u.succ]) #[c.carrier, a, b, p]
 
-def starFnOf (c : NCtx) (a : Expr) : Expr :=
+meta def starFnOf (c : NCtx) (a : Expr) : Expr :=
   let n := c.starOp.arity
   if c.starOp.pos[0]! + 2 == n && c.starOp.pos[1]! + 1 == n then
     mkAppN c.starFn ((c.starArgs.set! c.starOp.pos[0]! a).extract 0 (n - 1))
   else .lam `x c.carrier (c.mkStar a (.bvar 0)) .default
 
-def congrStar (c : NCtx) (a b1 b2 p : Expr) : Expr :=
+meta def congrStar (c : NCtx) (a b1 b2 p : Expr) : Expr :=
   mkAppN (mkConst ``congrArg [c.u.succ, c.u.succ]) #[c.carrier, c.carrier, b1, b2, c.starFnOf a, p]
 
-partial def flat (c : NCtx) (e : Expr) : List Expr × Option Expr :=
+meta partial def flat (c : NCtx) (e : Expr) : List Expr × Option Expr :=
   if isOp c.starOp e then
     let a := arg c.starOp e 0
     let b := arg c.starOp e 1
@@ -1129,7 +1134,7 @@ partial def flat (c : NCtx) (e : Expr) : List Expr × Option Expr :=
   else if isOp c.empOp e then ([], none)
   else ([e], none)
 
-partial def pullL (c : NCtx) (s : List Expr) (k : Nat) : Expr :=
+meta partial def pullL (c : NCtx) (s : List Expr) (k : Nat) : Expr :=
   match s with
   | s0 :: s1 =>
     if k == 0 then c.lem ``nt_refl #[c.starL s]
@@ -1145,7 +1150,7 @@ partial def pullL (c : NCtx) (s : List Expr) (k : Nat) : Expr :=
         c.trans (c.starL s) (c.mkStar s0 (c.mkStar t0 r)) (c.mkStar t0 (c.mkStar s0 r)) fr sw
   | [] => c.lem ``nt_refl #[c.empE]
 
-partial def pullR (c : NCtx) (s : List Expr) (k : Nat) : Expr :=
+meta partial def pullR (c : NCtx) (s : List Expr) (k : Nat) : Expr :=
   match s with
   | s0 :: s1 =>
     if k == 0 then c.lem ``nt_refl #[c.starL s]
@@ -1161,7 +1166,7 @@ partial def pullR (c : NCtx) (s : List Expr) (k : Nat) : Expr :=
         c.trans (c.mkStar t0 (c.mkStar s0 r)) (c.mkStar s0 (c.mkStar t0 r)) (c.starL s) sw fr
   | [] => c.lem ``nt_refl #[c.empE]
 
-partial def perm (c : NCtx) (s : List Expr) (idx : List Nat) : Option Expr :=
+meta partial def perm (c : NCtx) (s : List Expr) (idx : List Nat) : Option Expr :=
   match s, idx with
   | _ :: _ :: _, k :: rest =>
     let t := s[k]!
@@ -1178,30 +1183,30 @@ partial def perm (c : NCtx) (s : List Expr) (idx : List Nat) : Option Expr :=
     | some p, some f => some (c.trans (c.starL s) (c.mkStar t (c.starL s')) (c.mkStar t (c.starL t')) p f)
   | _, _ => none
 
-def natList (xs : List Nat) : Expr :=
+meta def natList (xs : List Nat) : Expr :=
   xs.foldr (fun i acc => mkApp3 (mkConst ``List.cons [0]) (mkConst ``Nat) (mkRawNatLit i) acc)
     (mkApp (mkConst ``List.nil [0]) (mkConst ``Nat))
 
-def atomList (c : NCtx) (xs : List Expr) : Expr :=
+meta def atomList (c : NCtx) (xs : List Expr) : Expr :=
   xs.foldr (fun a acc => mkApp3 (mkConst ``List.cons [c.u]) c.carrier a acc) (mkApp (mkConst ``List.nil [c.u]) c.carrier)
 
-partial def ptree (c : NCtx) (xs : Array Expr) (f : Nat → Nat) (n : Nat) : Expr :=
+meta partial def ptree (c : NCtx) (xs : Array Expr) (f : Nat → Nat) (n : Nat) : Expr :=
   if n == 0 then mkApp (mkConst ``PTree.leaf [c.u]) c.carrier
   else mkApp4 (mkConst ``PTree.node [c.u]) c.carrier (c.ptree xs (fun j => f (2 * j + 1)) (n / 2)) xs[f 0]!
     (c.ptree xs (fun j => f (2 * j + 2)) ((n - 1) / 2))
 
-def permIdx (c : NCtx) (s : Array Expr) (r : List Nat) : Option Expr :=
+meta def permIdx (c : NCtx) (s : Array Expr) (r : List Nat) : Option Expr :=
   if r == List.range s.size then none else
   some (c.lem ``nt_perm_idx #[c.ptree s id s.size, natList (List.range s.size), natList r,
     mkApp2 (mkConst ``Eq.refl [1]) (mkConst ``Bool) (mkConst ``Bool.true)])
 
-def selfEq (s : Expr) : Bool :=
+meta def selfEq (s : Expr) : Bool :=
   match s.getAppFnArgs with
   | (``Eq, #[_, a, b]) => a == b
   | (``Iff, #[a, b]) => a == b
   | _ => false
 
-def bad (c : NCtx) (e : Expr) : Bool :=
+meta def bad (c : NCtx) (e : Expr) : Bool :=
   (e.find? (fun s =>
     match s with
     | .const n _ =>
@@ -1213,12 +1218,12 @@ def bad (c : NCtx) (e : Expr) : Bool :=
     | .mdata .. => true
     | _ => selfEq s)).isSome
 
-structure SpineAcc where
+meta structure SpineAcc where
   lvs : Array Level := #[]
   hasEx : Bool := false
   nestedTypeEx : Bool := false
 
-def exLevel (c : NCtx) (a : Expr) (acc : SpineAcc) (nested : Bool) : MetaM (Option SpineAcc) := do
+meta def exLevel (c : NCtx) (a : Expr) (acc : SpineAcc) (nested : Bool) : MetaM (Option SpineAcc) := do
   if a.hasLooseBVars || c.bad a || a == c.carrier then return none
   let lv ← try (some <$> getLevel a) catch _ => pure none
   let some lv := lv | return none
@@ -1229,7 +1234,7 @@ def exLevel (c : NCtx) (a : Expr) (acc : SpineAcc) (nested : Bool) : MetaM (Opti
 
 mutual
 
-partial def nestedSide (c : NCtx) (x : Expr) (acc : SpineAcc) : MetaM (Option SpineAcc) := do
+meta partial def nestedSide (c : NCtx) (x : Expr) (acc : SpineAcc) : MetaM (Option SpineAcc) := do
   if x.isLambda then
     return ← lambdaTelescope x fun _ b => nestedSide c b acc
   let (items, _) := c.flat x
@@ -1248,7 +1253,7 @@ partial def nestedSide (c : NCtx) (x : Expr) (acc : SpineAcc) : MetaM (Option Sp
       acc := acc'
   return some acc
 
-partial def atomCheck (c : NCtx) (e : Expr) (acc : SpineAcc) : MetaM (Option SpineAcc) := do
+meta partial def atomCheck (c : NCtx) (e : Expr) (acc : SpineAcc) : MetaM (Option SpineAcc) := do
   if !c.bad e then return some acc
   if let some w := c.wandOp then
     if isOp w e then
@@ -1265,7 +1270,7 @@ partial def atomCheck (c : NCtx) (e : Expr) (acc : SpineAcc) : MetaM (Option Spi
 
 end
 
-partial def spine (c : NCtx) (e : Expr) (acc : SpineAcc) : MetaM (Option SpineAcc) := do
+meta partial def spine (c : NCtx) (e : Expr) (acc : SpineAcc) : MetaM (Option SpineAcc) := do
   if isOp c.starOp e then
     match ← c.spine (arg c.starOp e 0) acc with
     | none => return none
@@ -1282,17 +1287,17 @@ partial def spine (c : NCtx) (e : Expr) (acc : SpineAcc) : MetaM (Option SpineAc
   else if e.isMVar then return some acc
   else atomCheck c e acc
 
-inductive Item where
+meta inductive Item where
   | atom
   | ex (a j : Expr)
   | pure (p : Expr)
 
-def item (c : NCtx) (e : Expr) : Item :=
+meta def item (c : NCtx) (e : Expr) : Item :=
   if isOp c.exOp e then .ex (arg c.exOp e 0) (arg c.exOp e 1)
   else if isOp c.pureOp e then .pure (arg c.pureOp e 0)
   else .atom
 
-def pick (c : NCtx) (s : List Expr) (typeEx leftPure : Bool) : Option Nat := Id.run do
+meta def pick (c : NCtx) (s : List Expr) (typeEx leftPure : Bool) : Option Nat := Id.run do
   let n := s.length
   let arr := s.toArray
   if typeEx then
@@ -1310,7 +1315,7 @@ def pick (c : NCtx) (s : List Expr) (typeEx leftPure : Bool) : Option Nat := Id.
     if isOp c.exOp arr[i]! || isOp c.pureOp arr[i]! then return some i
   return none
 
-def pickEx (c : NCtx) (s : List Expr) : Option Nat := Id.run do
+meta def pickEx (c : NCtx) (s : List Expr) : Option Nat := Id.run do
   let arr := s.toArray
   let mut i := arr.size
   while i > 0 do
@@ -1318,23 +1323,23 @@ def pickEx (c : NCtx) (s : List Expr) : Option Nat := Id.run do
     if isOp c.exOp arr[i]! then return some i
   return none
 
-def exBody (j : Expr) : Name × Expr :=
+meta def exBody (j : Expr) : Name × Expr :=
   if j.isLambda then (j.bindingName!, j.bindingBody!) else (`x, mkApp j (.bvar 0))
 
 end NCtx
 
 
-def newGoal (cur : MVarId) (ty : Expr) (mk : Expr → Expr) : MetaM MVarId := cur.withContext do
+meta def newGoal (cur : MVarId) (ty : Expr) (mk : Expr → Expr) : MetaM MVarId := cur.withContext do
   let m ← mkFreshExprMVar ty
   cur.assign (mk m)
   return m.mvarId!
 
-def normLevel (a : Expr) : MetaM Level := do
+meta def normLevel (a : Expr) : MetaM Level := do
   return (← instantiateLevelMVars (← getLevel a)).normalize
 
 mutual
 
-partial def itemsNorm (c : NCtx) (x : Expr) (items : List Expr) (p : Option Expr) :
+meta partial def itemsNorm (c : NCtx) (x : Expr) (items : List Expr) (p : Option Expr) :
     MetaM (List Expr × Option Expr) := do
   let mut cur := items
   let mut pf := p
@@ -1355,7 +1360,7 @@ partial def itemsNorm (c : NCtx) (x : Expr) (items : List Expr) (p : Option Expr
     cur := next
   return (cur, pf)
 
-partial def nestNorm (c : NCtx) (x : Expr) : MetaM (Expr × Option Expr) := do
+meta partial def nestNorm (c : NCtx) (x : Expr) : MetaM (Expr × Option Expr) := do
   let (items0, p0) := c.flat x
   let (items, p1) ← itemsNorm c x items0 p0
   let flatE := c.starL items
@@ -1385,7 +1390,7 @@ partial def nestNorm (c : NCtx) (x : Expr) : MetaM (Expr × Option Expr) := do
     | some p, some q => some (c.eqTrans x flatE acc p q)
   return (acc, pf)
 
-partial def combine (c : NCtx) (a b : Expr) : MetaM (Expr × Option Expr) := do
+meta partial def combine (c : NCtx) (a b : Expr) : MetaM (Expr × Option Expr) := do
   let e := c.mkStar a b
   let exLam := fun (x : Expr) => NCtx.isOp c.exOp x && (NCtx.arg c.exOp x 1).isLambda
   if exLam b || exLam a then
@@ -1415,7 +1420,7 @@ partial def combine (c : NCtx) (a b : Expr) : MetaM (Expr × Option Expr) := do
     let (l, p) := c.flat e
     return (c.starL l, p)
 
-partial def wandNorm (c : NCtx) (w : NOp) (e : Expr) : MetaM (Expr × Option Expr) := do
+meta partial def wandNorm (c : NCtx) (w : NOp) (e : Expr) : MetaM (Expr × Option Expr) := do
   let mkW := fun (a b : Expr) =>
     mkAppN e.getAppFn ((e.getAppArgs.set! w.pos[0]! a).set! w.pos[1]! b)
   let a := NCtx.arg w e 0
@@ -1454,7 +1459,7 @@ partial def wandNorm (c : NCtx) (w : NOp) (e : Expr) : MetaM (Expr × Option Exp
       cur := nxt2
   return (cur, pf)
 
-partial def argNorm (c : NCtx) (x : Expr) : MetaM (Expr × Option Expr) := do
+meta partial def argNorm (c : NCtx) (x : Expr) : MetaM (Expr × Option Expr) := do
   let .lam n ty b bi := x | nestNorm c x
   withLocalDecl n bi ty fun v => do
     let (b', pb) ← argNorm c (b.instantiate1 v)
@@ -1462,7 +1467,7 @@ partial def argNorm (c : NCtx) (x : Expr) : MetaM (Expr × Option Expr) := do
     | none => return (x, none)
     | some pb => return (← mkLambdaFVars #[v] b', some (← mkFunExt (← mkLambdaFVars #[v] pb)))
 
-partial def itemNorm (c : NCtx) (e : Expr) : MetaM (Expr × Option Expr) := do
+meta partial def itemNorm (c : NCtx) (e : Expr) : MetaM (Expr × Option Expr) := do
   if NCtx.isOp c.exOp e then
     let j := NCtx.arg c.exOp e 1
     unless j.isLambda do return (e, none)
@@ -1508,7 +1513,7 @@ partial def itemNorm (c : NCtx) (e : Expr) : MetaM (Expr × Option Expr) := do
 
 end
 
-def flatN (c : NCtx) (e : Expr) : MetaM (List Expr × Option Expr) := do
+meta def flatN (c : NCtx) (e : Expr) : MetaM (List Expr × Option Expr) := do
   let (s, p) := c.flat e
   let needs := fun (it : Expr) =>
     if NCtx.isOp c.pureOp it then NCtx.selfEq (NCtx.arg c.pureOp it 0)
@@ -1517,7 +1522,7 @@ def flatN (c : NCtx) (e : Expr) : MetaM (List Expr × Option Expr) := do
   let (s', q) ← itemsNorm c e s p
   return (s', q)
 
-def flatGoalL (c : NCtx) (cur : MVarId) (l r : Expr) : MetaM (MVarId × List Expr) :=
+meta def flatGoalL (c : NCtx) (cur : MVarId) (l r : Expr) : MetaM (MVarId × List Expr) :=
     cur.withContext do
   let (s, p) ← flatN c l
   match p with
@@ -1527,7 +1532,7 @@ def flatGoalL (c : NCtx) (cur : MVarId) (l r : Expr) : MetaM (MVarId × List Exp
     let g ← newGoal cur (c.mkEnt ls r) fun m => c.trans l ls r (c.lem ``nt_of_eq #[l, ls, p]) m
     return (g, s)
 
-def flatGoalR (c : NCtx) (cur : MVarId) (l r : Expr) : MetaM (MVarId × List Expr) :=
+meta def flatGoalR (c : NCtx) (cur : MVarId) (l r : Expr) : MetaM (MVarId × List Expr) :=
     cur.withContext do
   let (t, p) ← flatN c r
   match p with
@@ -1538,7 +1543,7 @@ def flatGoalR (c : NCtx) (cur : MVarId) (l r : Expr) : MetaM (MVarId × List Exp
       c.trans l lt r m (c.lem ``nt_of_eq #[lt, r, c.eqSymm r lt p])
     return (g, t)
 
-def pureBlockPf (c : NCtx) (s : List Expr) : Option Expr × Expr × List Expr × List Expr := Id.run do
+meta def pureBlockPf (c : NCtx) (s : List Expr) : Option Expr × Expr × List Expr × List Expr := Id.run do
   let arr := s.toArray
   let n := arr.size
   let last := arr[n - 1]!
@@ -1606,7 +1611,7 @@ def pureBlockPf (c : NCtx) (s : List Expr) : Option Expr × Expr × List Expr ×
 
 mutual
 
-partial def peelPures (c : NCtx) (inst : Level → MetaM Expr) (lctx0 : LocalContext)
+meta partial def peelPures (c : NCtx) (inst : Level → MetaM Expr) (lctx0 : LocalContext)
     (li0 : LocalInstances) (rr : Expr) (typeEx leftPure : Bool) (xs : Array Expr)
     (ps cs : List Expr) : MetaM (Expr × Array Expr × List Expr × Expr) := do
   match ps with
@@ -1623,7 +1628,7 @@ partial def peelPures (c : NCtx) (inst : Level → MetaM Expr) (lctx0 : LocalCon
       else
         return (m, xsF, sF, c.lem ``nt_purel #[pA, (c.starL restL).abstract xs, rr, lam])
 
-partial def lhsRec (c : NCtx) (inst : Level → MetaM Expr) (lctx0 : LocalContext)
+meta partial def lhsRec (c : NCtx) (inst : Level → MetaM Expr) (lctx0 : LocalContext)
     (li0 : LocalInstances) (rr : Expr) (typeEx leftPure : Bool) (xs : Array Expr)
     (s : List Expr) : MetaM (Expr × Array Expr × List Expr × Expr) := do
   let abs := fun (e : Expr) => e.abstract xs
@@ -1696,14 +1701,14 @@ partial def lhsRec (c : NCtx) (inst : Level → MetaM Expr) (lctx0 : LocalContex
 
 end
 
-def lhsBatch (c : NCtx) (inst : Level → MetaM Expr) (cur : MVarId) (s : List Expr) (rr : Expr)
+meta def lhsBatch (c : NCtx) (inst : Level → MetaM Expr) (cur : MVarId) (s : List Expr) (rr : Expr)
     (typeEx leftPure : Bool) : MetaM (MVarId × List Expr × Nat) := cur.withContext do
   let (m, xsF, sF, pf) ← lhsRec c inst (← getLCtx) (← getLocalInstances) rr typeEx leftPure #[] s
   cur.assign pf
   let (fvs, g2) ← m.mvarId!.introN xsF.size
   return (g2, sF.map (·.replaceFVars xsF (fvs.map mkFVar)), xsF.size)
 
-def rhsStep (c : NCtx) (inst : Level → MetaM Expr) (cur : MVarId) (ls : Expr) (tt : List Expr)
+meta def rhsStep (c : NCtx) (inst : Level → MetaM Expr) (cur : MVarId) (ls : Expr) (tt : List Expr)
     (jx : Nat) : MetaM (MVarId × List Expr × Expr) := cur.withContext do
   let n := tt.length
   let arr := tt.toArray
@@ -1750,7 +1755,7 @@ def rhsStep (c : NCtx) (inst : Level → MetaM Expr) (cur : MVarId) (ls : Expr) 
       return (g2, rest, q)
   | .atom => throwError "xsimpl: native step on an atom"
 
-def cancelScan (sa ta : Array Expr) : MetaM (Array (Nat × Nat) × Array Bool × Array Nat) := do
+meta def cancelScan (sa ta : Array Expr) : MetaM (Array (Nat × Nat) × Array Bool × Array Nat) := do
   let cheap ← cheapCancel.get
   let mut lAlive : Array Bool := sa.map (fun _ => true)
   let mut pairs : Array (Nat × Nat) := #[]
@@ -1800,7 +1805,7 @@ def cancelScan (sa ta : Array Expr) : MetaM (Array (Nat × Nat) × Array Bool ×
       cont := true
   return (pairs, lAlive, tIdx)
 
-def cancelStep (c : NCtx) (cur : MVarId) (s tt : List Expr) :
+meta def cancelStep (c : NCtx) (cur : MVarId) (s tt : List Expr) :
     MetaM (Option (Option MVarId × List Expr × List Expr)) :=
   cur.withContext do
   let (pairs, lAlive, tIdx) ← cancelScan s.toArray tt.toArray
@@ -1833,23 +1838,23 @@ def cancelStep (c : NCtx) (cur : MVarId) (s tt : List Expr) :
   let g2 ← newGoal cur (c.mkEnt (c.starL sr) (c.starL tr)) body
   return some (some g2, sr, tr)
 
-def closeRefl (c : NCtx) (g : MVarId) (l r : Expr) : MetaM Bool := g.withContext do
+meta def closeRefl (c : NCtx) (g : MVarId) (l r : Expr) : MetaM Bool := g.withContext do
   unless ← cheapDefEq l r do return false
   g.assign (c.lem ``nt_refl #[l])
   return true
 
-def wholeEq (c : NCtx) (g : MVarId) (l r : Expr) : MetaM Bool := do
+meta def wholeEq (c : NCtx) (g : MVarId) (l r : Expr) : MetaM Bool := do
   if l.hasExprMVar || r.hasExprMVar then return false
   closeRefl c g l r
 
-def residualEq (c : NCtx) (g : MVarId) (created : Array Expr) (l r : Expr) : MetaM Bool := do
+meta def residualEq (c : NCtx) (g : MVarId) (created : Array Expr) (l r : Expr) : MetaM Bool := do
   let l ← instantiateMVars l
   let r ← instantiateMVars r
   let ok := fun (e : Expr) => (e.find? fun x => x.isMVar && !created.contains x).isNone
   unless ok l && ok r do return false
   closeRefl c g l r
 
-def permClose (c : NCtx) (g : MVarId) (s : List Expr) (r : Expr) : MetaM Bool := g.withContext do
+meta def permClose (c : NCtx) (g : MVarId) (s : List Expr) (r : Expr) : MetaM Bool := g.withContext do
   let binder := fun (e : Expr) => NCtx.isOp c.exOp e || NCtx.isOp c.pureOp e
   unless s.any binder || (r.find? binder).isSome do return false
   let (t, _) ← flatN c r
@@ -1861,9 +1866,9 @@ def permClose (c : NCtx) (g : MVarId) (s : List Expr) (r : Expr) : MetaM Bool :=
   let some (none, _, _) ← cancelStep c g2 s t2 | return false
   return true
 
-def appTag (t n : Name) : Name := if t.isAnonymous then n else appendTag t n
+meta def appTag (t n : Name) : Name := if t.isAnonymous then n else appendTag t n
 
-partial def nativeGoal (g : MVarId) : MetaM (Option (List MVarId)) := g.withContext do
+meta partial def nativeGoal (g : MVarId) : MetaM (Option (List MVarId)) := g.withContext do
   let some (g, c, l0, r0) ← sepGoal? g | return none
   let some accL ← c.spine l0 {} | return none
   let some accR ← c.spine r0 { accL with hasEx := false } | return none
@@ -2018,7 +2023,7 @@ partial def nativeGoal (g : MVarId) : MetaM (Option (List MVarId)) := g.withCont
       unless ← id.isAssigned do out := out ++ [id]
   return some out
 
-def nativeOrNone (g : MVarId) : MetaM (Option (List MVarId)) := do
+meta def nativeOrNone (g : MVarId) : MetaM (Option (List MVarId)) := do
   let s ← saveState
   try
     let r ← nativeGoal g
@@ -2030,12 +2035,12 @@ def nativeOrNone (g : MVarId) : MetaM (Option (List MVarId)) := do
 
 mutual
 
-partial def driveOne (extra : Option (TSyntax ``Lean.Parser.Tactic.tacticSeq)) (g : MVarId) :
+meta partial def driveOne (extra : Option (TSyntax ``Lean.Parser.Tactic.tacticSeq)) (g : MVarId) :
     TacticM (List MVarId) := do
   if ← g.isAssigned then return []
   withExtra extra ((← nativeOrNone g).getD [g])
 
-partial def withExtra (extra : Option (TSyntax ``Lean.Parser.Tactic.tacticSeq))
+meta partial def withExtra (extra : Option (TSyntax ``Lean.Parser.Tactic.tacticSeq))
     (hs : List MVarId) : TacticM (List MVarId) := do
   match extra with
   | none => return hs
@@ -2053,7 +2058,7 @@ partial def withExtra (extra : Option (TSyntax ``Lean.Parser.Tactic.tacticSeq))
 
 end
 
-def xsimplDriver (extra : Option (TSyntax ``Lean.Parser.Tactic.tacticSeq)) : TacticM Unit := do
+meta def xsimplDriver (extra : Option (TSyntax ``Lean.Parser.Tactic.tacticSeq)) : TacticM Unit := do
   let mut out : List MVarId := []
   for g in ← getGoals do
     out := out ++ (← driveOne extra g)
@@ -2067,7 +2072,7 @@ syntax "xsimpl_core" : tactic
 elab_rules : tactic
   | `(tactic| xsimpl_core) => xsimplDriver none
 
-def affineEmp (c : NCtx) (g : MVarId) (l r : Expr) : MetaM Bool := do
+meta def affineEmp (c : NCtx) (g : MVarId) (l r : Expr) : MetaM Bool := do
   unless NCtx.isOp c.empOp r || NCtx.isOp c.empOp (← whnfR r) do return false
   let some aff ← affineInst? c.carrier | return false
   let pf ← mkAppOptM ``AffineSepLogic.entails_emp #[some c.carrier, some aff, some l]
@@ -2075,7 +2080,7 @@ def affineEmp (c : NCtx) (g : MVarId) (l r : Expr) : MetaM Bool := do
   g.assign pf
   return true
 
-def xsimplClean : TacticM Unit := do
+meta def xsimplClean : TacticM Unit := do
   let g ← getMainGoal
   let (g, done) ← g.withContext do
     match ← sepGoal? g with

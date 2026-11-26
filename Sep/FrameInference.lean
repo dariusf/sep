@@ -1,4 +1,9 @@
-import Sep.Xsimpl.Core
+module
+
+public import Sep.Xsimpl.Core
+public meta import Lean
+
+public section
 
 open Lean Meta Elab Tactic
 
@@ -21,18 +26,18 @@ namespace Sep.Xsimpl
 /-- The user name marking an internally created open tail of a frame /
 anti-frame accumulator.  User-supplied metavariables carry any other name and
 survive `xsimpl_close_frames`. -/
-def frameTailName : Name := `_xsimpl_frame_tail
+meta def frameTailName : Name := `_xsimpl_frame_tail
 
-private def isInternalTail (e : Expr) : MetaM Bool := do
+private meta def isInternalTail (e : Expr) : MetaM Bool := do
   if !e.isMVar then return false
   return (← e.mvarId!.getDecl).userName == frameTailName
 
-private def isUserMVar (e : Expr) : MetaM Bool := do
+private meta def isUserMVar (e : Expr) : MetaM Bool := do
   if !e.isMVar then return false
   return (← e.mvarId!.getDecl).userName != frameTailName
 
 /-- Absorb one atom into an accumulator metavariable: `acc := atom ∗ ?tail`. -/
-private def absorbInto (c : SepCtx) (acc atom : Expr) : MetaM Unit := do
+private meta def absorbInto (c : SepCtx) (acc atom : Expr) : MetaM Unit := do
   let tail ← mkFreshExprMVar (← inferType acc) (userName := frameTailName)
   acc.mvarId!.assign (← mkAppOptM ``SepLogic.star
     #[some c.carrier, some c.inst, some atom, some tail])
@@ -51,7 +56,7 @@ elab "xsimpl_abduce_step_core" : tactic => withMainContext do
   trace[xsimpl] m!"Granularly Abduced: {missing}"
 
 /-- Drop one leftover resource of the LHS, which affinity permits. -/
-private def dropLeftover (goal : MVarId) (c : SepCtx) (aff lhs rhs leftover : Expr) :
+private meta def dropLeftover (goal : MVarId) (c : SepCtx) (aff lhs rhs leftover : Expr) :
     TacticM Unit := do
   let (newLhs, lhsProof) ← starMoveToFront c leftover lhs
   let rest := match matchStar? newLhs with
@@ -173,7 +178,7 @@ macro_rules
 /-- **Programmatic entry point.**  Given a goal `P2 ⊢ P1 ∗ ?frame` (or any
 entailment carrying frame / anti-frame metavariables), cancel the matching atoms
 and assign the remainders.  Returns the goals left over. -/
-def inferFrame (goal : MVarId) : TacticM (List MVarId) := do
+meta def inferFrame (goal : MVarId) : TacticM (List MVarId) := do
   let gs ← Tactic.run goal (evalTactic (← `(tactic| xsimpl_granular_frames)))
   return gs
 

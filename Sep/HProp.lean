@@ -1,4 +1,9 @@
-import Sep.FmapTactics
+module
+
+public import Sep.FmapTactics
+public meta import Lean
+
+@[expose] public section
 open Lean
 
 class Params where
@@ -103,12 +108,12 @@ macro_rules
   | `(heapForall| ∀✶ $xs:explicitBinders, $b:term) =>
       expandExplicitBinders ``hforall xs b
 
-@[app_unexpander hexists] def unexpandHexists : Lean.PrettyPrinter.Unexpander
+@[app_unexpander hexists] meta def unexpandHexists : Lean.PrettyPrinter.Unexpander
   | `($(_) fun $x:ident => $body) => `(∃✶ $x:ident, $body)
   | `($(_) fun ($x:ident : $_) => $body) => `(∃✶ $x:ident, $body)
   | _ => throw ()
 
-@[app_unexpander hforall] def unexpandHforall : Lean.PrettyPrinter.Unexpander
+@[app_unexpander hforall] meta def unexpandHforall : Lean.PrettyPrinter.Unexpander
   | `($(_) fun $x:ident => $body) => `(∀✶ $x:ident, $body)
   | `($(_) fun ($x:ident : $_) => $body) => `(∀✶ $x:ident, $body)
   | _ => throw ()
@@ -926,34 +931,31 @@ theorem sat_hstar_of_separated {H1 H2 : HProp}
   | ⟨h1, hh1⟩, ⟨h2, hh2⟩ =>
       ⟨h1 ∪ h2, hstar_intro hh1 hh2 (hsep h1 h2 hh1 hh2)⟩
 
-/-! `_eq` API: canonical unfolding lemmas, mathlib-style. Prefer these over
-    the `_intro` / `_elim` pairs when both directions are needed at once.
-    Not tagged `@[simp]`: the unfolded form is more complex, and these
-    primitives are the canonical form. -/
+theorem hand_intro {H1 H2 : HProp} {h : Heap} :
+    H1 h → H2 h → (H1 ⊓ H2) h :=
+  fun h1 h2 => ⟨h1, h2⟩
 
-theorem hempty_eq (h : Heap) : (emp : HProp) h ↔ h = ∅ := Iff.rfl
+theorem hand_elim {H1 H2 : HProp} {h : Heap} :
+    (H1 ⊓ H2) h → H1 h ∧ H2 h :=
+  fun hh => hh
 
-theorem hsingle_eq (p : Loc) (v : val) (h : Heap) :
-    (p ↦ v) h ↔ h = Finmap.singleton p v := Iff.rfl
+theorem hsept_elim {H1 H2 : HProp} {h : Heap} :
+    (H1 -⊛ H2) h → ∃ h1, H1 h1 ∧ Finmap.Disjoint h h1 ∧ H2 (h ∪ h1) :=
+  fun hh => hh
 
-theorem hstar_eq (H1 H2 : HProp) (h : Heap) :
-    (H1 ✶ H2) h ↔
-      ∃ h1 h2, H1 h1 ∧ H2 h2 ∧ Finmap.Disjoint h1 h2 ∧ h = h1 ∪ h2 :=
-  Iff.rfl
+theorem hwand_intro {H0 H1 H2 : HProp} {h : Heap} :
+    H0 h → (H1 ✶ H0 ==> H2) → (H1 -✶ H2) h := by
+  intro hH0 himp
+  have hs := hstar_intro hH0 (hpure_intro _ himp) (Finmap.disjoint_empty _).symm
+  rw [Finmap.union_empty] at hs
+  exact hexists_intro H0 _ hs
 
-theorem hexists_eq {A : Sort _} (J : A → HProp) (h : Heap) :
-    (∃✶ x, J x) h ↔ ∃ x, J x h := Iff.rfl
+theorem qwand_intro {A : Sort _} {Q1 Q2 : A → HProp} {h : Heap} :
+    (∀ x, (Q1 x -✶ Q2 x) h) → (Q1 -✶+ Q2) h :=
+  fun hh => hh
 
-theorem hforall_eq {A : Sort _} (J : A → HProp) (h : Heap) :
-    (∀✶ x, J x) h ↔ ∀ x, J x h := Iff.rfl
+theorem qwand_elim {A : Sort _} {Q1 Q2 : A → HProp} {h : Heap} :
+    (Q1 -✶+ Q2) h → ∀ x, (Q1 x -✶ Q2 x) h :=
+  fun hh => hh
 
-theorem hpure_eq (P : Prop) (h : Heap) :
-    ⌈P⌉ h ↔ P ∧ h = ∅ :=
-  ⟨hpure_elim, fun ⟨hP, hh⟩ => hh ▸ hpure_intro P hP⟩
-
-theorem htop_eq (h : Heap) : htop h ↔ True := Iff.rfl
-
-theorem hand_eq (H1 H2 : HProp) (h : Heap) :
-    (H1 ⊓ H2) h ↔ H1 h ∧ H2 h := Iff.rfl
-
-attribute [irreducible] hempty hsingle hstar hexists hforall hpure htop hwand qwand hand
+attribute [irreducible] hempty hsingle hstar hexists hforall hpure htop hwand qwand hand hsept

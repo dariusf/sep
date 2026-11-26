@@ -1,6 +1,11 @@
-import Sep.Xsimpl
-import Sep.SegC
-import Lean
+module
+
+public import Sep.Xsimpl
+public import Sep.SegC
+public meta import Sep.SegC
+public meta import Lean
+
+public meta section
 open Lean Meta Elab Tactic
 open HProp Notation
 

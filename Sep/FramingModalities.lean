@@ -1,4 +1,8 @@
-import Sep.HProp
+module
+
+public import Sep.HProp
+
+public section
 
 /-! Framing modalities: Contains and Missing -/
 
@@ -95,8 +99,9 @@ theorem missing_eq (H : HProp) :
   apply propext
   refine ⟨?_, ?_⟩
   · rintro ⟨p, hHp, hd⟩
-    exact ⟨p, hHp, hd, HProp.htop_intro _⟩
-  · rintro ⟨p, hHp, hd, _⟩
+    exact HProp.hsept_intro hHp hd (HProp.htop_intro _)
+  · intro hh
+    obtain ⟨p, hHp, hd, _⟩ := HProp.hsept_elim hh
     exact ⟨p, hHp, hd⟩
 
 /-- Taking away things from a heap with a missing piece preserves the fact that the piece is missing. Or, `Missing H` is anti-monotone in the heap: shrinking a heap preserves the property that `H` fits as a disjoint extension. -/
@@ -205,7 +210,7 @@ theorem missing_contains_himpl_hpure {H : HProp}
     (hprec : Precise H) :
     Missing H ⊓ Contains H ==> ⌈H ∅⌉ ✶ htop := by
   intro h hh
-  obtain ⟨hm, hc⟩ := (HProp.hand_eq _ _ h).mp hh
+  obtain ⟨hm, hc⟩ := HProp.hand_elim hh
   obtain ⟨p, hHp, hdp⟩ := hm
   obtain ⟨h1, p', hHp', hdp', heq⟩ := hc
   have hpe : p = p' := hprec p p' hHp hHp'

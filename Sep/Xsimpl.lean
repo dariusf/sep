@@ -1,5 +1,10 @@
-import Sep.HProp
-import Sep.Xsimpl.Core
+module
+
+public import Sep.HProp
+public import Sep.Xsimpl.Core
+public meta import Lean
+
+public section
 
 open Lean Meta Elab Tactic
 
@@ -88,7 +93,7 @@ instance instSepLogicHProp : SepLogic HProp where
 
 /-- Parse a star chain stated with either the `HProp` constants or the
     `SepLogic` class operations. -/
-partial def parseHstar (e : Expr) : List Expr :=
+meta partial def parseHstar (e : Expr) : List Expr :=
   match e.getAppFnArgs with
   | (``HProp.hstar, #[_, H1, H2]) => H1 :: parseHstar H2
   | (``HProp.hempty, _) => []

@@ -1,4 +1,8 @@
-import Lean
+module
+
+public import Lean
+
+public section
 
 open Lean Meta Elab Tactic
 
@@ -57,7 +61,7 @@ scoped macro_rules
   | `(sepExists| ∃ₛ $xs:explicitBinders, $b:term) =>
       Lean.expandExplicitBinders ``SepLogic.ex xs b
 
-@[app_unexpander SepLogic.ex] def unexpandEx : Lean.PrettyPrinter.Unexpander
+@[app_unexpander SepLogic.ex] meta def unexpandEx : Lean.PrettyPrinter.Unexpander
   | `($(_) fun $x:ident => ∃ₛ $ys:binderIdent*, $body) =>
       `(∃ₛ $x:ident $ys*, $body)
   | `($(_) fun $x:ident => $body) => `(∃ₛ $x:ident, $body)

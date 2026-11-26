@@ -1,5 +1,9 @@
-import Sep.GrwSepLogic
-import Sep.Xsimpl
+module
+
+public import Sep.GrwSepLogic
+public import Sep.Xsimpl
+
+public section
 
 namespace Sep.Xsimpl
 

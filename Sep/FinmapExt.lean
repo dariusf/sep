@@ -1,12 +1,14 @@
-import Mathlib.Data.Finmap
+module
+
+public import Mathlib.Data.Finmap
+
+public section
 
 namespace Finmap
 
 universe u v
 
 variable {α : Type u} {β : Type v}
-
-attribute [symm] Finmap.Disjoint.symm
 
 @[simp] theorem lookup_singleton_ne [DecidableEq α] {a a1 : α} (b : β) (h : a1 ≠ a) :
     lookup a1 (singleton a b : Finmap fun _ : α => β) = none := by

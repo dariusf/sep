@@ -1,4 +1,9 @@
-import Sep.SepLogic
+module
+
+public import Sep.SepLogic
+public meta import Lean
+
+public meta section
 
 /-!
 # sl_pull and sl_perm

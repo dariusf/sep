@@ -1,4 +1,8 @@
-import Sep.Xsimpl
+module
+
+public import Sep.Xsimpl
+
+public section
 
 open HProp Notation
 
@@ -1187,7 +1191,7 @@ theorem wand_use2 {A B E F C : HProp} (h1 : E ==> A) (h2 : B ✶ F ==> C) :
   rw [← HProp.hstar_assoc, HProp.hstar_comm (A -✶ B) A]
   exact HProp.himpl_trans (HProp.himpl_frame_l (HProp.hwand_cancel A B)) h2
 
-def hpack (H1 H2 : HProp) : HProp := H1 ✶ H2
+@[expose] def hpack (H1 H2 : HProp) : HProp := H1 ✶ H2
 
 theorem hpack_eq (H1 H2 : HProp) : hpack H1 H2 = H1 ✶ H2 := rfl
 

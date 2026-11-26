@@ -1,5 +1,9 @@
-import Sep.SepLogic
-import Mathlib.Tactic.GRewrite
+module
+
+public import Sep.SepLogic
+public import Mathlib.Tactic.GRewrite
+
+public section
 
 namespace SepLogic
 
