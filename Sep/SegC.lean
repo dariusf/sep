@@ -1,6 +1,6 @@
 module
 
-public import Sep.Xsimpl
+public import Sep.HProp.SepLogic
 
 public section
 

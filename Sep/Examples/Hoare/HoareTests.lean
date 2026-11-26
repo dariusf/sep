@@ -1,5 +1,5 @@
 import Sep.HProp
-import Sep.Xsimpl
+import Sep.HProp.SepLogic
 import Sep.Examples.SymEx.SymExec
 import Sep.Examples.Biab.FrameInference
 import Sep.Examples.Hoare.Hoare

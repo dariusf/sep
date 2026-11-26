@@ -1,5 +1,5 @@
 import Sep.Reordering
-import Sep.Xsimpl
+import Sep.HProp.SepLogic
 
 open scoped SepLogic
 

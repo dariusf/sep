@@ -1,5 +1,5 @@
 import Sep.HProp
-import Sep.Xsimpl
+import Sep.HProp.SepLogic
 import Sep.FrameInference
 open HProp Notation
 

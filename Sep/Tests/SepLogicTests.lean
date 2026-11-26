@@ -1,4 +1,4 @@
-import Sep.Xsimpl
+import Sep.HProp.SepLogic
 import Sep.Xsimpl.Core
 import Sep.FrameInference
 

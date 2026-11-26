@@ -1,6 +1,6 @@
 module
 
-public import Sep.Xsimpl
+public import Sep.HProp.SepLogic
 public import Sep.SegC
 public meta import Sep.SegC
 public meta import Lean

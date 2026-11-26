@@ -1,4 +1,4 @@
-import Sep.Xsimpl
+import Sep.HProp.SepLogic
 import Lean
 open Lean Meta Elab Tactic
 open HProp Notation

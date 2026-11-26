@@ -1,5 +1,5 @@
 import Sep.FrameInference
-import Sep.Xsimpl
+import Sep.HProp.SepLogic
 
 /-!
 The biabduction phases used to live here, over `HProp.himpl` only.  They are now

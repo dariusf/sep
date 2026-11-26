@@ -1,5 +1,5 @@
 import Sep.HProp
-import Sep.Xsimpl
+import Sep.HProp.SepLogic
 import Sep.Examples.SymEx.SymExec
 open HProp Notation
 open Sep.SymExec
