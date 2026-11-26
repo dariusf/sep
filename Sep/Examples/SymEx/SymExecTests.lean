@@ -102,5 +102,4 @@ example : emp ==> wp (do
   xsimpl_instantiate_step
   all_goals (
     try xsimpl_clean
-    try rfl
   )

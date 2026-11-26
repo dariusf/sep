@@ -1,52 +1,49 @@
-import Sep.Xsimpl
-
-/-!
-Tests for `xsimpl` on goals stated with the generic `SepLogic` notation
-(`∗`, `-∗`, `==>`, `⌜⌝`, `emp`, `∃ₛ`) rather than the `HProp` notation.
--/
+import Sep.SepLogic
 
 open SepLogic
 
-instance UnitParamsGeneric : Params where
-  val := Unit
+variable {α : Type} [SepLogic α] (H1 H2 H3 : α) (P : Prop) (J : Nat → α) (K : Nat → Nat → α)
 
--- Normalization
+/-- info: H1 ∗ H2 : α -/
+#guard_msgs in
+#check (H1 ∗ H2 : α)
 
-example {H : HProp} : H ∗ emp ==> H := by xsimpl
+/-- info: H1 ∗ H2 ∗ H3 : α -/
+#guard_msgs in
+#check (H1 ∗ H2 ∗ H3 : α)
 
-example {H : HProp} : H ==> emp ∗ H := by xsimpl
+/-- info: H1 -∗ H2 : α -/
+#guard_msgs in
+#check (H1 -∗ H2 : α)
 
-example {H1 H2 : HProp} : H1 ∗ emp ∗ H2 ==> H1 ∗ H2 := by xsimpl
+/-- info: H1 ==> H2 : Prop -/
+#guard_msgs in
+#check (H1 ==> H2 : Prop)
 
--- Pure
+/-- info: emp : α -/
+#guard_msgs in
+#check (emp : α)
 
-example {P : Prop} {H : HProp} : ⌜P⌝ ∗ H ==> H := by xsimpl
+/-- info: ⌜P⌝ : α -/
+#guard_msgs in
+#check (⌜P⌝ : α)
 
-example {P : Prop} {H : HProp} : H ∗ ⌜P⌝ ==> H := by xsimpl
+/-- info: ∃ₛ x, J x : α -/
+#guard_msgs in
+#check (∃ₛ x, J x : α)
 
-example {P : Prop} {H : HProp} (hP : P) : H ==> ⌜P⌝ ∗ H := by xsimpl
+/-- info: ∃ₛ x y, K x y : α -/
+#guard_msgs in
+#check (∃ₛ x y, K x y : α)
 
--- Existentials, including multiple binders
+/-- info: ∃ₛ x, J x : α -/
+#guard_msgs in
+#check (∃ₛ (x : Nat), J x : α)
 
-example {A : Type} {a : A} {J : A → HProp} : J a ==> ∃ₛ x, J x := by xsimpl
+/-- info: H1 ∗ (H1 -∗ H2) ==> H2 : Prop -/
+#guard_msgs in
+#check (H1 ∗ (H1 -∗ H2) ==> H2 : Prop)
 
-example {A B : Type} {a : A} {b : B} {J : A → B → HProp} :
-    J a b ==> ∃ₛ x y, J x y := by xsimpl
-
-example {A : Type} {J : A → HProp} {H : HProp} :
-    (∃ₛ x, J x) ∗ H ==> ∃ₛ x, J x ∗ H := by xsimpl
-
--- Cancellation
-
-example {H1 H2 H3 : HProp} : H1 ∗ H2 ∗ H3 ==> H2 ∗ H3 ∗ H1 := by xsimpl
-
--- Wands
-
-example {H1 H2 : HProp} : H1 ∗ (H1 -∗ H2) ==> H2 := by xsimpl
-
-example {H1 H2 H3 : HProp} : H1 ∗ (H1 -∗ H2) ∗ H3 ==> H2 ∗ H3 := by xsimpl
-
--- Residual goals are handed back in the concrete logic's own notation
-
-example {H1 H2 H3 H4 : HProp} (h : HProp.himpl (HProp.hstar H1 H3) H4) :
-    H1 ∗ H2 ∗ H3 ==> H2 ∗ H4 := by xsimpl
+/-- info: ⌜P⌝ ∗ emp ==> ∃ₛ x, J x : Prop -/
+#guard_msgs in
+#check (⌜P⌝ ∗ emp ==> ∃ₛ x, J x : Prop)

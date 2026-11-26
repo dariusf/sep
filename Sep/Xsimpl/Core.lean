@@ -938,6 +938,13 @@ meta def foldTemplate (lem : Name) (carrier : Expr) (op : NOp) (byOperand : Bool
   if fn.hasMVar then return none
   return some (fn, args)
 
+meta def foldCarrierMatches (lem : Name) (carrier : Expr) : MetaM Bool := withNewMCtxDepth do
+  let ci ← getConstInfo lem
+  let lvls ← ci.levelParams.mapM fun _ => mkFreshLevelMVar
+  let (_, _, body) ← forallMetaTelescope (ci.type.instantiateLevelParams ci.levelParams lvls)
+  let some (_, lhs, _) := body.eq? | return false
+  isDefEq (← inferType lhs) carrier
+
 meta def buildNCtx (entries : Array (Name × NOp × Name)) (carrier : Expr) (ent : NOp) :
     MetaM (Option NCtx) := do
   let some u ← (try some <$> getDecLevel carrier catch _ => pure none) | return none
@@ -952,12 +959,14 @@ meta def buildNCtx (entries : Array (Name × NOp × Name)) (carrier : Expr) (ent
   let some (empOp, empFn, empArgs) ← pick ``SepLogic.emp false | return none
   let some (entOp, entFn, entArgs) ← pick ``SepLogic.Entails true | return none
   unless entOp == ent do return none
-  let some pureOp := entries.findSome? (fun (c, op, _) =>
-    if c == ``SepLogic.spure then some op else none) | return none
-  let some exOp := entries.findSome? (fun (c, op, _) =>
-    if c == ``SepLogic.ex then some op else none) | return none
-  let wandOp := entries.findSome? (fun (c, op, _) =>
-    if c == ``SepLogic.wand then some op else none)
+  let opFor (cn : Name) : MetaM (Option NOp) := do
+    for (c, op, lem) in entries do
+      if c == cn then
+        if ← foldCarrierMatches lem carrier then return some op
+    return none
+  let some pureOp ← opFor ``SepLogic.spure | return none
+  let some exOp ← opFor ``SepLogic.ex | return none
+  let wandOp ← opFor ``SepLogic.wand
   let mut lv0 := Level.zero
   let mut inst0? ← sepInstAt carrier u Level.zero
   if inst0?.isNone then
@@ -2072,12 +2081,34 @@ syntax "xsimpl_core" : tactic
 elab_rules : tactic
   | `(tactic| xsimpl_core) => xsimplDriver none
 
+meta def affineEmpProof? (c : NCtx) (l : Expr) : MetaM (Option Expr) := do
+  let lvls := [c.u, c.lv0]
+  let inst? ← try synthInstance? (mkApp (mkConst ``AffineSepLogic lvls) c.carrier)
+    catch _ => pure none
+  match inst? with
+  | some aff => return some (mkApp3 (mkConst ``AffineSepLogic.entails_emp lvls) c.carrier aff l)
+  | none =>
+    let some aff ← affineInst? c.carrier | return none
+    return some (← mkAppOptM ``AffineSepLogic.entails_emp #[some c.carrier, some aff, some l])
+
+meta def isEmpRhs (c : NCtx) (r : Expr) : MetaM Bool := do
+  if NCtx.isOp c.empOp r || NCtx.isOp c.empOp (← whnfR r) then return true
+  if r.hasExprMVar then return false
+  isDefEq r c.empE
+
 meta def affineEmp (c : NCtx) (g : MVarId) (l r : Expr) : MetaM Bool := do
-  unless NCtx.isOp c.empOp r || NCtx.isOp c.empOp (← whnfR r) do return false
-  let some aff ← affineInst? c.carrier | return false
-  let pf ← mkAppOptM ``AffineSepLogic.entails_emp #[some c.carrier, some aff, some l]
+  unless ← isEmpRhs c r do return false
+  let some pf ← affineEmpProof? c l | return false
   unless ← isDefEq (← inferType pf) (← g.getType) do return false
   g.assign pf
+  return true
+
+meta def closeEqRefl (g : MVarId) : MetaM Bool := g.withContext do
+  let t ← instantiateMVars (← g.getType)
+  let some (_, a, b) := t.eq? | return false
+  if a.hasExprMVar || b.hasExprMVar then return false
+  unless ← withReducibleAndInstances (isDefEq a b) do return false
+  g.assign (← mkEqRefl a)
   return true
 
 meta def xsimplClean : TacticM Unit := do
@@ -2088,7 +2119,9 @@ meta def xsimplClean : TacticM Unit := do
       if ← closeRefl c g l r then return (g, true)
       if ← cheapAssumptionCore g then return (g, true)
       return (g, ← affineEmp c g l r)
-    | none => return (g, ← cheapAssumptionCore g)
+    | none =>
+      if ← cheapAssumptionCore g then return (g, true)
+      return (g, ← closeEqRefl g)
   replaceMainGoal (if done then [] else [g])
 
 syntax "xsimpl_clean" : tactic
