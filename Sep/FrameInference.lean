@@ -8,7 +8,7 @@ public section
 open Lean Meta Elab Tactic
 
 /-!
-# Frame inference and biabduction over the `SepLogic` class
+# Frame inference and biabduction over the `SepLaws` class
 
 The `xsimpl` pipeline of `Sep/Xsimpl/Core.lean` cancels matching atoms.  This file
 adds the two *granular* steps that make an entailment with metavariable
@@ -17,7 +17,7 @@ metavariable on the right, and a missing atom on the right is absorbed into an
 anti-frame metavariable on the left.  Both accumulate item-by-item behind an
 open tail, closed to `emp` at the end.
 
-Everything is stated in the class operations, so any `SepLogic` instance
+Everything is stated over the registered operations, so any `SepLaws` instance
 inherits it.  `inferFrame` is the programmatic entry point other tactics call.
 -/
 
@@ -37,51 +37,38 @@ private meta def isUserMVar (e : Expr) : MetaM Bool := do
   return (← e.mvarId!.getDecl).userName != frameTailName
 
 /-- Absorb one atom into an accumulator metavariable: `acc := atom ∗ ?tail`. -/
-private meta def absorbInto (c : SepCtx) (acc atom : Expr) : MetaM Unit := do
+private meta def absorbInto (c : NCtx) (acc atom : Expr) : MetaM Unit := do
   let tail ← mkFreshExprMVar (← inferType acc) (userName := frameTailName)
-  acc.mvarId!.assign (← mkAppOptM ``SepLogic.star
-    #[some c.carrier, some c.inst, some atom, some tail])
+  acc.mvarId!.assign (c.mkStar atom tail)
 
 /-- Absorb the first missing resource of the RHS into an anti-frame
 metavariable on the LHS. -/
 elab "xsimpl_abduce_step_core" : tactic => withMainContext do
   let goal ← getMainGoal
   let goalType ← goal.getType >>= instantiateMVars
-  let some (c, lhs, rhs) := matchEntails? goalType | throwError "not an entailment"
-  let some acc := (parseStar lhs).find? Expr.isMVar
+  let some (c, lhs, rhs) ← matchEntails? goalType | throwError "not an entailment"
+  let some acc := (parseStar c lhs).find? Expr.isMVar
     | throwError "xsimpl_abduce_step: no anti-frame metavariable on the LHS"
-  let some missing := (parseStar rhs).find? (fun e => !e.isMVar)
+  let some missing := (parseStar c rhs).find? (fun e => !e.isMVar)
     | throwError "xsimpl_abduce_step: no missing resource on the RHS"
   absorbInto c acc missing
   trace[xsimpl] m!"Granularly Abduced: {missing}"
 
 /-- Drop one leftover resource of the LHS, which affinity permits. -/
-private meta def dropLeftover (goal : MVarId) (c : SepCtx) (aff lhs rhs leftover : Expr) :
+private meta def dropLeftover (goal : MVarId) (c : NCtx) (aff : LawsAt) (rhs leftover lhs : Expr) :
     TacticM Unit := do
   let (newLhs, lhsProof) ← starMoveToFront c leftover lhs
-  let rest := match matchStar? newLhs with
-    | some (_, _, tail) => some tail
-    | none => none
-  let newGoalLhs ← match rest with
-    | some tail => pure tail
-    | none => mkAppOptM ``SepLogic.emp #[some c.carrier, some c.inst]
-  let newGoalType ← mkAppOptM ``SepLogic.Entails
-    #[some c.carrier, some c.inst, some newGoalLhs, some rhs]
-  let newGoal ← mkFreshExprMVar newGoalType
-  let weaken ← match rest with
+  let rest := (matchStar? c newLhs).map (·.2)
+  let newGoalLhs := rest.getD c.empE
+  let newGoal ← mkFreshExprMVar (c.mkEnt newGoalLhs rhs)
+  let (eqProof, mid, weaken) ← match rest with
     | some tail => do
-      let comm ← mkAppOptM ``SepLogic.star_comm
-        #[some c.carrier, some c.inst, some leftover, some tail]
-      let lhsProof ← mkEqTrans lhsProof comm
-      pure (lhsProof, ← mkAppOptM ``Sep.Xsimpl.sep_weaken_leftover
-        #[some c.carrier, some aff, some tail, some leftover])
-    | none =>
-      pure (lhsProof, ← mkAppOptM ``AffineSepLogic.entails_emp #[some c.carrier, some aff,
-        some leftover])
-  let step ← mkAppOptM ``SepLogic.entails_trans
-    #[some c.carrier, some c.inst, none, none, none, some weaken.2, some newGoal]
-  goal.assign (← mkAppOptM ``Sep.Xsimpl.himpl_lhs_eq
-    #[some c.carrier, some c.inst, none, none, none, some weaken.1, some step])
+      let comm := c.lem ``SepLaws.star_comm #[leftover, tail]
+      pure (← mkEqTrans lhsProof comm, c.mkStar tail leftover,
+        c.lemAt aff ``Sep.Xsimpl.sep_weaken_leftover #[tail, leftover])
+    | none => pure (lhsProof, leftover, c.lemAt aff ``AffineSepLaws.entails_emp #[leftover])
+  let step := c.lem ``SepLaws.entails_trans #[mid, newGoalLhs, rhs, weaken, newGoal]
+  goal.assign (← c.lhsEq eqProof step)
   replaceMainGoal [newGoal.mvarId!]
 
 /-- Absorb the first leftover resource of the LHS into a frame metavariable on
@@ -89,17 +76,17 @@ the RHS.  With no frame metavariable and an affine carrier, drop it instead. -/
 elab "xsimpl_frame_step_core" : tactic => withMainContext do
   let goal ← getMainGoal
   let goalType ← goal.getType >>= instantiateMVars
-  let some (c, lhs, rhs) := matchEntails? goalType | throwError "not an entailment"
-  let some acc := (parseStar rhs).find? Expr.isMVar
+  let some (c, lhs, rhs) ← matchEntails? goalType | throwError "not an entailment"
+  let some acc := (parseStar c rhs).find? Expr.isMVar
     | do
-      let some aff ← affineInst? c.carrier
+      let some aff ← affineLaws? c
         | throwError "xsimpl_frame_step: no frame metavariable on the RHS"
-      let some leftover := (parseStar lhs).find? (fun e => !e.isMVar)
+      let some leftover := (parseStar c lhs).find? (fun e => !e.isMVar)
         | throwError "xsimpl_frame_step: no leftover resource on the LHS"
-      dropLeftover goal c aff lhs rhs leftover
+      dropLeftover goal c aff rhs leftover lhs
       trace[xsimpl] m!"Affinely Dropped: {leftover}"
       return
-  let some leftover := (parseStar lhs).find? (fun e => !e.isMVar)
+  let some leftover := (parseStar c lhs).find? (fun e => !e.isMVar)
     | throwError "xsimpl_frame_step: no leftover resource on the LHS"
   absorbInto c acc leftover
   trace[xsimpl] m!"Granularly Framed: {leftover}"
@@ -110,10 +97,10 @@ remaining internal tail becomes `emp`. -/
 elab "xsimpl_close_frames_core" : tactic => withMainContext do
   let goal ← getMainGoal
   let goalType ← goal.getType >>= instantiateMVars
-  let some (c, lhs, rhs) := matchEntails? goalType | throwError "not an entailment"
-  let lhsItems := parseStar lhs
-  let rhsItems := parseStar rhs
-  let emp ← mkAppOptM ``SepLogic.emp #[some c.carrier, some c.inst]
+  let some (c, lhs, rhs) ← matchEntails? goalType | throwError "not an entailment"
+  let lhsItems := parseStar c lhs
+  let rhsItems := parseStar c rhs
+  let emp := c.empE
 
   let lhsUsers ← lhsItems.filterM (fun e => isUserMVar e)
   let rhsUsers ← rhsItems.filterM (fun e => isUserMVar e)
@@ -144,15 +131,15 @@ elab "xsimpl_close_frames_core" : tactic => withMainContext do
 
 syntax "xsimpl_abduce_step" : tactic
 macro_rules
-  | `(tactic| xsimpl_abduce_step) => `(tactic| xsimpl_in_class xsimpl_abduce_step_core)
+  | `(tactic| xsimpl_abduce_step) => `(tactic| xsimpl_abduce_step_core)
 
 syntax "xsimpl_frame_step" : tactic
 macro_rules
-  | `(tactic| xsimpl_frame_step) => `(tactic| xsimpl_in_class xsimpl_frame_step_core)
+  | `(tactic| xsimpl_frame_step) => `(tactic| xsimpl_frame_step_core)
 
 syntax "xsimpl_close_frames" : tactic
 macro_rules
-  | `(tactic| xsimpl_close_frames) => `(tactic| xsimpl_in_class xsimpl_close_frames_core)
+  | `(tactic| xsimpl_close_frames) => `(tactic| xsimpl_close_frames_core)
 
 syntax "xsimpl_frame_steps" : tactic
 macro_rules

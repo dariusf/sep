@@ -1,7 +1,7 @@
 
 # Sep
 
-An [SLF](https://softwarefoundations.cis.upenn.edu/slf-current/index.html)-style first-order separation logic mechanisation and useful tactics for working with it, including an xsimpl-style entailment checker.
+An [SLF](https://softwarefoundations.cis.upenn.edu/slf-current/index.html)-style first-order separation logic HProp, and useful tactics for working with it, including an xsimpl-style entailment checker.
 
 ```sh
 lake exe cache get

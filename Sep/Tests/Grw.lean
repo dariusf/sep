@@ -1,14 +1,15 @@
 import Sep.GrwSepLogic
 import Sep.Reordering
 import Sep.GrwHProp
-
-open scoped SepLogic
+import Sep.Tests.Notation
 
 namespace Sep.Grw.Tests
 
-universe u
+open Sep.Tests.Notation
 
-variable {α : Type u} [SepLogic α]
+local notation "α" => HProp
+
+variable [Params]
 
 section Basic
 variable (A B C D X : α) (F G : Nat → α)
@@ -38,7 +39,7 @@ example (law : A ==> B) (h : (C -∗ B) ==> X) : (C -∗ A) ==> X := by
 
 -- ∃
 -- cannot rewrite under binders, but gcongr works
-example (law : ∀ n, F n ==> G n) : SepLogic.ex F ∗ A ==> SepLogic.ex G ∗ A := by
+example (law : ∀ n, F n ==> G n) : HProp.hexists F ∗ A ==> HProp.hexists G ∗ A := by
   gcongr
   exact law _
 
@@ -68,25 +69,18 @@ end Basic
 
 end Sep.Grw.Tests
 
-/-! ## At a concrete instance
-
-The same steps over `Sep.Xsimpl`'s `SepLogic HProp`.  Unlike for `sl_pull`, the
-instance alone is *not* enough here: `gcongr` keys its lemmas on the constant a
-goal's relation `whnf`s to, which at a concrete instance is that instance's own
-entailment constant, and the second (existential) universe of `SepLogic` has to
-be pinned so that the two sides of a `==>` agree on their instance.  Both are
-done once and for all in `Sep/GrwHProp.lean`; the tests below are then
-verbatim the generic ones. -/
+/-! ## At a concrete instance -/
 
 namespace Sep.Xsimpl
 
+open HProp Notation
+
 variable [Params] (A B C X : HProp)
 
-example (law : SepLogic.Entails A B) (h : SepLogic.Entails (C ∗ B) X) :
-    SepLogic.Entails (C ∗ A) X := by
+example (law : A ==> B) (h : C ✶ B ==> X) : C ✶ A ==> X := by
   grw [law]; exact h
 
-example (law : SepLogic.Entails A B) : SepLogic.Entails (C ∗ A) (B ∗ C) := by
+example (law : A ==> B) : C ✶ A ==> B ✶ C := by
   grw [law]
   xsimpl
 

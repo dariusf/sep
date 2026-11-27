@@ -1,6 +1,7 @@
 import Sep.HProp.SepLogic
 import Sep.Xsimpl.Core
 import Sep.FrameInference
+import Sep.Tests.Notation
 
 namespace SepLogicTests
 
@@ -30,13 +31,9 @@ def entails (a b : AProp) : Prop := a.p → b.p
 
 end AProp
 
-instance instSepLogicAProp : SepLogic.{0, v} AProp where
-  star := AProp.star
-  emp := AProp.emp
-  spure := AProp.pure
-  ex := AProp.ex
-  wand := AProp.wand
-  Entails := AProp.entails
+instance (priority := low) instAffineSepLawsAProp :
+    AffineSepLaws.{0, v} AProp AProp.entails AProp.star AProp.emp AProp.pure AProp.ex
+      AProp.wand where
   star_comm := fun _ _ => AProp.eq_of_iff ⟨And.symm, And.symm⟩
   star_assoc := fun _ _ _ => AProp.eq_of_iff and_assoc
   star_emp_l := fun _ => AProp.eq_of_iff ⟨fun h => h.2, fun h => ⟨trivial, h⟩⟩
@@ -55,40 +52,18 @@ instance instSepLogicAProp : SepLogic.{0, v} AProp where
   wand_cancel := fun _ _ ⟨h, f⟩ => f h
   wand_intro := fun h h1 hP => h ⟨h1, hP⟩
   wand_curry := fun _ _ _ => AProp.eq_of_iff and_imp
-
-instance instAffineSepLogicAProp : AffineSepLogic.{0, v} AProp where
-  toSepLogic := instSepLogicAProp
   entails_emp := fun _ _ => trivial
 
-@[xsimpl_fold] theorem fold_star (a b : AProp) : AProp.star a b = SepLogic.star a b := rfl
+instance instAffineSepLawsAPropType :
+    AffineSepLaws.{0, 1} AProp AProp.entails AProp.star AProp.emp AProp.pure AProp.ex
+      AProp.wand :=
+  instAffineSepLawsAProp
 
-@[xsimpl_fold] theorem fold_emp : AProp.emp = SepLogic.emp := rfl
-
-@[xsimpl_fold] theorem fold_pure (P : Prop) : AProp.pure P = SepLogic.spure P := rfl
-
-@[xsimpl_fold] theorem fold_ex {A : Sort _} (J : A → AProp) : AProp.ex J = SepLogic.ex J := rfl
-
-@[xsimpl_fold] theorem fold_wand (a b : AProp) : AProp.wand a b = SepLogic.wand a b := rfl
-
-@[xsimpl_fold] theorem fold_entails (a b : AProp) :
-    AProp.entails a b = SepLogic.Entails a b := rfl
-
-@[xsimpl_unfold_class] theorem unfold_star (a b : AProp) :
-    SepLogic.star a b = AProp.star a b := rfl
-
-@[xsimpl_unfold_class] theorem unfold_emp : (SepLogic.emp : AProp) = AProp.emp := rfl
-
-@[xsimpl_unfold_class] theorem unfold_pure (P : Prop) :
-    (SepLogic.spure P : AProp) = AProp.pure P := rfl
-
-@[xsimpl_unfold_class] theorem unfold_ex {A : Sort _} (J : A → AProp) :
-    SepLogic.ex J = AProp.ex J := rfl
-
-@[xsimpl_unfold_class] theorem unfold_wand (a b : AProp) :
-    SepLogic.wand a b = AProp.wand a b := rfl
-
-@[xsimpl_unfold_class] theorem unfold_entails (a b : AProp) :
-    SepLogic.Entails a b = AProp.entails a b := rfl
+local infixr:61 " ∗ " => AProp.star
+local infixr:60 " -∗ " => AProp.wand
+local infixr:25 " ==> " => AProp.entails
+local notation:max "emp" => AProp.emp
+local notation:max "⌜" P "⌝" => AProp.pure P
 
 section Native
 
@@ -113,14 +88,6 @@ example {P : AProp} {k : Nat} : entails P (star (pure (Nat.succ k = k + 1)) P) :
 example {P : AProp} {f : Nat → Nat} {k : Nat} :
     entails (star P emp) (star (pure (f (Nat.succ k) = f (k + 1))) P) := by xsimpl
 
-example {P : AProp} : entails (star P emp) (star P SepLogic.emp) := by xsimpl
-
-end Native
-
-section Class
-
-open scoped SepLogic
-
 example {P : AProp} : P ==> emp := by xsimpl
 
 example {P1 P2 : AProp} : P1 ∗ P2 ==> P1 := by xsimpl
@@ -133,7 +100,7 @@ example {P : AProp} {k : Nat} : P ==> ⌜Nat.succ k = k + 1⌝ ∗ P := by xsimp
 
 example {P : AProp} : P ∗ AProp.emp ==> P ∗ emp := by xsimpl
 
-end Class
+end Native
 
 section Frame
 
@@ -144,18 +111,7 @@ open AProp
 theorem ramify {P Q R S F : AProp} (h1 : entails P (star Q F)) (h2 : entails (star R F) S) :
     entails (star P R) (star S Q) := fun ⟨hp, hr⟩ => ⟨h2 ⟨hr, (h1 hp).2⟩, (h1 hp).1⟩
 
-/--
-error: Tactic `rfl` failed: The left-hand side
-  R.star emp
-is not definitionally equal to the right-hand side
-  R.star SepLogic.emp
-
-case h2
-P R : AProp
-⊢ (R.star emp).entails (R.star SepLogic.emp)
--/
-#guard_msgs in
-example {P R : AProp} : entails (star P R) (star (star R SepLogic.emp) P) := by
+example {P R : AProp} : entails (star P R) (star (star R emp) P) := by
   apply ramify
   case h1 => xsimpl_granular_frames
   with_reducible rfl
@@ -167,11 +123,13 @@ end SepLogicTests
 section HProp
 
 /-!
-Tests for `xsimpl` on goals stated with the generic `SepLogic` notation
+Tests for `xsimpl` on goals stated with the notation of `Sep.Tests.Notation`
 (`∗`, `-∗`, `==>`, `⌜⌝`, `emp`, `∃ₛ`) rather than the `HProp` notation.
 -/
 
-open SepLogic
+namespace SepLogicHPropTests
+
+open Sep.Tests.Notation
 
 instance UnitParamsGeneric : Params where
   val := Unit
@@ -216,5 +174,7 @@ example {H1 H2 H3 : HProp} : H1 ∗ (H1 -∗ H2) ∗ H3 ==> H2 ∗ H3 := by xsim
 
 example {H1 H2 H3 H4 : HProp} (h : HProp.himpl (HProp.hstar H1 H3) H4) :
     H1 ∗ H2 ∗ H3 ==> H2 ∗ H4 := by xsimpl
+
+end SepLogicHPropTests
 
 end HProp

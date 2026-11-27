@@ -1,6 +1,6 @@
 module
 
-public import Sep.SepLogic
+public import Sep.FindLaws
 public import Batteries.Data.List.Perm
 public meta import Lean
 
@@ -13,16 +13,6 @@ universe u v
 namespace Sep.Xsimpl
 
 initialize registerTraceClass `xsimpl
-
-/-- Lemmas rewriting a concrete separation logic's constants into the
-    `SepLogic` class operations. -/
-register_simp_attr xsimpl_fold
-
-/-- Lemmas rewriting the `SepLogic` class operations back into a concrete
-    separation logic's constants. -/
-register_simp_attr xsimpl_unfold_class
-
-open SepLogic
 
 meta initialize cheapCancel : IO.Ref Bool ← IO.mkRef false
 
@@ -58,160 +48,19 @@ meta def cheapAssumptionCore (g : MVarId) : MetaM Bool := do
   | some e => g.assign e; return true
   | none => return false
 
-section NativeLemmas
-
-theorem nt_trans.{w, z} {α : Type w} [SepLogic.{w, z} α] {a b c : α}
-    (h1 : a ==> b) (h2 : b ==> c) : a ==> c :=
-  entails_trans h1 h2
-
-theorem nt_refl.{w, z} {α : Type w} [SepLogic.{w, z} α] (a : α) : a ==> a :=
-  entails_refl a
-
-theorem nt_of_eq.{w, z} {α : Type w} [SepLogic.{w, z} α] {a b : α} (h : a = b) :
-    a ==> b := by
-  subst h; exact entails_refl _
-
-theorem nt_frame.{w, z} {α : Type w} [SepLogic.{w, z} α] (c : α) {a b : α}
-    (h : a ==> b) : c ∗ a ==> c ∗ b :=
-  frame_r h
-
-theorem nt_comm.{w, z} {α : Type w} [SepLogic.{w, z} α] (a b : α) :
-    a ∗ b ==> b ∗ a := by
-  rw [star_comm]; exact entails_refl _
-
-theorem nt_swap.{w, z} {α : Type w} [SepLogic.{w, z} α] (a b c : α) :
-    a ∗ (b ∗ c) ==> b ∗ (a ∗ c) := by
-  rw [hstar_left_comm]; exact entails_refl _
-
-theorem nt_assoc.{w, z} {α : Type w} [SepLogic.{w, z} α] (a b c : α) :
-    (a ∗ b) ∗ c = a ∗ (b ∗ c) :=
-  star_assoc a b c
-
-theorem nt_pushl.{w, z} {α : Type w} [SepLogic.{w, z} α] (a b c : α) :
-    a ∗ (b ∗ c) ==> (b ∗ a) ∗ c :=
-  nt_trans (nt_swap a b c) (nt_of_eq (nt_assoc b a c).symm)
-
-theorem nt_empl.{w, z} {α : Type w} [SepLogic.{w, z} α] (a : α) : emp ∗ a = a :=
-  star_emp_l a
-
-theorem nt_empr.{w, z} {α : Type w} [SepLogic.{w, z} α] (a : α) : a ∗ emp = a :=
-  star_emp_r a
-
-theorem nt_exl_base.{w, z} {α : Type w} [SepLogic.{w, z} α] {A : Sort z} (J : A → α)
-    (q : α) : ex J ∗ q ==> ex (fun x => J x ∗ q) := by
-  rw [star_ex]; exact entails_refl _
-
-theorem nt_exl_layer.{w, z} {α : Type w} [SepLogic.{w, z} α] {A : Sort z} {K : A → α}
-    {x : α} (s : α) (h : x ==> ex K) : s ∗ x ==> ex (fun y => s ∗ K y) :=
-  entails_trans (frame_r h) (by rw [hstar_hexists_r]; exact entails_refl _)
-
-theorem nt_exr_base.{w, z} {α : Type w} [SepLogic.{w, z} α] {A : Sort z} (J : A → α)
-    (q : α) : ex (fun x => J x ∗ q) ==> ex J ∗ q := by
-  rw [star_ex]; exact entails_refl _
-
-theorem nt_exr_layer.{w, z} {α : Type w} [SepLogic.{w, z} α] {A : Sort z} {K : A → α}
-    {x : α} (s : α) (h : ex K ==> x) : ex (fun y => s ∗ K y) ==> s ∗ x :=
-  entails_trans (by rw [← hstar_hexists_r]; exact entails_refl _) (frame_r h)
-
-theorem nt_exl.{w, z} {α : Type w} [SepLogic.{w, z} α] {A : Sort z} {J : A → α} {r : α}
-    (k : ∀ x, J x ==> r) : ex J ==> r :=
-  ex_l k
-
-theorem nt_exr.{w, z} {α : Type w} [SepLogic.{w, z} α] {A : Sort z} (x : A) {J : A → α}
-    {l : α} (h : l ==> J x) : l ==> ex J :=
-  ex_r x h
-
-theorem nt_purel.{w, z} {α : Type w} [SepLogic.{w, z} α] {P : Prop} {q r : α}
-    (k : P → q ==> r) : ⌜P⌝ ∗ q ==> r :=
-  pure_l k
-
-theorem nt_purel1.{w, z} {α : Type w} [SepLogic.{w, z} α] {P : Prop} {r : α}
-    (k : P → (emp : α) ==> r) : ⌜P⌝ ==> r :=
-  himpl_hpure_l k
-
-theorem nt_purer.{w, z} {α : Type w} [SepLogic.{w, z} α] {P : Prop} {l q : α}
-    (p : P) (h : l ==> q) : l ==> ⌜P⌝ ∗ q :=
-  pure_r p h
-
-theorem nt_purer1.{w, z} {α : Type w} [SepLogic.{w, z} α] {P : Prop} {l : α}
-    (p : P) (h : l ==> (emp : α)) : l ==> ⌜P⌝ :=
-  himpl_hpure_r p h
-
-theorem nt_eq_exl.{w, z} {α : Type w} [SepLogic.{w, z} α] {A : Sort z} (J : A → α) (q : α) :
-    ex J ∗ q = ex (fun x => J x ∗ q) :=
-  star_ex J q
-
-theorem nt_eq_exr.{w, z} {α : Type w} [SepLogic.{w, z} α] {A : Sort z} (q : α) (J : A → α) :
-    q ∗ ex J = ex (fun x => q ∗ J x) :=
-  hstar_hexists_r q J
-
-theorem nt_curry.{w, z} {α : Type w} [SepLogic.{w, z} α] (a b c : α) :
-    (a ∗ b) -∗ c = a -∗ (b -∗ c) :=
-  wand_curry a b c
-
-theorem nt_wand_l.{w, z} {α : Type w} [SepLogic.{w, z} α] (a b : α) {l r : α}
-    (h : b ∗ l ==> r) : a ∗ ((a -∗ b) ∗ l) ==> r :=
-  himpl_wand_apply_lhs h
-
-theorem nt_wand_l1.{w, z} {α : Type w} [SepLogic.{w, z} α] (a b : α) {r : α}
-    (h : b ==> r) : a ∗ (a -∗ b) ==> r :=
-  himpl_wand_apply_lhs_emp h
-
-theorem nt_wand_r.{w, z} {α : Type w} [SepLogic.{w, z} α] {l a b : α}
-    (h : l ∗ a ==> b) : l ==> a -∗ b :=
-  wand_intro h
-
-theorem nt_wand_same.{w, z} {α : Type w} [SepLogic.{w, z} α] (a : α) {l r : α}
-    (h : l ==> r) : l ==> (a -∗ a) ∗ r :=
-  entails_trans h (entails_trans (nt_of_eq (star_emp_l r).symm)
-    (frame_l (wand_intro (nt_of_eq (star_emp_l a)))))
-
-theorem nt_wand_same1.{w, z} {α : Type w} [SepLogic.{w, z} α] (a : α) {l : α}
-    (h : l ==> emp) : l ==> a -∗ a :=
-  entails_trans h (wand_intro (nt_of_eq (star_emp_l a)))
-
 inductive PTree.{w} (α : Type w) where
   | leaf : PTree α
   | node : PTree α → α → PTree α → PTree α
 
-noncomputable def ptGet.{w} {α : Type w} (d : α) (t : PTree α) : Nat → α :=
+@[expose] noncomputable def ptGet.{w} {α : Type w} (d : α) (t : PTree α) : Nat → α :=
   PTree.rec (motive := fun _ => Nat → α) (fun _ => d)
     (fun _ x _ il ir i => cond (Nat.beq i 0) x (cond (Nat.beq (i % 2) 1) (il (i / 2)) (ir (i / 2 - 1)))) t
 
-noncomputable def listStar.{w, z} {α : Type w} [SepLogic.{w, z} α] (xs : List α) : α :=
-  List.rec (motive := fun _ => α) emp
-    (fun x r ih => List.rec (motive := fun _ => α) x (fun _ _ _ => x ∗ ih) r) xs
-
-noncomputable def starI.{w, z} {α : Type w} [SepLogic.{w, z} α] (env : PTree α) (l : List Nat) : α :=
-  listStar (l.map (ptGet emp env))
-
-noncomputable def bitMask (l : List Nat) : Nat :=
+@[expose] noncomputable def bitMask (l : List Nat) : Nat :=
   List.rec (motive := fun _ => Nat) 0 (fun i _ ih => (1 <<< i) ||| ih) l
 
-noncomputable def permChk (l r : List Nat) : Bool :=
+@[expose] noncomputable def permChk (l r : List Nat) : Bool :=
   Nat.beq l.length r.length && Nat.beq (bitMask l) (2 ^ l.length - 1) && Nat.beq (bitMask r) (2 ^ l.length - 1)
-
-theorem listStar_cons.{w, z} {α : Type w} [SepLogic.{w, z} α] (x : α) (xs : List α) :
-    listStar (x :: xs) = x ∗ listStar xs := by
-  cases xs with
-  | nil => exact (star_emp_r x).symm
-  | cons y ys => rfl
-
-theorem listStar_perm.{w, z} {α : Type w} [SepLogic.{w, z} α] {xs ys : List α} (h : xs.Perm ys) :
-    listStar xs = listStar ys := by
-  induction h with
-  | nil => rfl
-  | cons x _ ih => rw [listStar_cons, listStar_cons, ih]
-  | swap x y l =>
-    rw [listStar_cons, listStar_cons, listStar_cons, listStar_cons, ← star_assoc, ← star_assoc,
-      star_comm x y]
-  | trans _ _ ih1 ih2 => exact ih1.trans ih2
-
-theorem listStar_append.{w, z} {α : Type w} [SepLogic.{w, z} α] (xs ys : List α) :
-    listStar (xs ++ ys) = listStar xs ∗ listStar ys := by
-  induction xs with
-  | nil => exact (star_emp_l _).symm
-  | cons x xs ih => rw [List.cons_append, listStar_cons, listStar_cons, ih, star_assoc]
 
 theorem testBit_bitMask (l : List Nat) (i : Nat) : (bitMask l).testBit i = true ↔ i ∈ l := by
   induction l with
@@ -232,648 +81,155 @@ theorem permChk_perm {l r : List Nat} (h : permChk l r = true) : l.Perm r := by
   exact (perm_range_of_mask l _ rfl (Nat.eq_of_beq_eq_true h2)).symm.trans
     (perm_range_of_mask r _ (Nat.eq_of_beq_eq_true h1).symm (Nat.eq_of_beq_eq_true h3))
 
-theorem nt_perm_idx.{w, z} {α : Type w} [SepLogic.{w, z} α] (env : PTree α) (l r : List Nat)
-    (h : permChk l r = true) : starI env l ==> starI env r := by
-  rw [starI, starI, listStar_perm ((permChk_perm h).map _)]
-  exact entails_refl _
+@[expose] noncomputable def listStar {α : Type u} {entails : α → α → Prop} {star : α → α → α} {emp : α}
+    {pure : Prop → α} {ex : {A : Sort v} → (A → α) → α} {wand : α → α → α}
+    [SepLaws α entails star emp pure ex wand] (xs : List α) : α :=
+  List.rec (motive := fun _ => α) emp
+    (fun x r ih => List.rec (motive := fun _ => α) x (fun _ _ _ => star x ih) r) xs
 
-theorem nt_frame_list.{w, z} {α : Type w} [SepLogic.{w, z} α] (cs : List α) {xs ys : List α}
-    (h : listStar xs ==> listStar ys) : listStar (cs ++ xs) ==> listStar (cs ++ ys) := by
+@[expose] noncomputable def starI {α : Type u} {entails : α → α → Prop} {star : α → α → α} {emp : α}
+    {pure : Prop → α} {ex : {A : Sort v} → (A → α) → α} {wand : α → α → α}
+    [SepLaws α entails star emp pure ex wand] (env : PTree α) (l : List Nat) : α :=
+  listStar (l.map (ptGet emp env))
+
+section NativeLemmas
+
+variable {α : Type u} {entails : α → α → Prop} {star : α → α → α} {emp : α} {pure : Prop → α}
+  {ex : {A : Sort v} → (A → α) → α} {wand : α → α → α}
+  [inst : SepLaws α entails star emp pure ex wand]
+
+local infixr:61 " ∗ " => star
+local infixr:60 " -∗ " => wand
+local infixr:25 " ==> " => entails
+local notation:max "⌜" P "⌝" => pure P
+
+include inst
+
+theorem nt_trans {a b c : α} (h1 : a ==> b) (h2 : b ==> c) : a ==> c :=
+  inst.entails_trans h1 h2
+
+theorem nt_refl (a : α) : a ==> a :=
+  inst.entails_refl a
+
+theorem nt_of_eq {a b : α} (h : a = b) : a ==> b := by
+  subst h; exact inst.entails_refl _
+
+theorem nt_frame (c : α) {a b : α} (h : a ==> b) : c ∗ a ==> c ∗ b :=
+  inst.frame_r h
+
+theorem nt_comm (a b : α) : a ∗ b ==> b ∗ a := by
+  rw [inst.star_comm]; exact inst.entails_refl _
+
+theorem nt_swap (a b c : α) : a ∗ (b ∗ c) ==> b ∗ (a ∗ c) := by
+  rw [hstar_left_comm (inst := inst)]; exact inst.entails_refl _
+
+theorem nt_assoc (a b c : α) : (a ∗ b) ∗ c = a ∗ (b ∗ c) :=
+  inst.star_assoc a b c
+
+theorem nt_pushl (a b c : α) : a ∗ (b ∗ c) ==> (b ∗ a) ∗ c :=
+  nt_trans (nt_swap a b c) (nt_of_eq (nt_assoc b a c).symm)
+
+theorem nt_empl (a : α) : emp ∗ a = a :=
+  inst.star_emp_l a
+
+theorem nt_empr (a : α) : a ∗ emp = a :=
+  inst.star_emp_r a
+
+theorem nt_exl_base {A : Sort v} (J : A → α) (q : α) :
+    ex J ∗ q ==> ex (fun x => J x ∗ q) := by
+  rw [inst.star_ex]; exact inst.entails_refl _
+
+theorem nt_exl_layer {A : Sort v} {K : A → α} {x : α} (s : α) (h : x ==> ex K) :
+    s ∗ x ==> ex (fun y => s ∗ K y) :=
+  inst.entails_trans (inst.frame_r h)
+    (by rw [hstar_hexists_r (inst := inst)]; exact inst.entails_refl _)
+
+theorem nt_exr_base {A : Sort v} (J : A → α) (q : α) :
+    ex (fun x => J x ∗ q) ==> ex J ∗ q := by
+  rw [inst.star_ex]; exact inst.entails_refl _
+
+theorem nt_exr_layer {A : Sort v} {K : A → α} {x : α} (s : α) (h : ex K ==> x) :
+    ex (fun y => s ∗ K y) ==> s ∗ x :=
+  inst.entails_trans (by rw [← hstar_hexists_r (inst := inst)]; exact inst.entails_refl _)
+    (inst.frame_r h)
+
+theorem nt_exl {A : Sort v} {J : A → α} {r : α} (k : ∀ x, J x ==> r) : ex J ==> r :=
+  inst.ex_l k
+
+theorem nt_exr {A : Sort v} (x : A) {J : A → α} {l : α} (h : l ==> J x) : l ==> ex J :=
+  inst.ex_r x h
+
+theorem nt_purel {P : Prop} {q r : α} (k : P → q ==> r) : ⌜P⌝ ∗ q ==> r :=
+  inst.pure_l k
+
+theorem nt_purel1 {P : Prop} {r : α} (k : P → emp ==> r) : ⌜P⌝ ==> r :=
+  himpl_hpure_l (inst := inst) k
+
+theorem nt_purer {P : Prop} {l q : α} (p : P) (h : l ==> q) : l ==> ⌜P⌝ ∗ q :=
+  inst.pure_r p h
+
+theorem nt_purer1 {P : Prop} {l : α} (p : P) (h : l ==> emp) : l ==> ⌜P⌝ :=
+  himpl_hpure_r (inst := inst) p h
+
+theorem nt_eq_exl {A : Sort v} (J : A → α) (q : α) : ex J ∗ q = ex (fun x => J x ∗ q) :=
+  inst.star_ex J q
+
+theorem nt_eq_exr {A : Sort v} (q : α) (J : A → α) : q ∗ ex J = ex (fun x => q ∗ J x) :=
+  hstar_hexists_r (inst := inst) q J
+
+theorem nt_curry (a b c : α) : (a ∗ b) -∗ c = a -∗ (b -∗ c) :=
+  inst.wand_curry a b c
+
+theorem nt_wand_l (a b : α) {l r : α} (h : b ∗ l ==> r) : a ∗ ((a -∗ b) ∗ l) ==> r :=
+  himpl_wand_apply_lhs (inst := inst) h
+
+theorem nt_wand_l1 (a b : α) {r : α} (h : b ==> r) : a ∗ (a -∗ b) ==> r :=
+  himpl_wand_apply_lhs_emp (inst := inst) h
+
+theorem nt_wand_r {l a b : α} (h : l ∗ a ==> b) : l ==> a -∗ b :=
+  inst.wand_intro h
+
+theorem nt_wand_same (a : α) {l r : α} (h : l ==> r) : l ==> (a -∗ a) ∗ r :=
+  inst.entails_trans h (inst.entails_trans (nt_of_eq (inst.star_emp_l r).symm)
+    (inst.frame_l (inst.wand_intro (nt_of_eq (inst.star_emp_l a)))))
+
+theorem nt_wand_same1 (a : α) {l : α} (h : l ==> emp) : l ==> a -∗ a :=
+  inst.entails_trans h (inst.wand_intro (nt_of_eq (inst.star_emp_l a)))
+
+theorem listStar_cons (x : α) (xs : List α) :
+    listStar (x :: xs) = x ∗ listStar xs := by
+  cases xs with
+  | nil => exact (inst.star_emp_r x).symm
+  | cons y ys => rfl
+
+theorem listStar_perm {xs ys : List α} (h : xs.Perm ys) :
+    listStar xs = listStar ys := by
+  induction h with
+  | nil => rfl
+  | cons x _ ih => rw [listStar_cons, listStar_cons, ih]
+  | swap x y l =>
+    rw [listStar_cons, listStar_cons, listStar_cons, listStar_cons, ← inst.star_assoc,
+      ← inst.star_assoc, inst.star_comm x y]
+  | trans _ _ ih1 ih2 => exact ih1.trans ih2
+
+theorem listStar_append (xs ys : List α) :
+    listStar (xs ++ ys) = listStar xs ∗ listStar ys := by
+  induction xs with
+  | nil => exact (inst.star_emp_l _).symm
+  | cons x xs ih => rw [List.cons_append, listStar_cons, listStar_cons, ih, inst.star_assoc]
+
+theorem nt_perm_idx (env : PTree α) (l r : List Nat) (h : permChk l r = true) :
+    starI env l ==> starI env r := by
+  rw [starI, starI, listStar_perm ((permChk_perm h).map _)]
+  exact inst.entails_refl _
+
+theorem nt_frame_list (cs : List α) {xs ys : List α}
+    (h : listStar xs ==> listStar ys) :
+    listStar (cs ++ xs) ==> listStar (cs ++ ys) := by
   rw [listStar_append, listStar_append]
-  exact frame_r h
+  exact inst.frame_r h
 
 end NativeLemmas
-
--- ============================================================
--- MetaM: star chain manipulation
--- ============================================================
-
-/-- The ambient separation logic of a goal: its carrier, `SepLogic` instance and
-    universe levels, read off the goal's `Entails` application. -/
-meta structure SepCtx where
-  levels : List Level
-  carrier : Expr
-  inst : Expr
-
-/-- Recognise `SepLogic.Entails α inst H1 H2`. -/
-meta def matchEntails? (e : Expr) : Option (SepCtx × Expr × Expr) :=
-  match e.consumeMData with
-  | .app (.app (.app (.app (.const n ls) carrier) inst) lhs) rhs =>
-    if n == ``SepLogic.Entails then
-      some ({ levels := ls, carrier, inst }, lhs, rhs)
-    else none
-  | _ => none
-
-/-- Recognise `SepLogic.star α inst H1 H2`, returning the instance found there. -/
-meta def matchStar? (e : Expr) : Option (SepCtx × Expr × Expr) :=
-  match e.consumeMData with
-  | .app (.app (.app (.app (.const n ls) carrier) inst) H1) H2 =>
-    if n == ``SepLogic.star then
-      some ({ levels := ls, carrier, inst }, H1, H2)
-    else none
-  | _ => none
-
-meta def isEmp (e : Expr) : Bool :=
-  e.consumeMData.getAppFn.isConstOf ``SepLogic.emp
-
-meta def isSpure (e : Expr) : Bool :=
-  e.consumeMData.getAppFn.isConstOf ``SepLogic.spure
-
-/-- Parse `H1 ∗ H2 ∗ ... ∗ emp` into `[H1, H2, ...]` (not including trailing `emp`). -/
-meta partial def parseStar (e : Expr) : List Expr :=
-  match matchStar? e with
-  | some (_, H1, H2) => H1 :: parseStar H2
-  | none => if isEmp e then [] else [e]
-
-private meta def mkStar (c : SepCtx) (H1 H2 : Expr) : MetaM Expr :=
-  mkAppOptM ``SepLogic.star #[some c.carrier, some c.inst, some H1, some H2]
-
-/-- Move `atom` to the front of a star chain `tree`, returning `(newTree, proof : tree = newTree)`.
-    `newTree` starts with `atom`. Fails if `atom` is not in the chain. -/
-meta partial def starMoveToFront (_c : SepCtx) (atom : Expr) (tree : Expr) : MetaM (Expr × Expr) := do
-  let tree := tree.consumeMData
-  match matchStar? tree with
-  | some (c1, H1, H2) =>
-    if ← cheapDefEq atom H1 then
-      return (tree, ← mkEqRefl tree)
-    else
-      -- Recursively move atom to front of H2 (the tail)
-      let (newTail, tailProof) ← starMoveToFront c1 atom H2
-      match matchStar? newTail with
-      | some (_, atomExpr, H2rest) =>
-        -- Build f = fun x => H1 ∗ x  (to apply congrArg)
-        let ty ← inferType H1
-        let f ← withLocalDecl `x .default ty fun xVar => do
-          mkLambdaFVars #[xVar] (← mkStar c1 H1 xVar)
-        -- step1 : H1 ∗ H2 = H1 ∗ (atom ∗ H2rest)
-        let step1 ← mkCongrArg f tailProof
-        -- leftComm : atom ∗ (H1 ∗ H2rest) = H1 ∗ (atom ∗ H2rest)
-        let leftComm ← mkAppOptM ``Sep.Xsimpl.hstar_left_comm
-          #[some c1.carrier, some c1.inst, some atomExpr, some H1, some H2rest]
-        let step2 ← mkEqSymm leftComm
-        let total ← mkEqTrans step1 step2
-        let h1Rest ← mkStar c1 H1 H2rest
-        let result ← mkStar c1 atomExpr h1Rest
-        return (result, total)
-      | none =>
-        -- newTail is just the atom
-        let ty ← inferType H1
-        let f ← withLocalDecl `x .default ty fun xVar => do
-          mkLambdaFVars #[xVar] (← mkStar c1 H1 xVar)
-        let step1 ← mkCongrArg f tailProof
-        let comm ← mkAppOptM ``SepLogic.star_comm
-          #[some c1.carrier, some c1.inst, some H1, some newTail]
-        let total ← mkEqTrans step1 comm
-        let result ← mkStar c1 newTail H1
-        return (result, total)
-  | none =>
-    if ← cheapDefEq atom tree then
-      return (tree, ← mkEqRefl tree)
-    else
-      throwError "starMoveToFront: {← ppExpr atom} not found in chain {← ppExpr tree}"
-
-/-- Rewrite the LHS of the current entailment goal to `newLhs`, given `lhs = newLhs`. -/
-private meta def replaceLhs (goal : MVarId) (c : SepCtx) (newLhs rhs proof : Expr) : MetaM MVarId := do
-  let newGoalType ← mkAppOptM ``SepLogic.Entails
-    #[some c.carrier, some c.inst, some newLhs, some rhs]
-  let newGoalMVar ← mkFreshExprMVar newGoalType
-  goal.assign (← mkAppOptM ``Sep.Xsimpl.himpl_lhs_eq
-    #[some c.carrier, some c.inst, none, none, none, some proof, some newGoalMVar])
-  return newGoalMVar.mvarId!
-
--- ============================================================
--- Cancellation
--- ============================================================
-
-/-- Try to cancel matching items between LHS and RHS of an entailment goal. -/
-meta def xsimplCancelAllCore : TacticM Unit := withMainContext do
-  let mut progress := false
-  let mut cont := true
-  while cont do
-    cont := false
-    let goals ← getUnsolvedGoals
-    if goals.isEmpty then break
-    let goal ← getMainGoal
-    let goalType ← goal.getType >>= instantiateMVars
-    let some (c, lhs, rhs) := matchEntails? goalType | break
-    let rhsItems := parseStar rhs
-    if rhsItems.isEmpty then break
-    let lhsItems := parseStar lhs
-    if lhsItems.isEmpty then break
-
-    let mut found : Option Expr := none
-    for r in [:rhsItems.length] do
-      let rhsItem ← instantiateMVars rhsItems[r]!
-      if rhsItem.isMVar then continue
-      for l in [:lhsItems.length] do
-        let lhsItem ← instantiateMVars lhsItems[l]!
-        if lhsItem.isMVar then continue
-        if ← cheapDefEq lhsItem rhsItem then
-          found := some rhsItems[r]!
-          break
-      if found.isSome then break
-
-    let some atom := found | break
-    cont := true
-    progress := true
-    trace[xsimpl] m!"Cancelling {atom}"
-
-    let (newLhs, lhsProof) ← starMoveToFront c atom lhs
-    let (newRhs, rhsProof) ← starMoveToFront c atom rhs
-
-    let newGoalType ← mkAppOptM ``SepLogic.Entails
-      #[some c.carrier, some c.inst, some newLhs, some newRhs]
-    let newGoalMVar ← mkFreshExprMVar newGoalType
-
-    -- goal : lhs ==> rhs, via (newLhs ==> rhs) via (newLhs ==> newRhs)
-    let goalType1 ← mkAppOptM ``SepLogic.Entails
-      #[some c.carrier, some c.inst, some newLhs, some rhs]
-    let goalMVar1 ← mkFreshExprMVar goalType1
-    let assignProof1 ← mkAppOptM ``Sep.Xsimpl.himpl_lhs_eq
-      #[some c.carrier, some c.inst, none, none, none, some lhsProof, some goalMVar1]
-    let rhsProofSymm ← mkEqSymm rhsProof
-    let assignProof2 ← mkAppOptM ``Sep.Xsimpl.himpl_rhs_eq
-      #[some c.carrier, some c.inst, none, none, none, some rhsProofSymm, some newGoalMVar]
-
-    goal.assign assignProof1
-    goalMVar1.mvarId!.assign assignProof2
-
-    replaceMainGoal [newGoalMVar.mvarId!]
-
-    let newLhsIsStar := (matchStar? newLhs).isSome
-    let newRhsIsStar := (matchStar? newRhs).isSome
-
-    if newLhsIsStar && newRhsIsStar then
-      evalTactic (← `(tactic| apply SepLogic.frame_r))
-    else if newLhsIsStar && not newRhsIsStar then
-      evalTactic (← `(tactic| apply Sep.Xsimpl.himpl_cancel_lhs))
-    else if not newLhsIsStar && newRhsIsStar then
-      evalTactic (← `(tactic| apply Sep.Xsimpl.himpl_cancel_rhs))
-    else
-      evalTactic (← `(tactic| apply SepLogic.entails_refl))
-  if not progress then
-    throwError "xsimpl_cancel_all: no items to cancel"
-
-elab "xsimpl_cancel_all_core" : tactic => xsimplCancelAllCore
-
-meta def xsimplCancelWandCore : TacticM Unit := withMainContext do
-  let mut progress := false
-  let mut cont := true
-  while cont do
-    cont := false
-    let goals ← getUnsolvedGoals
-    if goals.isEmpty then break
-    let goal ← getMainGoal
-    let goalType ← goal.getType >>= instantiateMVars
-    let some (c, lhs, rhs) := matchEntails? goalType | break
-    let lhsItems := parseStar lhs
-    if lhsItems.isEmpty then break
-
-    -- Find an (H1 -∗ H2) and an H1 matching its premise
-    let mut found : Option (Expr × Expr) := none
-    for l in [:lhsItems.length] do
-      let itemWand := lhsItems[l]!.consumeMData
-      let (ifn, iargs) := itemWand.getAppFnArgs
-      if ifn == ``SepLogic.wand && iargs.size == 4 then
-        let wandLhs := iargs[2]!
-        for l2 in [:lhsItems.length] do
-          if l != l2 then
-            let itemPremise := lhsItems[l2]!
-            if ← cheapDefEq wandLhs itemPremise then
-              found := some (itemPremise, itemWand)
-              break
-        if found.isSome then break
-
-    let some (premise, wand) := found | break
-    cont := true
-    progress := true
-
-    -- Move wand to front, then premise to front so we get `premise ∗ wand`
-    let (newLhs1, lhsProof1) ← starMoveToFront c wand lhs
-    let (newLhs2, lhsProof2) ← starMoveToFront c premise newLhs1
-    let transProof ← mkEqTrans lhsProof1 lhsProof2
-
-    let newGoal ← replaceLhs goal c newLhs2 rhs transProof
-    replaceMainGoal [newGoal]
-
-    if (matchStar? newLhs2).isSome then
-      evalTactic (← `(tactic| (
-        first
-        | apply Sep.Xsimpl.himpl_wand_apply_lhs
-        | apply Sep.Xsimpl.himpl_wand_apply_lhs_emp
-      )))
-    else
-      evalTactic (← `(tactic| apply Sep.Xsimpl.himpl_wand_apply_lhs_emp))
-  if not progress then
-    throwError "xsimpl_cancel_wand: no wands to cancel"
-
-elab "xsimpl_cancel_wand_core" : tactic => xsimplCancelWandCore
-
--- ============================================================
--- Folding / unfolding the class operations
--- ============================================================
-
-/-- The `rfl`-lemmas tagged with a simp attribute, as `(lhs head, name)` pairs. -/
-meta def taggedLemmas (attr : Name) : MetaM (Array Name) := do
-  let some ext ← getSimpExtension? attr | throwError "unknown simp attribute {attr}"
-  let thms ← ext.getTheorems
-  return thms.lemmaNames.fold (init := #[]) fun acc o =>
-    match o with
-    | .decl n _ _ => acc.push n
-    | _ => acc
-
-/-- Rewrite `e` with the `rfl`-lemmas tagged `attr`, oriented left to right.
-    Unlike `simp only`, this survives lemmas whose two sides are definitionally
-    equal, which is exactly the case for the fold/unfold bridge. -/
-private meta partial def lemmaLhsHead? (ty : Expr) : Option Name :=
-  match ty with
-  | .forallE _ _ b _ => lemmaLhsHead? b
-  | e =>
-    match e.eq? with
-    | some (_, lhs, _) =>
-      let fn := lhs.getAppFn
-      if fn.isConst then some fn.constName! else none
-    | none => none
-
-meta def rewriteWithRfl (lemmas : Array Name) (e : Expr) : MetaM Expr := do
-  let mut byHead : NameMap (Array Name) := {}
-  for n in lemmas do
-    let cinfo ← getConstInfo n
-    if let some h := lemmaLhsHead? cinfo.type then
-      byHead := byHead.insert h (((byHead.find? h).getD #[]).push n)
-  Meta.transform e (post := fun sub => do
-    let fn := sub.getAppFn
-    unless fn.isConst do return .continue
-    let some cands := byHead.find? fn.constName! | return .continue
-    for n in cands do
-      let cinfo ← getConstInfo n
-      let lvls ← cinfo.levelParams.mapM fun _ => mkFreshLevelMVar
-      let ty := cinfo.type.instantiateLevelParams cinfo.levelParams lvls
-      let (_, _, concl) ← forallMetaTelescope ty
-      let some (_, lhs, rhs) := concl.eq? | continue
-      -- Match with the lemma's pattern on the *left*, so that when both sides
-      -- are metavariables it is the lemma's own metavariable that gets
-      -- assigned, never the goal's (frame/antiframe metavariables owned by the
-      -- caller must survive folding and unfolding untouched).
-      if ← isDefEq lhs sub then
-        return .done (← instantiateMVars rhs)
-    return .continue)
-
-/-- Force every `SepLogic` operation in `e` to mention the same instance, by
-    unifying the universe levels of all class-projection occurrences. Returns
-    `false` if they cannot be reconciled (e.g. existentials at two universes). -/
-meta partial def unifyClassLevels (e : Expr) : MetaM Bool := do
-  let mut ref : Option (List Level) := none
-  let mut ok := true
-  for c in collectConsts e do
-    let (n, ls) := c
-    unless isClassOp n do continue
-    match ref with
-    | none => ref := some ls
-    | some ls0 =>
-      if ls0.length == ls.length then
-        for (l1, l2) in ls0.zip ls do
-          unless ← isLevelDefEq l1 l2 do ok := false
-  -- default any level still undetermined
-  match ref with
-  | none => pure ()
-  | some ls0 => for l in ls0 do
-      if l.hasMVar then
-        _ ← isLevelDefEq l Level.zero
-  return ok
-where
-  isClassOp (n : Name) : Bool :=
-    n == ``SepLogic.star || n == ``SepLogic.emp || n == ``SepLogic.spure ||
-    n == ``SepLogic.ex || n == ``SepLogic.wand || n == ``SepLogic.Entails
-  collectConsts (e : Expr) : Array (Name × List Level) := goCollect e #[]
-  goCollect (e : Expr) (acc : Array (Name × List Level)) : Array (Name × List Level) :=
-    match e with
-    | .const n ls => acc.push (n, ls)
-    | .app f a => goCollect a (goCollect f acc)
-    | .lam _ t b _ => goCollect b (goCollect t acc)
-    | .forallE _ t b _ => goCollect b (goCollect t acc)
-    | .letE _ t v b _ => goCollect b (goCollect v (goCollect t acc))
-    | .mdata _ b => goCollect b acc
-    | .proj _ _ b => goCollect b acc
-    | _ => acc
-
-/-- Is `n` one of the `SepLogic` operation projections? -/
-meta def isClassOpName (n : Name) : Bool :=
-  n == ``SepLogic.star || n == ``SepLogic.emp || n == ``SepLogic.spure ||
-  n == ``SepLogic.ex || n == ``SepLogic.wand || n == ``SepLogic.Entails
-
-meta partial def replaceInstances (ref : List Level) (inst : Expr) (e : Expr) : Expr :=
-  match e with
-  | .app .. =>
-    let fn := e.getAppFn
-    let args := e.getAppArgs.map (replaceInstances ref inst)
-    match fn with
-    | .const n _ =>
-      if isClassOpName n && args.size ≥ 2 then
-        mkAppN (mkConst n ref) (args.set! 1 inst)
-      else mkAppN fn args
-    | _ => mkAppN (replaceInstances ref inst fn) args
-  | .lam nm t b bi => .lam nm (replaceInstances ref inst t) (replaceInstances ref inst b) bi
-  | .forallE nm t b bi =>
-    .forallE nm (replaceInstances ref inst t) (replaceInstances ref inst b) bi
-  | .letE nm t v b nd =>
-    .letE nm (replaceInstances ref inst t) (replaceInstances ref inst v)
-      (replaceInstances ref inst b) nd
-  | .mdata d b => .mdata d (replaceInstances ref inst b)
-  | .proj s i b => .proj s i (replaceInstances ref inst b)
-  | _ => e
-
-
-/-- Make every `SepLogic` operation in `e` mention one and the same instance.
-    Goals written directly with the class notation synthesize an instance per
-    occurrence, and those can sit at different universes, which stops the class
-    lemmas from applying. Returns `none` if no single instance fits (e.g. two
-    existentials at different universes). -/
-meta def uniformizeInstances (e : Expr) : MetaM (Option Expr) := do
-  let occs := classOpOccurrences e
-  if occs.isEmpty then return none
-  let exLevels := occs.filterMap fun occ => if occ.1 == ``SepLogic.ex then some occ.2 else none
-  if h : 0 < exLevels.size then
-    for ls in exLevels do
-      unless ls == exLevels[0] do return none
-  let ref := if h : 0 < exLevels.size then exLevels[0] else occs[0]!.2
-  -- the carrier is the first explicit argument of any occurrence
-  let some carrier := carrierOf? e | return none
-  let instTy := mkAppN (mkConst ``SepLogic ref) #[carrier]
-  match ← trySynthInstance instTy with
-  | .some inst => return some (replaceInstances ref inst e)
-  | _ => return none
-where
-  isClassOp (n : Name) : Bool := isClassOpName n
-  classOpOccurrences (e : Expr) : Array (Name × List Level) := Id.run do
-    let mut acc := #[]
-    for sub in subterms e do
-      match sub.getAppFn with
-      | .const n ls => if isClassOp n && sub.getAppNumArgs ≥ 2 then acc := acc.push (n, ls)
-      | _ => pure ()
-    return acc
-  carrierOf? (e : Expr) : Option Expr := Id.run do
-    for sub in subterms e do
-      match sub.getAppFn with
-      | .const n _ =>
-        if isClassOp n && sub.getAppNumArgs ≥ 2 then return some sub.getAppArgs[0]!
-      | _ => pure ()
-    return none
-  subterms (e : Expr) : Array Expr := go e #[]
-  go (e : Expr) (acc : Array Expr) : Array Expr :=
-    let acc := acc.push e
-    match e with
-    | .app f a => go a (go f acc)
-    | .lam _ t b _ => go b (go t acc)
-    | .forallE _ t b _ => go b (go t acc)
-    | .letE _ t v b _ => go b (go v (go t acc))
-    | .mdata _ b => go b acc
-    | .proj _ _ b => go b acc
-    | _ => acc
-
-/-- Rewrite the goal with the lemmas tagged `attr`, make its `SepLogic`
-    instances uniform, and `change` to the result. -/
-meta def changeWithRfl (attr : Name) (uniformize : Bool) : TacticM Unit := withMainContext do
-  let lemmas ← taggedLemmas attr
-  let goal ← getMainGoal
-  let target ← goal.getType >>= instantiateMVars
-  let mut target1 ← rewriteWithRfl lemmas target
-  if target1 != target then
-    unless ← unifyClassLevels target1 do return
-    target1 ← instantiateMVars target1
-  if uniformize then
-    if let some target2 ← uniformizeInstances target1 then
-      if ← isDefEq target1 target2 then
-        target1 := target2
-  if target1 == target then return
-  replaceMainGoal [← goal.change target1]
-
-elab "xsimpl_fold_goal" : tactic => changeWithRfl `xsimpl_fold true
-elab "xsimpl_unfold_goal" : tactic => changeWithRfl `xsimpl_unfold_class false
-
--- ============================================================
--- Tactic phases
--- ============================================================
-
-/-- Run `t` on the class-folded goal, restoring the concrete logic's own
-    notation on whatever goals remain. This keeps every goal a client ever sees
-    (residual goals, and the goals handed to a user-supplied extension tactic)
-    stated in the client's own constants. -/
-syntax "xsimpl_in_class " tacticSeq : tactic
-macro_rules
-  | `(tactic| xsimpl_in_class $t) => `(tactic| (
-      try xsimpl_fold_goal
-      ($t)
-      all_goals (try xsimpl_unfold_goal)
-    ))
-
-syntax "xsimpl_normalize" : tactic
-macro_rules
-  | `(tactic| xsimpl_normalize) => `(tactic| (
-      try xsimpl_in_class (simp only [
-        SepLogic.star_emp_l, SepLogic.star_emp_r, SepLogic.star_assoc,
-        SepLogic.wand_curry,
-        SepLogic.star_ex, Sep.Xsimpl.hstar_hexists_r,
-        Sep.Xsimpl.hstar_hpure_eq_hexists, Sep.Xsimpl.hstar_hpure_r_eq_hexists
-      ])
-    ))
-
-meta def hasExHead (items : List Expr) : Bool :=
-  items.any fun i =>
-    let fn := i.consumeMData.getAppFn
-    fn.isConstOf ``SepLogic.ex || fn.isConstOf ``SepLogic.spure
-
-private meta def movePureToFront (onLhs : Bool) : TacticM Unit := withMainContext do
-  let goal ← getMainGoal
-  let goalType ← goal.getType >>= instantiateMVars
-  let some (c, lhs, rhs) := matchEntails? goalType | throwError "not an entailment"
-  let side := if onLhs then lhs else rhs
-  let items := parseStar side
-  if items.length ≤ 1 then throwError "no pure conjunct to move"
-  if isSpure items[0]! then throwError "pure conjunct already at the front"
-  let some pureItem := items.find? isSpure | throwError "no pure conjunct to move"
-  let (newSide, proof) ← starMoveToFront c pureItem side
-  if onLhs then
-    replaceMainGoal [← replaceLhs goal c newSide rhs proof]
-  else
-    let newGoalType ← mkAppOptM ``SepLogic.Entails
-      #[some c.carrier, some c.inst, some lhs, some newSide]
-    let newGoalMVar ← mkFreshExprMVar newGoalType
-    goal.assign (← mkAppOptM ``Sep.Xsimpl.himpl_rhs_eq
-      #[some c.carrier, some c.inst, none, none, none, some (← mkEqSymm proof),
-        some newGoalMVar])
-    replaceMainGoal [newGoalMVar.mvarId!]
-
-elab "xsimpl_pure_front_lhs" : tactic => movePureToFront true
-elab "xsimpl_pure_front_rhs" : tactic => movePureToFront false
-
-meta def xsimplInstantiateStepCore : TacticM Unit := withMainContext do
-  let goal ← getMainGoal
-  let goalType ← goal.getType >>= instantiateMVars
-  let some (_, _, rhs) := matchEntails? goalType | throwError "not an entailment"
-
-  -- If RHS is an MVar, applying ex_r will infinite loop by unifying it with ex
-  let rhsItems := parseStar rhs
-  for item in rhsItems do
-    if item.isMVar then throwError "RHS contains MVar, skipping instantiate to prevent looping"
-  unless hasExHead rhsItems do throwError "RHS has no existential"
-
-  evalTactic (← `(tactic| (
-    first
-    | apply Sep.Xsimpl.himpl_hexists_r_star
-    | apply SepLogic.ex_r
-    | apply SepLogic.pure_r
-    | apply Sep.Xsimpl.himpl_hpure_r
-    | (xsimpl_pure_front_rhs; apply SepLogic.pure_r)
-  )))
-
-elab "xsimpl_instantiate_step_core" : tactic => xsimplInstantiateStepCore
-
-meta def xsimplExtractStepCore : TacticM Unit := withMainContext do
-  let goal ← getMainGoal
-  let goalType ← goal.getType >>= instantiateMVars
-  let some (_, lhs, _) := matchEntails? goalType | throwError "not an entailment"
-
-  let lhsItems := parseStar lhs
-  for item in lhsItems do
-    if item.isMVar then
-      throwError "LHS contains MVar, skipping extract to prevent looping"
-  unless hasExHead lhsItems do throwError "LHS has no existential"
-
-  evalTactic (← `(tactic| (
-    first
-    | (apply Sep.Xsimpl.himpl_hexists_l_star; intro)
-    | (apply SepLogic.ex_l; intro)
-    | (apply SepLogic.pure_l; intro)
-    | (apply Sep.Xsimpl.himpl_hpure_l; intro)
-    | (xsimpl_pure_front_lhs; apply SepLogic.pure_l; intro)
-  )))
-
-elab "xsimpl_extract_step_core" : tactic => xsimplExtractStepCore
-
-/-- Recognise `SepLogic.wand α inst H1 H2`. -/
-meta def matchWand? (e : Expr) : Option (Expr × Expr) :=
-  match e.consumeMData.getAppFnArgs with
-  | (``SepLogic.wand, #[_, _, H1, H2]) => some (H1, H2)
-  | _ => none
-
-/-- **Wand introduction** (the adjunction, hence safe and invertible).
-    Fires only when the whole RHS is a wand, i.e. the RHS star chain has a single
-    remaining item and that item is `P1 -∗ P2`: then `H ==> P1 -∗ P2` becomes
-    `H ∗ P1 ==> P2`. It cannot loop, since each step strips one wand. -/
-meta def xsimplWandIntroCore : TacticM Unit := withMainContext do
-  let goal ← getMainGoal
-  let goalType ← goal.getType >>= instantiateMVars
-  let some (_, _, rhs) := matchEntails? goalType | throwError "not an entailment"
-  let rhsItems := parseStar rhs
-  let [item] := rhsItems | throwError "RHS is not a single wand"
-  if item.isMVar then throwError "RHS is a metavariable"
-  let some _ := matchWand? item | throwError "RHS is not a wand"
-  evalTactic (← `(tactic| apply SepLogic.wand_intro))
-
-elab "xsimpl_wand_intro_core" : tactic => xsimplWandIntroCore
-
-meta def affineInst? (carrier : Expr) : MetaM (Option Expr) := do
-  let info ← getConstInfo ``AffineSepLogic
-  let lvls ← info.levelParams.mapM fun _ => mkFreshLevelMVar
-  Lean.Meta.synthInstance? (mkAppN (mkConst ``AffineSepLogic lvls) #[carrier])
-
-
--- Each public step folds the goal into class form, runs, and restores the
--- concrete logic's constants on the goals it leaves behind.
-
-syntax "xsimpl_cancel_all" : tactic
-macro_rules
-  | `(tactic| xsimpl_cancel_all) => `(tactic| xsimpl_in_class xsimpl_cancel_all_core)
-
-syntax "xsimpl_cancel_wand" : tactic
-macro_rules
-  | `(tactic| xsimpl_cancel_wand) => `(tactic| xsimpl_in_class xsimpl_cancel_wand_core)
-
-syntax "xsimpl_instantiate_step" : tactic
-macro_rules
-  | `(tactic| xsimpl_instantiate_step) =>
-      `(tactic| xsimpl_in_class xsimpl_instantiate_step_core)
-
-syntax "xsimpl_extract_step" : tactic
-macro_rules
-  | `(tactic| xsimpl_extract_step) => `(tactic| xsimpl_in_class xsimpl_extract_step_core)
-
-syntax "xsimpl_wand_intro" : tactic
-macro_rules
-  | `(tactic| xsimpl_wand_intro) => `(tactic| xsimpl_in_class xsimpl_wand_intro_core)
-
-/-- Run `t`, and fail unless it changed the goals.  `xsimpl_core` drives its
-steps with `repeat`, which stops only on failure, so a step that succeeds without
-progress would not terminate. -/
-meta def withProgress (t : TacticM Unit) : TacticM Unit := do
-  let before ← (← getGoals).mapM fun g => do instantiateMVars (← g.getType)
-  t
-  let after ← (← getGoals).mapM fun g => do instantiateMVars (← g.getType)
-  if before.length == after.length && (before.zip after).all (fun (x, y) => x == y) then
-    throwError "xsimpl: step made no progress"
-
-syntax "xsimpl_with_progress " tacticSeq : tactic
-elab_rules : tactic
-  | `(tactic| xsimpl_with_progress $t) => withProgress (evalTactic t)
-
-/-- One rewriting step. -/
-syntax "xsimpl_step" : tactic
-macro_rules
-  | `(tactic| xsimpl_step) => `(tactic| (
-      xsimpl_with_progress (xsimpl_in_class (
-        first
-        | xsimpl_cancel_all_core
-        | xsimpl_extract_step_core
-        | xsimpl_wand_intro_core
-        | xsimpl_instantiate_step_core
-        | xsimpl_cancel_wand_core
-      ))
-    ))
-
-meta structure NOp where
-  name : Name
-  arity : Nat
-  pos : Array Nat
-  deriving Inhabited, BEq
-
-meta def classOpOperands (n : Name) : Option (Array Nat) :=
-  if n == ``SepLogic.star || n == ``SepLogic.wand || n == ``SepLogic.Entails then some #[2, 3]
-  else if n == ``SepLogic.emp then some #[]
-  else if n == ``SepLogic.spure then some #[2]
-  else if n == ``SepLogic.ex then some #[2, 3]
-  else none
-
-meta def foldEntry (n : Name) : MetaM (Option (Name × NOp)) := do
-  let ci ← getConstInfo n
-  forallTelescope ci.type fun _ body => do
-    let some (_, lhs, rhs) := body.eq? | return none
-    let .const cn _ := rhs.getAppFn | return none
-    let some idx := classOpOperands cn | return none
-    let .const ln _ := lhs.getAppFn | return none
-    if isClassOpName ln then return none
-    let rargs := rhs.getAppArgs
-    let largs := lhs.getAppArgs
-    let mut pos := #[]
-    for i in idx do
-      let some a := rargs[i]? | return none
-      unless a.isFVar do return none
-      let some j := largs.findIdx? (· == a) | return none
-      pos := pos.push j
-    return some (cn, { name := ln, arity := largs.size, pos })
-
-meta initialize foldEntryCache : IO.Ref (Array Name × Array (Name × NOp × Name)) ←
-  IO.mkRef (#[], #[])
-
-meta def foldEntries : MetaM (Array (Name × NOp × Name)) := do
-  let names ← taggedLemmas `xsimpl_fold
-  let (k, v) ← foldEntryCache.get
-  if k == names then return v
-  let mut out := #[]
-  for n in names do
-    if let some (cn, op) ← foldEntry n then out := out.push (cn, op, n)
-  foldEntryCache.set (names, out)
-  return out
 
 meta structure NCtx where
   carrier : Expr
@@ -890,169 +246,73 @@ meta structure NCtx where
   entFn : Expr
   entArgs : Array Expr
   lv0 : Level
+  ops0 : Array Expr
   inst0 : Expr
   deriving Inhabited
 
-meta initialize nctxCache :
-    IO.Ref (Name × Array (Name × NOp × Name) × Array (Expr × Option NCtx)) ←
-  IO.mkRef (.anonymous, #[], #[])
+meta def lawsNCtx (carrier : Expr) : MetaM (Option NCtx) := do
+  let some (u, laws) ← sepLaws? carrier | return none
+  let ops := laws.ops
+  unless ops.size == 6 do return none
+  withLocalDeclD `x carrier fun x => withLocalDeclD `y carrier fun y =>
+  withLocalDeclD `P (mkSort Level.zero) fun p => withLocalDeclD `A (mkSort laws.lv) fun a => do
+  withLocalDeclD `J (← mkArrow a carrier) fun j => do
+    let some (entOp, entFn, entArgs) := opTemplate ops[0]! #[x, y] | return none
+    let some (starOp, starFn, starArgs) := opTemplate ops[1]! #[x, y] | return none
+    let some (empOp, empFn, empArgs) := opTemplate ops[2]! #[] | return none
+    let some (pureOp, _, _) := opTemplate ops[3]! #[p] | return none
+    let some (exOp, _, _) := opTemplate ops[4]! #[a, j] | return none
+    let wandOp := (opTemplate ops[5]! #[x, y]).map (·.1)
+    return some {
+      carrier := carrier,
+      u := u,
+      entOp := entOp,
+      starOp := starOp,
+      empOp := empOp,
+      pureOp := pureOp,
+      exOp := exOp,
+      wandOp := wandOp,
+      starFn := starFn,
+      starArgs := starArgs,
+      empE := mkAppN empFn empArgs,
+      entFn := entFn,
+      entArgs := entArgs,
+      lv0 := laws.lv,
+      ops0 := ops,
+      inst0 := laws.inst }
 
-meta initialize ninstCache : IO.Ref (Name × Array (Expr × Level × Option Expr)) ←
+meta initialize nctxCache : IO.Ref (Name × Array (Expr × Option NCtx)) ←
   IO.mkRef (.anonymous, #[])
 
-meta def sepInstAt (carrier : Expr) (u lv : Level) : MetaM (Option Expr) := do
+meta def nctxOf? (carrier : Expr) : MetaM (Option NCtx) := do
   let m := (← getEnv).mainModule
-  let (m0, cache) ← ninstCache.get
+  let (m0, cache) ← nctxCache.get
   let cache := if m0 == m then cache else #[]
-  match cache.find? (fun e => e.1 == carrier && e.2.1 == lv) with
-  | some (_, _, r) => return r
+  match cache.find? (·.1 == carrier) with
+  | some (_, r) => return r
   | none =>
-    let r ← try synthInstance? (mkApp (mkConst ``SepLogic [u, lv]) carrier) catch _ => pure none
-    let r ← r.mapM instantiateMVars
-    let r := r.filter (!·.hasMVar)
-    ninstCache.set (m, cache.push (carrier, lv, r))
+    let r ← try lawsNCtx carrier catch _ => pure none
+    nctxCache.set (m, cache.push (carrier, r))
     return r
 
-meta def foldTemplate (lem : Name) (carrier : Expr) (op : NOp) (byOperand : Bool) :
-    MetaM (Option (Expr × Array Expr)) := withNewMCtxDepth do
-  let ci ← getConstInfo lem
-  let lvls ← ci.levelParams.mapM fun _ => mkFreshLevelMVar
-  let ty := ci.type.instantiateLevelParams ci.levelParams lvls
-  let (_, _, body) ← forallMetaTelescope ty
-  let some (_, lhs, _) := body.eq? | return none
-  let largs := lhs.getAppArgs
-  let probe ← if byOperand then
-      match op.pos[0]? >>= (largs[·]?) with
-      | some a => inferType a
-      | none => return none
-    else inferType lhs
-  unless ← isDefEq probe carrier do return none
-  let fn ← instantiateMVars lhs.getAppFn
-  let mut args := #[]
-  for i in [0 : largs.size] do
-    if op.pos.contains i then args := args.push (mkSort Level.zero)
-    else
-      let a ← instantiateMVars largs[i]!
-      if a.hasMVar then return none
-      args := args.push a
-  if fn.hasMVar then return none
-  return some (fn, args)
-
-meta def foldCarrierMatches (lem : Name) (carrier : Expr) : MetaM Bool := withNewMCtxDepth do
-  let ci ← getConstInfo lem
-  let lvls ← ci.levelParams.mapM fun _ => mkFreshLevelMVar
-  let (_, _, body) ← forallMetaTelescope (ci.type.instantiateLevelParams ci.levelParams lvls)
-  let some (_, lhs, _) := body.eq? | return false
-  isDefEq (← inferType lhs) carrier
-
-meta def buildNCtx (entries : Array (Name × NOp × Name)) (carrier : Expr) (ent : NOp) :
-    MetaM (Option NCtx) := do
-  let some u ← (try some <$> getDecLevel carrier catch _ => pure none) | return none
-  if u.hasMVar then return none
-  let pick (cn : Name) (byOperand : Bool) : MetaM (Option (NOp × Expr × Array Expr)) := do
-    for (c, op, lem) in entries do
-      if c == cn then
-        if let some (fn, args) ← foldTemplate lem carrier op byOperand then
-          return some (op, fn, args)
-    return none
-  let some (starOp, starFn, starArgs) ← pick ``SepLogic.star false | return none
-  let some (empOp, empFn, empArgs) ← pick ``SepLogic.emp false | return none
-  let some (entOp, entFn, entArgs) ← pick ``SepLogic.Entails true | return none
-  unless entOp == ent do return none
-  let opFor (cn : Name) : MetaM (Option NOp) := do
-    for (c, op, lem) in entries do
-      if c == cn then
-        if ← foldCarrierMatches lem carrier then return some op
-    return none
-  let some pureOp ← opFor ``SepLogic.spure | return none
-  let some exOp ← opFor ``SepLogic.ex | return none
-  let wandOp ← opFor ``SepLogic.wand
-  let mut lv0 := Level.zero
-  let mut inst0? ← sepInstAt carrier u Level.zero
-  if inst0?.isNone then
-    lv0 := Level.one
-    inst0? ← sepInstAt carrier u Level.one
-  let some inst0 := inst0? | return none
-  let empE := mkAppN empFn empArgs
-  return some {
-    carrier := carrier,
-    u := u,
-    entOp := entOp,
-    starOp := starOp,
-    empOp := empOp,
-    pureOp := pureOp,
-    exOp := exOp,
-    wandOp := wandOp,
-    starFn := starFn,
-    starArgs := starArgs,
-    empE := empE,
-    entFn := entFn,
-    entArgs := entArgs,
-    lv0 := lv0,
-    inst0 := inst0 }
-
 meta def nctxFor? (t : Expr) : MetaM (Option (NCtx × Expr × Expr)) := do
-  let .const hn _ := t.getAppFn | return none
-  if isClassOpName hn then return none
-  let entries ← foldEntries
-  let some ent := entries.findSome? (fun (c, op, _) =>
-    if c == ``SepLogic.Entails && op.name == hn && t.getAppNumArgs == op.arity then some op
-    else none) | return none
-  let args := t.getAppArgs
-  let some l := args[ent.pos[0]!]? | return none
-  let some r := args[ent.pos[1]!]? | return none
-  let carrier ← instantiateMVars (← inferType l)
-  if carrier.hasMVar then return none
-  let m := (← getEnv).mainModule
-  let (m0, k, cache) ← nctxCache.get
-  let cache := if k == entries && m0 == m then cache else #[]
-  match cache.find? (·.1 == carrier) with
-  | some (_, some c) => return some (c, l, r)
-  | some (_, none) => return none
-  | none =>
-    let c? ← buildNCtx entries carrier ent
-    nctxCache.set (m, entries, cache.push (carrier, c?))
-    return c?.map (·, l, r)
-
-meta def hasClassOp (e : Expr) : Bool :=
-  (e.find? fun s => match s with
-    | .const n _ => isClassOpName n
-    | _ => false).isSome
-
-meta def classNCtx? (t : Expr) : Option (NCtx × Expr × Expr) := do
-  let (sc, l, r) ← matchEntails? t
-  let [u, v] := sc.levels | none
-  let op2 := fun (n : Name) => ({ name := n, arity := 4, pos := #[2, 3] } : NOp)
-  let hole := mkSort Level.zero
-  let c : NCtx := {
-    carrier := sc.carrier,
-    u := u,
-    entOp := op2 ``SepLogic.Entails,
-    starOp := op2 ``SepLogic.star,
-    empOp := { name := ``SepLogic.emp, arity := 2, pos := #[] },
-    pureOp := { name := ``SepLogic.spure, arity := 3, pos := #[2] },
-    exOp := op2 ``SepLogic.ex,
-    wandOp := some (op2 ``SepLogic.wand),
-    starFn := mkConst ``SepLogic.star [u, v],
-    starArgs := #[sc.carrier, sc.inst, hole, hole],
-    empE := mkApp2 (mkConst ``SepLogic.emp [u, v]) sc.carrier sc.inst,
-    entFn := mkConst ``SepLogic.Entails [u, v],
-    entArgs := #[sc.carrier, sc.inst, hole, hole],
-    lv0 := v,
-    inst0 := sc.inst }
-  return (c, l, r)
+  let t := t.consumeMData
+  unless t.getAppFn.isConst && t.getAppNumArgs ≥ 2 do return none
+  let l := t.appFn!.appArg!
+  let r := t.appArg!
+  let some carrier ← (try some <$> (instantiateMVars (← inferType l)) catch _ => pure none)
+    | return none
+  if carrier.hasMVar || carrier.hasLooseBVars then return none
+  let some rt ← (try some <$> (instantiateMVars (← inferType r)) catch _ => pure none)
+    | return none
+  unless rt == carrier || (← withReducible (isDefEq rt carrier)) do return none
+  let some c ← nctxOf? carrier | return none
+  unless t.isAppOfArity c.entOp.name c.entOp.arity do return none
+  return some (c, t.getArg! c.entOp.pos[0]!, t.getArg! c.entOp.pos[1]!)
 
 meta def sepGoal? (g : MVarId) : MetaM (Option (MVarId × NCtx × Expr × Expr)) := g.withContext do
-  let mut g := g
-  let mut t ← instantiateMVars (← g.getType)
-  if hasClassOp t then
-    let t' ← instantiateMVars (← rewriteWithRfl (← taggedLemmas `xsimpl_unfold_class) t)
-    if t' != t then
-      g ← g.replaceTargetDefEq t'
-      t := t'
-  match ← nctxFor? t with
-  | some (c, l, r) => return some (g, c, l, r)
-  | none => return (classNCtx? t).map fun (c, l, r) => (g, c, l, r)
+  let t ← instantiateMVars (← g.getType)
+  return (← nctxFor? t).map fun (c, l, r) => (g, c, l, r)
 
 namespace NCtx
 
@@ -1078,10 +338,14 @@ meta def starLeft (c : NCtx) (xs : Array Expr) : Expr := Id.run do
   return acc
 
 meta def lem (c : NCtx) (n : Name) (args : Array Expr) : Expr :=
-  mkAppN (mkConst n [c.u, c.lv0]) (#[c.carrier, c.inst0] ++ args)
+  mkAppN (mkConst n [c.u, c.lv0]) (#[c.carrier] ++ c.ops0 ++ #[c.inst0] ++ args)
 
-meta def lemAt (c : NCtx) (lv : Level) (inst : Expr) (n : Name) (args : Array Expr) : Expr :=
-  mkAppN (mkConst n [c.u, lv]) (#[c.carrier, inst] ++ args)
+meta def lemAt (c : NCtx) (l : LawsAt) (n : Name) (args : Array Expr) : Expr :=
+  mkAppN (mkConst n [c.u, l.lv]) (#[c.carrier] ++ l.ops ++ #[l.inst] ++ args)
+
+meta def lawsAtLv? (c : NCtx) (lv : Level) : MetaM (Option LawsAt) :=
+  if lv == c.lv0 then return some { lv, ops := c.ops0, inst := c.inst0 }
+  else lawsAt? ``SepLaws c.carrier c.u lv
 
 meta def trans (c : NCtx) (a b d p q : Expr) : Expr := c.lem ``nt_trans #[a, b, d, p, q]
 
@@ -1219,7 +483,7 @@ meta def bad (c : NCtx) (e : Expr) : Bool :=
   (e.find? (fun s =>
     match s with
     | .const n _ =>
-      isClassOpName n || n == c.starOp.name || n == c.empOp.name || n == c.pureOp.name ||
+      n == c.starOp.name || n == c.empOp.name || n == c.pureOp.name ||
         n == c.exOp.name || n == c.entOp.name ||
         (match c.wandOp with
          | some w => n == w.name
@@ -1337,6 +601,394 @@ meta def exBody (j : Expr) : Name × Expr :=
 
 end NCtx
 
+-- ============================================================
+-- MetaM: star chain manipulation
+-- ============================================================
+
+meta def affineLaws? (c : NCtx) : MetaM (Option LawsAt) :=
+  lawsAt? ``AffineSepLaws c.carrier c.u c.lv0
+
+/-- Recognise an entailment of a registered logic. -/
+meta def matchEntails? (e : Expr) : MetaM (Option (NCtx × Expr × Expr)) := do
+  nctxFor? (← instantiateMVars e)
+
+/-- Recognise `H1 ∗ H2`. -/
+meta def matchStar? (c : NCtx) (e : Expr) : Option (Expr × Expr) :=
+  let e := e.consumeMData
+  if NCtx.isOp c.starOp e then some (NCtx.arg c.starOp e 0, NCtx.arg c.starOp e 1) else none
+
+meta def isEmp (c : NCtx) (e : Expr) : Bool := NCtx.isOp c.empOp e.consumeMData
+
+meta def isSpure (c : NCtx) (e : Expr) : Bool := NCtx.isOp c.pureOp e.consumeMData
+
+/-- Parse `H1 ∗ H2 ∗ ... ∗ emp` into `[H1, H2, ...]` (not including trailing `emp`). -/
+meta partial def parseStar (c : NCtx) (e : Expr) : List Expr :=
+  match matchStar? c e with
+  | some (H1, H2) => H1 :: parseStar c H2
+  | none => if isEmp c e then [] else [e]
+
+meta def NCtx.lhsEq (c : NCtx) (proof g : Expr) : MetaM Expr :=
+  mkAppOptM ``Sep.Xsimpl.himpl_lhs_eq #[some c.carrier, some c.ops0[0]!, none, none, none,
+    some proof, some g]
+
+meta def NCtx.rhsEq (c : NCtx) (proof g : Expr) : MetaM Expr :=
+  mkAppOptM ``Sep.Xsimpl.himpl_rhs_eq #[some c.carrier, some c.ops0[0]!, none, none, none,
+    some proof, some g]
+
+/-- Move `atom` to the front of a star chain `tree`, returning `(newTree, proof : tree = newTree)`.
+    `newTree` starts with `atom`. Fails if `atom` is not in the chain. -/
+meta partial def starMoveToFront (c : NCtx) (atom : Expr) (tree : Expr) : MetaM (Expr × Expr) := do
+  let tree := tree.consumeMData
+  match matchStar? c tree with
+  | some (H1, H2) =>
+    if ← cheapDefEq atom H1 then
+      return (tree, ← mkEqRefl tree)
+    else
+      -- Recursively move atom to front of H2 (the tail)
+      let (newTail, tailProof) ← starMoveToFront c atom H2
+      match matchStar? c newTail with
+      | some (atomExpr, H2rest) =>
+        -- Build f = fun x => H1 ∗ x  (to apply congrArg)
+        let f ← withLocalDecl `x .default c.carrier fun xVar => do
+          mkLambdaFVars #[xVar] (c.mkStar H1 xVar)
+        -- step1 : H1 ∗ H2 = H1 ∗ (atom ∗ H2rest)
+        let step1 ← mkCongrArg f tailProof
+        -- leftComm : atom ∗ (H1 ∗ H2rest) = H1 ∗ (atom ∗ H2rest)
+        let leftComm := c.lem ``Sep.Xsimpl.hstar_left_comm #[atomExpr, H1, H2rest]
+        let step2 ← mkEqSymm leftComm
+        let total ← mkEqTrans step1 step2
+        return (c.mkStar atomExpr (c.mkStar H1 H2rest), total)
+      | none =>
+        -- newTail is just the atom
+        let f ← withLocalDecl `x .default c.carrier fun xVar => do
+          mkLambdaFVars #[xVar] (c.mkStar H1 xVar)
+        let step1 ← mkCongrArg f tailProof
+        let comm := c.lem ``SepLaws.star_comm #[H1, newTail]
+        let total ← mkEqTrans step1 comm
+        return (c.mkStar newTail H1, total)
+  | none =>
+    if ← cheapDefEq atom tree then
+      return (tree, ← mkEqRefl tree)
+    else
+      throwError "starMoveToFront: {← ppExpr atom} not found in chain {← ppExpr tree}"
+
+/-- Rewrite the LHS of the current entailment goal to `newLhs`, given `lhs = newLhs`. -/
+meta def replaceLhs (goal : MVarId) (c : NCtx) (newLhs rhs proof : Expr) : MetaM MVarId := do
+  let newGoalMVar ← mkFreshExprMVar (c.mkEnt newLhs rhs)
+  goal.assign (← c.lhsEq proof newGoalMVar)
+  return newGoalMVar.mvarId!
+
+meta def applyLem (e : Expr) : TacticM Unit := do
+  replaceMainGoal (← (← getMainGoal).apply e)
+
+meta def firstOf (ts : List (TacticM Unit)) (msg : MessageData) : TacticM Unit :=
+  ts.foldr (· <|> ·) (throwError msg)
+
+-- ============================================================
+-- Cancellation
+-- ============================================================
+
+/-- Try to cancel matching items between LHS and RHS of an entailment goal. -/
+meta def xsimplCancelAllCore : TacticM Unit := withMainContext do
+  let mut progress := false
+  let mut cont := true
+  while cont do
+    cont := false
+    let goals ← getUnsolvedGoals
+    if goals.isEmpty then break
+    let goal ← getMainGoal
+    let goalType ← goal.getType >>= instantiateMVars
+    let some (c, lhs, rhs) ← matchEntails? goalType | break
+    let rhsItems := parseStar c rhs
+    if rhsItems.isEmpty then break
+    let lhsItems := parseStar c lhs
+    if lhsItems.isEmpty then break
+
+    let mut found : Option Expr := none
+    for r in [:rhsItems.length] do
+      let rhsItem ← instantiateMVars rhsItems[r]!
+      if rhsItem.isMVar then continue
+      for l in [:lhsItems.length] do
+        let lhsItem ← instantiateMVars lhsItems[l]!
+        if lhsItem.isMVar then continue
+        if ← cheapDefEq lhsItem rhsItem then
+          found := some rhsItems[r]!
+          break
+      if found.isSome then break
+
+    let some atom := found | break
+    cont := true
+    progress := true
+    trace[xsimpl] m!"Cancelling {atom}"
+
+    let (newLhs, lhsProof) ← starMoveToFront c atom lhs
+    let (newRhs, rhsProof) ← starMoveToFront c atom rhs
+
+    let newGoalMVar ← mkFreshExprMVar (c.mkEnt newLhs newRhs)
+
+    -- goal : lhs ==> rhs, via (newLhs ==> rhs) via (newLhs ==> newRhs)
+    let goalMVar1 ← mkFreshExprMVar (c.mkEnt newLhs rhs)
+    goal.assign (← c.lhsEq lhsProof goalMVar1)
+    goalMVar1.mvarId!.assign (← c.rhsEq (← mkEqSymm rhsProof) newGoalMVar)
+
+    replaceMainGoal [newGoalMVar.mvarId!]
+
+    let newLhsIsStar := (matchStar? c newLhs).isSome
+    let newRhsIsStar := (matchStar? c newRhs).isSome
+
+    if newLhsIsStar && newRhsIsStar then
+      applyLem (c.lem ``SepLaws.frame_r #[])
+    else if newLhsIsStar && not newRhsIsStar then
+      applyLem (c.lem ``Sep.Xsimpl.himpl_cancel_lhs #[])
+    else if not newLhsIsStar && newRhsIsStar then
+      applyLem (c.lem ``Sep.Xsimpl.himpl_cancel_rhs #[])
+    else
+      applyLem (c.lem ``SepLaws.entails_refl #[])
+  if not progress then
+    throwError "xsimpl_cancel_all: no items to cancel"
+
+elab "xsimpl_cancel_all_core" : tactic => xsimplCancelAllCore
+
+meta def xsimplCancelWandCore : TacticM Unit := withMainContext do
+  let mut progress := false
+  let mut cont := true
+  while cont do
+    cont := false
+    let goals ← getUnsolvedGoals
+    if goals.isEmpty then break
+    let goal ← getMainGoal
+    let goalType ← goal.getType >>= instantiateMVars
+    let some (c, lhs, rhs) ← matchEntails? goalType | break
+    let some w := c.wandOp | break
+    let lhsItems := parseStar c lhs
+    if lhsItems.isEmpty then break
+
+    -- Find an (H1 -∗ H2) and an H1 matching its premise
+    let mut found : Option (Expr × Expr) := none
+    for l in [:lhsItems.length] do
+      let itemWand := lhsItems[l]!.consumeMData
+      if NCtx.isOp w itemWand then
+        let wandLhs := NCtx.arg w itemWand 0
+        for l2 in [:lhsItems.length] do
+          if l != l2 then
+            let itemPremise := lhsItems[l2]!
+            if ← cheapDefEq wandLhs itemPremise then
+              found := some (itemPremise, itemWand)
+              break
+        if found.isSome then break
+
+    let some (premise, wand) := found | break
+    cont := true
+    progress := true
+
+    -- Move wand to front, then premise to front so we get `premise ∗ wand`
+    let (newLhs1, lhsProof1) ← starMoveToFront c wand lhs
+    let (newLhs2, lhsProof2) ← starMoveToFront c premise newLhs1
+    let transProof ← mkEqTrans lhsProof1 lhsProof2
+
+    let newGoal ← replaceLhs goal c newLhs2 rhs transProof
+    replaceMainGoal [newGoal]
+
+    if (matchStar? c newLhs2).isSome then
+      firstOf [applyLem (c.lem ``Sep.Xsimpl.himpl_wand_apply_lhs #[]),
+        applyLem (c.lem ``Sep.Xsimpl.himpl_wand_apply_lhs_emp #[])] "xsimpl_cancel_wand: failed"
+    else
+      applyLem (c.lem ``Sep.Xsimpl.himpl_wand_apply_lhs_emp #[])
+  if not progress then
+    throwError "xsimpl_cancel_wand: no wands to cancel"
+
+elab "xsimpl_cancel_wand_core" : tactic => xsimplCancelWandCore
+
+-- ============================================================
+-- Tactic phases
+-- ============================================================
+
+meta def exLevels (c : NCtx) (es : List Expr) : MetaM (Array Level) := do
+  let mut out := #[]
+  for e in es do
+    for s in collect e #[] do
+      let a := NCtx.arg c.exOp s 0
+      if a.hasLooseBVars then continue
+      let some lv ← (try some <$> getLevel a catch _ => pure none) | continue
+      let lv := (← instantiateLevelMVars lv).normalize
+      unless lv.hasMVar || out.contains lv do out := out.push lv
+  return out
+where
+  collect (e : Expr) (acc : Array Expr) : Array Expr :=
+    let acc := if NCtx.isOp c.exOp e then acc.push e else acc
+    match e with
+    | .app f a => collect a (collect f acc)
+    | .lam _ t b _ => collect b (collect t acc)
+    | .forallE _ t b _ => collect b (collect t acc)
+    | .mdata _ b => collect b acc
+    | _ => acc
+
+meta def lawsFor (c : NCtx) (es : List Expr) : MetaM (Array LawsAt) := do
+  let mut out : Array LawsAt := #[{ lv := c.lv0, ops := c.ops0, inst := c.inst0 }]
+  for lv in ← exLevels c es do
+    if out.any (·.lv == lv) then continue
+    if let some l ← c.lawsAtLv? lv then out := out.push l
+  return out
+
+meta def xsimplNormalize : TacticM Unit := withMainContext do
+  let g ← getMainGoal
+  let some (_, c, l, r) ← sepGoal? g | return
+  let mut thms : SimpTheorems := {}
+  let add := fun (thms : SimpTheorems) (n : Name) (e : Expr) => thms.add (.other n) #[] e
+  for n in [``SepLaws.star_emp_l, ``SepLaws.star_emp_r, ``SepLaws.star_assoc,
+      ``SepLaws.wand_curry] do
+    thms ← add thms n (c.lem n #[])
+  for laws in ← lawsFor c [l, r] do
+    thms ← add thms ``SepLaws.star_ex (c.lemAt laws ``SepLaws.star_ex #[])
+    thms ← add thms ``Sep.Xsimpl.hstar_hexists_r (c.lemAt laws ``Sep.Xsimpl.hstar_hexists_r #[])
+  if let some l0 ← c.lawsAtLv? Level.zero then
+    for n in [``Sep.Xsimpl.hstar_hpure_eq_hexists, ``Sep.Xsimpl.hstar_hpure_r_eq_hexists] do
+      thms ← add thms n (mkAppN (mkConst n [c.u]) (#[c.carrier] ++ l0.ops ++ #[l0.inst]))
+  let ctx ← Simp.mkContext (config := {}) (simpTheorems := #[thms])
+    (congrTheorems := ← getSimpCongrTheorems)
+  let (res, _) ← simpTarget g ctx
+  replaceMainGoal res.toList
+
+syntax "xsimpl_normalize" : tactic
+elab_rules : tactic
+  | `(tactic| xsimpl_normalize) => do
+    try xsimplNormalize catch _ => pure ()
+
+meta def hasExHead (c : NCtx) (items : List Expr) : Bool :=
+  items.any fun i =>
+    let i := i.consumeMData
+    NCtx.isOp c.exOp i || NCtx.isOp c.pureOp i
+
+meta def movePureToFront (onLhs : Bool) : TacticM Unit := withMainContext do
+  let goal ← getMainGoal
+  let goalType ← goal.getType >>= instantiateMVars
+  let some (c, lhs, rhs) ← matchEntails? goalType | throwError "not an entailment"
+  let side := if onLhs then lhs else rhs
+  let items := parseStar c side
+  if items.length ≤ 1 then throwError "no pure conjunct to move"
+  if isSpure c items[0]! then throwError "pure conjunct already at the front"
+  let some pureItem := items.find? (isSpure c) | throwError "no pure conjunct to move"
+  let (newSide, proof) ← starMoveToFront c pureItem side
+  if onLhs then
+    replaceMainGoal [← replaceLhs goal c newSide rhs proof]
+  else
+    let newGoalMVar ← mkFreshExprMVar (c.mkEnt lhs newSide)
+    goal.assign (← c.rhsEq (← mkEqSymm proof) newGoalMVar)
+    replaceMainGoal [newGoalMVar.mvarId!]
+
+elab "xsimpl_pure_front_lhs" : tactic => movePureToFront true
+elab "xsimpl_pure_front_rhs" : tactic => movePureToFront false
+
+meta def xsimplInstantiateStepCore : TacticM Unit := withMainContext do
+  let goal ← getMainGoal
+  let goalType ← goal.getType >>= instantiateMVars
+  let some (c, _, rhs) ← matchEntails? goalType | throwError "not an entailment"
+
+  -- If RHS is an MVar, applying ex_r will infinite loop by unifying it with ex
+  let rhsItems := parseStar c rhs
+  for item in rhsItems do
+    if item.isMVar then throwError "RHS contains MVar, skipping instantiate to prevent looping"
+  unless hasExHead c rhsItems do throwError "RHS has no existential"
+
+  let lawss ← lawsFor c rhsItems
+  firstOf (lawss.toList.map (fun l => applyLem (c.lemAt l ``Sep.Xsimpl.himpl_hexists_r_star #[])) ++
+    lawss.toList.map (fun l => applyLem (c.lemAt l ``SepLaws.ex_r #[])) ++
+    [applyLem (c.lem ``SepLaws.pure_r #[]),
+     applyLem (c.lem ``Sep.Xsimpl.himpl_hpure_r #[]),
+     (do movePureToFront false; applyLem (c.lem ``SepLaws.pure_r #[]))])
+    "xsimpl_instantiate_step: no step applies"
+
+elab "xsimpl_instantiate_step_core" : tactic => xsimplInstantiateStepCore
+
+meta def xsimplExtractStepCore : TacticM Unit := withMainContext do
+  let goal ← getMainGoal
+  let goalType ← goal.getType >>= instantiateMVars
+  let some (c, lhs, _) ← matchEntails? goalType | throwError "not an entailment"
+
+  let lhsItems := parseStar c lhs
+  for item in lhsItems do
+    if item.isMVar then
+      throwError "LHS contains MVar, skipping extract to prevent looping"
+  unless hasExHead c lhsItems do throwError "LHS has no existential"
+
+  let intro : TacticM Unit := evalTactic (← `(tactic| intro))
+  let lawss ← lawsFor c lhsItems
+  firstOf (lawss.toList.map (fun l => do
+      applyLem (c.lemAt l ``Sep.Xsimpl.himpl_hexists_l_star #[]); intro) ++
+    lawss.toList.map (fun l => do applyLem (c.lemAt l ``SepLaws.ex_l #[]); intro) ++
+    [(do applyLem (c.lem ``SepLaws.pure_l #[]); intro),
+     (do applyLem (c.lem ``Sep.Xsimpl.himpl_hpure_l #[]); intro),
+     (do movePureToFront true; applyLem (c.lem ``SepLaws.pure_l #[]); intro)])
+    "xsimpl_extract_step: no step applies"
+
+elab "xsimpl_extract_step_core" : tactic => xsimplExtractStepCore
+
+/-- **Wand introduction** (the adjunction, hence safe and invertible).
+    Fires only when the whole RHS is a wand, i.e. the RHS star chain has a single
+    remaining item and that item is `P1 -∗ P2`: then `H ==> P1 -∗ P2` becomes
+    `H ∗ P1 ==> P2`. It cannot loop, since each step strips one wand. -/
+meta def xsimplWandIntroCore : TacticM Unit := withMainContext do
+  let goal ← getMainGoal
+  let goalType ← goal.getType >>= instantiateMVars
+  let some (c, _, rhs) ← matchEntails? goalType | throwError "not an entailment"
+  let rhsItems := parseStar c rhs
+  let [item] := rhsItems | throwError "RHS is not a single wand"
+  if item.isMVar then throwError "RHS is a metavariable"
+  let some w := c.wandOp | throwError "RHS is not a wand"
+  unless NCtx.isOp w item.consumeMData do throwError "RHS is not a wand"
+  applyLem (c.lem ``SepLaws.wand_intro #[])
+
+elab "xsimpl_wand_intro_core" : tactic => xsimplWandIntroCore
+
+syntax "xsimpl_cancel_all" : tactic
+macro_rules
+  | `(tactic| xsimpl_cancel_all) => `(tactic| xsimpl_cancel_all_core)
+
+syntax "xsimpl_cancel_wand" : tactic
+macro_rules
+  | `(tactic| xsimpl_cancel_wand) => `(tactic| xsimpl_cancel_wand_core)
+
+syntax "xsimpl_instantiate_step" : tactic
+macro_rules
+  | `(tactic| xsimpl_instantiate_step) => `(tactic| xsimpl_instantiate_step_core)
+
+syntax "xsimpl_extract_step" : tactic
+macro_rules
+  | `(tactic| xsimpl_extract_step) => `(tactic| xsimpl_extract_step_core)
+
+syntax "xsimpl_wand_intro" : tactic
+macro_rules
+  | `(tactic| xsimpl_wand_intro) => `(tactic| xsimpl_wand_intro_core)
+
+/-- Run `t`, and fail unless it changed the goals.  `xsimpl_core` drives its
+steps with `repeat`, which stops only on failure, so a step that succeeds without
+progress would not terminate. -/
+meta def withProgress (t : TacticM Unit) : TacticM Unit := do
+  let before ← (← getGoals).mapM fun g => do instantiateMVars (← g.getType)
+  t
+  let after ← (← getGoals).mapM fun g => do instantiateMVars (← g.getType)
+  if before.length == after.length && (before.zip after).all (fun (x, y) => x == y) then
+    throwError "xsimpl: step made no progress"
+
+syntax "xsimpl_with_progress " tacticSeq : tactic
+elab_rules : tactic
+  | `(tactic| xsimpl_with_progress $t) => withProgress (evalTactic t)
+
+/-- One rewriting step. -/
+syntax "xsimpl_step" : tactic
+macro_rules
+  | `(tactic| xsimpl_step) => `(tactic| (
+      xsimpl_with_progress (
+        first
+        | xsimpl_cancel_all_core
+        | xsimpl_extract_step_core
+        | xsimpl_wand_intro_core
+        | xsimpl_instantiate_step_core
+        | xsimpl_cancel_wand_core
+      )
+    ))
+
+
 
 meta def newGoal (cur : MVarId) (ty : Expr) (mk : Expr → Expr) : MetaM MVarId := cur.withContext do
   let m ← mkFreshExprMVar ty
@@ -1408,9 +1060,9 @@ meta partial def combine (c : NCtx) (a b : Expr) : MetaM (Expr × Option Expr) :
     let ax := NCtx.arg c.exOp x 0
     let jx := NCtx.arg c.exOp x 1
     let lv ← normLevel ax
-    let some ins ← sepInstAt c.carrier c.u lv | throwError "xsimpl: no instance"
-    let eq1 := if right then c.lemAt lv ins ``nt_eq_exr #[ax, a, jx]
-      else c.lemAt lv ins ``nt_eq_exl #[ax, jx, b]
+    let some ins ← c.lawsAtLv? lv | throwError "xsimpl: no instance"
+    let eq1 := if right then c.lemAt ins ``nt_eq_exr #[ax, a, jx]
+      else c.lemAt ins ``nt_eq_exl #[ax, jx, b]
     let body1 := if right then c.mkStar a jx.bindingBody! else c.mkStar jx.bindingBody! b
     let mkEx := fun (j : Expr) => mkAppN x.getAppFn (x.getAppArgs.set! c.exOp.pos[1]! j)
     let e1 := mkEx (.lam jx.bindingName! ax body1 jx.bindingInfo!)
@@ -1620,7 +1272,7 @@ meta def pureBlockPf (c : NCtx) (s : List Expr) : Option Expr × Expr × List Ex
 
 mutual
 
-meta partial def peelPures (c : NCtx) (inst : Level → MetaM Expr) (lctx0 : LocalContext)
+meta partial def peelPures (c : NCtx) (inst : Level → MetaM LawsAt) (lctx0 : LocalContext)
     (li0 : LocalInstances) (rr : Expr) (typeEx leftPure : Bool) (xs : Array Expr)
     (ps cs : List Expr) : MetaM (Expr × Array Expr × List Expr × Expr) := do
   match ps with
@@ -1637,7 +1289,7 @@ meta partial def peelPures (c : NCtx) (inst : Level → MetaM Expr) (lctx0 : Loc
       else
         return (m, xsF, sF, c.lem ``nt_purel #[pA, (c.starL restL).abstract xs, rr, lam])
 
-meta partial def lhsRec (c : NCtx) (inst : Level → MetaM Expr) (lctx0 : LocalContext)
+meta partial def lhsRec (c : NCtx) (inst : Level → MetaM LawsAt) (lctx0 : LocalContext)
     (li0 : LocalInstances) (rr : Expr) (typeEx leftPure : Bool) (xs : Array Expr)
     (s : List Expr) : MetaM (Expr × Array Expr × List Expr × Expr) := do
   let abs := fun (e : Expr) => e.abstract xs
@@ -1664,18 +1316,18 @@ meta partial def lhsRec (c : NCtx) (inst : Level → MetaM Expr) (lctx0 : LocalC
       let mut body := jb
       if i + 1 < n then
         let q := c.starL (s.drop (i+1))
-        pf := some (c.lemAt lv ins ``nt_exl_base #[a, j, q])
+        pf := some (c.lemAt ins ``nt_exl_base #[a, j, q])
         body := c.mkStar jb q
       let mut k := i
       while k > 0 do
         k := k - 1
         let x := c.starL (s.drop (k+1))
         let kl := Expr.lam bn a body .default
-        let h := pf.getD (c.lemAt lv ins ``nt_refl #[x])
-        pf := some (c.lemAt lv ins ``nt_exl_layer #[a, kl, x, arr[k]!, h])
+        let h := pf.getD (c.lemAt ins ``nt_refl #[x])
+        pf := some (c.lemAt ins ``nt_exl_layer #[a, kl, x, arr[k]!, h])
         body := c.mkStar arr[k]! body
       let kl := Expr.lam bn a body .default
-      let exK := mkAppN (mkConst ``SepLogic.ex [c.u, lv]) #[c.carrier, ins, a, kl]
+      let exK := mkOp ins.ops[4]! #[a, kl]
       let aA := abs a
       let klA := abs kl
       let head := c.transO (abs ls) (abs exK) rr (pf.map abs)
@@ -1690,7 +1342,7 @@ meta partial def lhsRec (c : NCtx) (inst : Level → MetaM Expr) (lctx0 : LocalC
             let bxA := bx.abstract xs2
             let ls2A := (c.starL s2).abstract xs2
             c.trans bxA ls2A rr (c.lem ``nt_of_eq #[bxA, ls2A, p.abstract xs2]) inner
-        return (m, xsF, sF, head (c.lemAt lv ins ``nt_exl #[aA, klA, rr, .lam bn aA inner .default]))
+        return (m, xsF, sF, head (c.lemAt ins ``nt_exl #[aA, klA, rr, .lam bn aA inner .default]))
     | .pure p =>
       let pA := abs p
       if n == 1 then
@@ -1710,14 +1362,14 @@ meta partial def lhsRec (c : NCtx) (inst : Level → MetaM Expr) (lctx0 : LocalC
 
 end
 
-meta def lhsBatch (c : NCtx) (inst : Level → MetaM Expr) (cur : MVarId) (s : List Expr) (rr : Expr)
+meta def lhsBatch (c : NCtx) (inst : Level → MetaM LawsAt) (cur : MVarId) (s : List Expr) (rr : Expr)
     (typeEx leftPure : Bool) : MetaM (MVarId × List Expr × Nat) := cur.withContext do
   let (m, xsF, sF, pf) ← lhsRec c inst (← getLCtx) (← getLocalInstances) rr typeEx leftPure #[] s
   cur.assign pf
   let (fvs, g2) ← m.mvarId!.introN xsF.size
   return (g2, sF.map (·.replaceFVars xsF (fvs.map mkFVar)), xsF.size)
 
-meta def rhsStep (c : NCtx) (inst : Level → MetaM Expr) (cur : MVarId) (ls : Expr) (tt : List Expr)
+meta def rhsStep (c : NCtx) (inst : Level → MetaM LawsAt) (cur : MVarId) (ls : Expr) (tt : List Expr)
     (jx : Nat) : MetaM (MVarId × List Expr × Expr) := cur.withContext do
   let n := tt.length
   let arr := tt.toArray
@@ -1731,22 +1383,22 @@ meta def rhsStep (c : NCtx) (inst : Level → MetaM Expr) (cur : MVarId) (ls : E
     let mut body := jb
     if jx + 1 < n then
       let q := c.starL (tt.drop (jx+1))
-      pf := some (c.lemAt lv ins ``nt_exr_base #[a, j, q])
+      pf := some (c.lemAt ins ``nt_exr_base #[a, j, q])
       body := c.mkStar jb q
     let mut k := jx
     while k > 0 do
       k := k - 1
       let x := c.starL (tt.drop (k+1))
       let kl := Expr.lam bn a body .default
-      let h := pf.getD (c.lemAt lv ins ``nt_refl #[x])
-      pf := some (c.lemAt lv ins ``nt_exr_layer #[a, kl, x, arr[k]!, h])
+      let h := pf.getD (c.lemAt ins ``nt_refl #[x])
+      pf := some (c.lemAt ins ``nt_exr_layer #[a, kl, x, arr[k]!, h])
       body := c.mkStar arr[k]! body
     let kl := Expr.lam bn a body .default
-    let exK := mkAppN (mkConst ``SepLogic.ex [c.u, lv]) #[c.carrier, ins, a, kl]
+    let exK := mkOp ins.ops[4]! #[a, kl]
     let y ← mkFreshExprMVar a (userName := bn)
     let nr := body.instantiate1 y
     let m ← newGoal cur (c.mkEnt ls nr) fun m =>
-      c.transO' ls exK lt (c.lemAt lv ins ``nt_exr #[a, y, kl, ls, m]) pf
+      c.transO' ls exK lt (c.lemAt ins ``nt_exr #[a, y, kl, ls, m]) pf
     let (g2, t') ← flatGoalR c m ls nr
     return (g2, t', y)
   | .pure p =>
@@ -1885,16 +1537,16 @@ meta partial def nativeGoal (g : MVarId) : MetaM (Option (List MVarId)) := g.wit
   let rHasEx := accR.hasEx
   let foreverA := accR.nestedTypeEx
   let typeEx := lvs.any (· != Level.zero)
-  let mut insts : Array (Level × Expr) := #[(c.lv0, c.inst0)]
+  let mut insts : Array (Level × LawsAt) := #[(c.lv0, { lv := c.lv0, ops := c.ops0, inst := c.inst0 })]
   for lv in lvs do
     if insts.any (·.1 == lv) then continue
-    let some i ← sepInstAt c.carrier c.u lv | return none
+    let some i ← c.lawsAtLv? lv | return none
     insts := insts.push (lv, i)
-  let inst : Level → MetaM Expr := fun lv => do
+  let inst : Level → MetaM LawsAt := fun lv => do
     match insts.find? (·.1 == lv) with
     | some (_, i) => return i
     | none =>
-      let some i ← sepInstAt c.carrier c.u lv | throwError "xsimpl: no instance"
+      let some i ← c.lawsAtLv? lv | throwError "xsimpl: no instance"
       return i
   if ← wholeEq c g l0 r0 then return some []
   let mut tag ← g.getTag
@@ -2082,14 +1734,8 @@ elab_rules : tactic
   | `(tactic| xsimpl_core) => xsimplDriver none
 
 meta def affineEmpProof? (c : NCtx) (l : Expr) : MetaM (Option Expr) := do
-  let lvls := [c.u, c.lv0]
-  let inst? ← try synthInstance? (mkApp (mkConst ``AffineSepLogic lvls) c.carrier)
-    catch _ => pure none
-  match inst? with
-  | some aff => return some (mkApp3 (mkConst ``AffineSepLogic.entails_emp lvls) c.carrier aff l)
-  | none =>
-    let some aff ← affineInst? c.carrier | return none
-    return some (← mkAppOptM ``AffineSepLogic.entails_emp #[some c.carrier, some aff, some l])
+  let some aff ← affineLaws? c | return none
+  return some (c.lemAt aff ``AffineSepLaws.entails_emp #[l])
 
 meta def isEmpRhs (c : NCtx) (r : Expr) : MetaM Bool := do
   if NCtx.isOp c.empOp r || NCtx.isOp c.empOp (← whnfR r) then return true

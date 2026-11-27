@@ -1,4 +1,5 @@
 import Sep.HProp.SepLogic
+import Sep.HProp.Meta
 import Lean
 open Lean Meta Elab Tactic
 open HProp Notation
@@ -110,7 +111,7 @@ def unfoldStep (entries : Array UnfoldEntry) : TacticM Bool := withMainContext d
   let allFns := entries.map (·.headFn)
 
   -- Find the first atom in LHS or RHS whose head is registered
-  let items := Sep.Xsimpl.parseHstar lhs ++ Sep.Xsimpl.parseHstar rhs
+  let items := HProp.parseHstar lhs ++ HProp.parseHstar rhs
   let foundFn? := items.findSome? fun item =>
     item.getAppFn.constName?.filter (allFns.contains ·)
 

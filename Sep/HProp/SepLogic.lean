@@ -9,25 +9,21 @@ public section
 open Lean Meta Elab Tactic
 
 /-!
-# `HProp` as a `SepLogic`
+# `HProp` as a separation logic
 
 The `xsimpl` tactic itself lives in `Sep/Xsimpl/Core.lean`, generically over the
-`SepLogic` class. This file supplies the instance for `HProp` and the
-fold/unfold bridge lemmas the tactic uses to translate `HProp` goals into class
-form and back.
+`SepLaws` class. This file supplies the instance for `HProp`.
 -/
 
 namespace Sep.Xsimpl
 
+universe v
+
 variable [Params]
 
-instance instSepLogicHProp : SepLogic HProp where
-  star := HProp.hstar
-  emp := HProp.hempty
-  spure := HProp.hpure
-  ex := HProp.hexists
-  wand := HProp.hwand
-  Entails := HProp.himpl
+instance (priority := low) instSepLawsHProp :
+    SepLaws.{0, v} HProp HProp.himpl HProp.hstar HProp.hempty HProp.hpure HProp.hexists
+      HProp.hwand where
   star_comm := HProp.hstar_comm
   star_assoc := HProp.hstar_assoc
   star_emp_l := HProp.hstar_hempty_l
@@ -47,58 +43,9 @@ instance instSepLogicHProp : SepLogic HProp where
     HProp.himpl_hwand_r (by rw [HProp.hstar_comm P1 H1]; exact h)
   wand_curry := HProp.hwand_curry_eq
 
--- ============================================================
--- Fold / unfold bridge
--- ============================================================
-
-@[xsimpl_fold] theorem fold_hstar (H1 H2 : HProp) :
-    HProp.hstar H1 H2 = SepLogic.star H1 H2 := rfl
-
-@[xsimpl_fold] theorem fold_hempty :
-    (HProp.hempty : HProp) = SepLogic.emp := rfl
-
-@[xsimpl_fold] theorem fold_hpure (P : Prop) :
-    (HProp.hpure P : HProp) = SepLogic.spure P := rfl
-
-@[xsimpl_fold] theorem fold_hexists {A : Sort _} (J : A → HProp) :
-    HProp.hexists J = SepLogic.ex J := rfl
-
-@[xsimpl_fold] theorem fold_hwand (H1 H2 : HProp) :
-    HProp.hwand H1 H2 = SepLogic.wand H1 H2 := rfl
-
-@[xsimpl_fold] theorem fold_himpl (H1 H2 : HProp) :
-    HProp.himpl H1 H2 = SepLogic.Entails H1 H2 := rfl
-
-@[xsimpl_unfold_class] theorem unfold_star (H1 H2 : HProp) :
-    SepLogic.star H1 H2 = HProp.hstar H1 H2 := rfl
-
-@[xsimpl_unfold_class] theorem unfold_emp :
-    (SepLogic.emp : HProp) = HProp.hempty := rfl
-
-@[xsimpl_unfold_class] theorem unfold_spure (P : Prop) :
-    (SepLogic.spure P : HProp) = HProp.hpure P := rfl
-
-@[xsimpl_unfold_class] theorem unfold_ex {A : Sort _} (J : A → HProp) :
-    SepLogic.ex J = HProp.hexists J := rfl
-
-@[xsimpl_unfold_class] theorem unfold_wand (H1 H2 : HProp) :
-    SepLogic.wand H1 H2 = HProp.hwand H1 H2 := rfl
-
-@[xsimpl_unfold_class] theorem unfold_entails (H1 H2 : HProp) :
-    SepLogic.Entails H1 H2 = HProp.himpl H1 H2 := rfl
-
--- ============================================================
--- Compatibility layer for `HProp`-specific clients
--- ============================================================
-
-/-- Parse a star chain stated with either the `HProp` constants or the
-    `SepLogic` class operations. -/
-meta partial def parseHstar (e : Expr) : List Expr :=
-  match e.getAppFnArgs with
-  | (``HProp.hstar, #[_, H1, H2]) => H1 :: parseHstar H2
-  | (``HProp.hempty, _) => []
-  | (``SepLogic.star, #[_, _, H1, H2]) => H1 :: parseHstar H2
-  | (``SepLogic.emp, _) => []
-  | _ => [e]
+instance instSepLawsHPropType :
+    SepLaws.{0, 1} HProp HProp.himpl HProp.hstar HProp.hempty HProp.hpure HProp.hexists
+      HProp.hwand :=
+  instSepLawsHProp
 
 end Sep.Xsimpl

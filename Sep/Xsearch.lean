@@ -1,6 +1,7 @@
 module
 
 public import Sep.HProp.SepLogic
+public import Sep.HProp.Meta
 public import Sep.SegC
 public meta import Sep.SegC
 public meta import Lean
@@ -516,7 +517,6 @@ elab "xsearch_distr" : tactic => distrCore
 def entailHead? (t : Expr) : Option (Expr × Expr) :=
   match t.getAppFnArgs with
   | (``HProp.himpl, #[_, l, r]) => some (l, r)
-  | (``SepLogic.Entails, #[_, _, l, r]) => some (l, r)
   | _ => none
 
 def isDisj (e : Expr) : Bool :=
@@ -606,7 +606,7 @@ def cellGroup? (e : Expr) : Option (Expr × Expr) :=
   | (``HProp.hsingle, args) =>
       if args.size ≥ 2 then some (args[args.size-2]!, args[args.size-1]!) else none
   | (``HProp.hstar, _) =>
-      let items := Sep.Xsimpl.parseHstar e
+      let items := HProp.parseHstar e
       let isCell := fun (i : Expr) => i.getAppFn.constName? == some ``HProp.hsingle
       let isPure := fun (i : Expr) => i.getAppFn.constName? == some ``HProp.hpure
       if items.any isPure && items.all (fun i => isCell i || isPure i) then
@@ -1297,7 +1297,7 @@ partial def exPeel (e : Expr) : Expr × Nat := Id.run do
 
 def bvarDetermined (body : Expr) (i : Nat) : Bool := Id.run do
   let tgt : Expr := .bvar i
-  for it in Sep.Xsimpl.parseHstar body do
+  for it in HProp.parseHstar body do
     match it.getAppFnArgs with
     | (``HProp.hpure, #[_, pr]) =>
         match pr.getAppFnArgs with
@@ -1349,7 +1349,7 @@ def witDetermined : TacticM Unit := withMainContext do
       if depth == 0 then return ()
       let tgt : Expr := .bvar (depth - 1)
       let mut wit : Option Expr := none
-      for it in Sep.Xsimpl.parseHstar body do
+      for it in HProp.parseHstar body do
         if wit.isSome then break
         match it.getAppFnArgs with
         | (``HProp.hpure, #[_, pr]) =>
@@ -1372,7 +1372,7 @@ def witDetermined : TacticM Unit := withMainContext do
       replaceMainGoal rem
       evalTactic (← `(tactic| try beta_reduce))
     else
-      let items := Sep.Xsimpl.parseHstar rhs
+      let items := HProp.parseHstar rhs
       unless items.any (fun it => isEx it && exDetermined it) do return ()
       let prog ← tryTactic (evalTactic (← `(tactic| conv_rhs => simp only
         [Sep.Xsearch.hstar_hexists_rr, HProp.hstar_hexists, HProp.hstar_assoc])))
@@ -1419,7 +1419,7 @@ elab "xsearch_pfacts" : tactic => withMainContext do
     if t.hasExprMVar then return ()
     let heads := (xsearchUnfoldExt.getState (← getEnv)).map (·.headFn)
     let mut ends : Array Expr := #[]
-    for a in Sep.Xsimpl.parseHstar lhs ++ Sep.Xsimpl.parseHstar rhs do
+    for a in HProp.parseHstar lhs ++ HProp.parseHstar rhs do
       match a.getAppFn.constName? with
       | some n =>
           if heads.contains n then
@@ -1958,7 +1958,7 @@ def cmFoot (szs : Array (Name × CmSz)) (facts : Array Expr) (st : CmSt) (rhs : 
     if l.m.toList.all (fun (f, _) => env.contains f) then
       some (l.m.fold (fun acc f c => acc + c * env.getD f 0) l.k)
     else none
-  let ra := (Sep.Xsimpl.parseHstar rhs).filterMap (fun a =>
+  let ra := (HProp.parseHstar rhs).filterMap (fun a =>
     if a.getAppFn.constName? == some ``HProp.hsingle then a.getAppArgs[1]? else none)
   if (List.range ra.length).any (fun i => (ra.drop (i + 1)).contains ra[i]!) then return true
   let mut ll := st.cells.size
@@ -2995,7 +2995,7 @@ def earlyLhsOccs (entries : Array UnfoldEntry) (heads : Array Name)
   if cap == 0 then return #[]
   if cellHeads nr lhs ≥ cap then return #[]
   let mut out : Array Expr := #[]
-  for o in Sep.Xsimpl.parseHstar lhs do
+  for o in HProp.parseHstar lhs do
     match o.getAppFn.constName? with
     | some nm => if heads.contains nm && (← isRecPred nm) then out := out.push o
     | none => pure ()
@@ -3795,7 +3795,7 @@ def indAlt (A rhs : Expr) : TacticM Unit := withMainContext do
   let some (_, ta) ← functionalOf? A | throwError "ind: not a fixpoint"
   let aty ← inferType ta
   let tup := stripInj ta
-  let rAtoms := (Sep.Xsimpl.parseHstar rhs).filter (fun a => !a.isAppOf ``HProp.hpure)
+  let rAtoms := (HProp.parseHstar rhs).filter (fun a => !a.isAppOf ``HProp.hpure)
   let posGen := match rAtoms with
     | [r] => r.getAppNumArgs == A.getAppNumArgs && r.getAppArgs == A.getAppArgs && r.getAppFn != A.getAppFn
     | _ => false
@@ -9813,7 +9813,7 @@ partial def branchGoal (inv : Bool) : TacticM Unit := do
   else if isDisj rhs then
     let args := rhs.getAppArgs
     let n := args.size
-    let atoms := Sep.Xsimpl.parseHstar lhs
+    let atoms := HProp.parseHstar lhs
     let sa := branchCountsD heads atoms args[n-2]!
     let sb := branchCountsD heads atoms args[n-1]!
     let l : TacticM Unit := applyConstT ``hdisj_left
@@ -9821,7 +9821,7 @@ partial def branchGoal (inv : Bool) : TacticM Unit := do
     let side := fun (nm : Name) (D : Expr) (plain : TacticM Unit) =>
       let (body, depth) := exPeel D
       let tgt : Expr := .bvar (depth - 1)
-      let R := (Sep.Xsimpl.parseHstar body).toArray
+      let R := (HProp.parseHstar body).toArray
       let ws := if t.hasExprMVar || depth == 0 || !R.any (fun it => it.isAppOf ``HProp.hsingle
           && it.getAppArgs[it.getAppNumArgs - 2]? == some tgt) then #[]
         else witRanked atoms.toArray (R.filter (·.hasLooseBVar (depth - 1))) tgt (·.hasLooseBVars)
@@ -9833,8 +9833,8 @@ partial def branchGoal (inv : Bool) : TacticM Unit := do
         ≤ absentPredsD heads atoms args[n-1]!) then alts := la ++ ra
     else alts := ra ++ la
   else
-    let L := Sep.Xsimpl.parseHstar lhs
-    let Rs := Sep.Xsimpl.parseHstar rhs
+    let L := HProp.parseHstar lhs
+    let Rs := HProp.parseHstar rhs
     let ptoLocs := ptoLocsOf lhs #[]
     let occsR := collectOccs heads rhs #[]
     let mut forced : Array Expr := #[]
@@ -9853,7 +9853,7 @@ partial def branchGoal (inv : Bool) : TacticM Unit := do
       | none => pure ()
       | some (A, _) =>
         alts := alts.push (false, wandAlt lhs rhs L i)
-        let As := Sep.Xsimpl.parseHstar A
+        let As := HProp.parseHstar A
         if As.length ≥ 1 && As.length < L.length then
           let mut ks : List Nat := []
           let mut okS := true

@@ -1,6 +1,6 @@
 module
 
-public import Sep.SepLogic
+public import Sep.FindLaws
 public meta import Lean
 
 public meta section
@@ -17,20 +17,58 @@ namespace Sep.Reordering
 
 /-! ## `∗`-tree surgery -/
 
-/-- The head constant of separating conjunction. -/
-private def starHead : Name := ``SepLogic.star
+private structure Heads where
+  stars : Array NOp := #[]
+  emps : Array NOp := #[]
+  deriving Inhabited
 
-/-- The head constant of the empty resource. -/
-private def empHead : Name := ``SepLogic.emp
+private def carrierOf? (e : Expr) : MetaM (Option Expr) := do
+  let args := e.getAppArgs
+  let pre := mkAppN e.getAppFn (args.extract 0 (args.size - 2))
+  if pre.hasLooseBVars then return none
+  let ty ← whnf (← inferType pre)
+  let .forallE _ a (.forallE _ b c _) _ := ty | return none
+  if b.hasLooseBVars || c.hasLooseBVars || a != b || a != c then return none
+  return some a
+
+private partial def headsOf (e : Expr) : MetaM Heads := do
+  let mut seen : Array (Name × Nat) := #[]
+  let mut hs : Heads := {}
+  for t in apps e #[] do
+    let n := t.getAppFn.constName!
+    let k := t.getAppNumArgs
+    if seen.contains (n, k) then continue
+    seen := seen.push (n, k)
+    let some carrier ← (try carrierOf? t catch _ => pure none) | continue
+    let some (_, laws) ← sepLaws? carrier | continue
+    let some (op, _, _) ← withLocalDeclD `x carrier fun x => withLocalDeclD `y carrier fun y =>
+      pure (opTemplate laws.ops[1]! #[x, y]) | continue
+    unless op.name == n && op.arity == k && op.pos == #[k - 2, k - 1] do continue
+    hs := { hs with stars := hs.stars.push op }
+    if let some (eop, _, _) := opTemplate laws.ops[2]! #[] then
+      hs := { hs with emps := hs.emps.push eop }
+  return hs
+where
+  apps (e : Expr) (acc : Array Expr) : Array Expr :=
+    match e with
+    | .app .. =>
+      let acc := if e.getAppFn.isConst && e.getAppNumArgs ≥ 2 then acc.push e else acc
+      e.getAppArgs.foldl (fun acc a => apps a acc) (apps e.getAppFn acc)
+    | .lam _ t b _ => apps b (apps t acc)
+    | .forallE _ t b _ => apps b (apps t acc)
+    | .letE _ t v b _ => apps b (apps v (apps t acc))
+    | .mdata _ b => apps b acc
+    | .proj _ _ b => apps b acc
+    | _ => acc
 
 /-- View a term as a separating conjunction: its two factors, together with the
 head applied to its leading (type and instance) arguments, which rebuilds a
 conjunction at the same instance. -/
-private def starParts? (e : Expr) : Option (Expr × Expr × (Expr → Expr → Expr)) := do
+private def starParts? (hs : Heads) (e : Expr) : Option (Expr × Expr × (Expr → Expr → Expr)) := do
   let f := e.getAppFn
   let .const n _ := f | none
-  guard (n == starHead)
   let args := e.getAppArgs
+  guard (hs.stars.any fun op => op.name == n && op.arity == args.size)
   guard (args.size ≥ 2)
   let pre := args.extract 0 (args.size - 2)
   let a := args[args.size - 2]!
@@ -38,22 +76,20 @@ private def starParts? (e : Expr) : Option (Expr × Expr × (Expr → Expr → E
   some (a, b, fun x y => mkAppN (mkAppN f pre) #[x, y])
 
 /-- The rebuilder for a `∗`-tree: the connective at the tree's own instance. -/
-private def starMk? (e : Expr) : Option (Expr → Expr → Expr) :=
-  (starParts? e).map (·.2.2)
+private def starMk? (hs : Heads) (e : Expr) : Option (Expr → Expr → Expr) :=
+  (starParts? hs e).map (·.2.2)
 
 /-- Is this term headed by `∗`? -/
-private def isStar (e : Expr) : Bool := (starParts? e).isSome
+private def isStar (hs : Heads) (e : Expr) : Bool := (starParts? hs e).isSome
 
 /-- Is this term the empty resource? -/
-private def isEmp (e : Expr) : Bool :=
-  match e.getAppFn with
-  | .const n _ => n == empHead
-  | _ => false
+private def isEmp (hs : Heads) (e : Expr) : Bool :=
+  hs.emps.any fun op => e.isAppOfArity op.name op.arity
 
 /-- The atoms of a `∗`-tree, left to right. -/
-private partial def atomsOf (e : Expr) : Array Expr :=
-  match starParts? e with
-  | some (a, b, _) => atomsOf a ++ atomsOf b
+private partial def atomsOf (hs : Heads) (e : Expr) : Array Expr :=
+  match starParts? hs e with
+  | some (a, b, _) => atomsOf hs a ++ atomsOf hs b
   | none => #[e]
 
 /-- Rebuild a right-nested `∗`-tree from a non-empty atom list, using `f` for
@@ -66,9 +102,9 @@ private def mkStarTree (f : Expr → Expr → Expr) (atoms : Array Expr) : Optio
 
 /-- The tree obtained by moving the `i`-th atom of `tree` to the head, keeping
 the others in their original relative order and right-nesting the result. -/
-private def reshape (tree : Expr) (i : Nat) : Option Expr := do
-  let f ← starMk? tree
-  let atoms := atomsOf tree
+private def reshape (hs : Heads) (tree : Expr) (i : Nat) : Option Expr := do
+  let f ← starMk? hs tree
+  let atoms := atomsOf hs tree
   mkStarTree f (#[atoms[i]!] ++ atoms.eraseIdx! i)
 
 /-! ## Locating trees in a goal -/
@@ -94,12 +130,12 @@ private def withTree {α : Type} [Inhabited α] (t : StarTree) (k : Array Expr �
 /-- Collect the maximal `∗`-trees of a term, in traversal order, descending
 under binders.  A tree's atoms are traversed too, so a `∗`-tree hidden inside a
 postcondition lambda under another tree's atom is found as well. -/
-private partial def collectTrees (e : Expr) : Array StarTree :=
+private partial def collectTrees (hs : Heads) (e : Expr) : Array StarTree :=
   go e #[] #[]
 where
   go (e : Expr) (bs : Array (Name × Expr)) (acc : Array StarTree) : Array StarTree :=
-    if isStar e then
-      (atomsOf e).foldl (fun acc a => goChildren a bs acc) (acc.push ⟨e, bs⟩)
+    if isStar hs e then
+      (atomsOf hs e).foldl (fun acc a => goChildren a bs acc) (acc.push ⟨e, bs⟩)
     else
       goChildren e bs acc
   goChildren (e : Expr) (bs : Array (Name × Expr)) (acc : Array StarTree) : Array StarTree :=
@@ -136,20 +172,36 @@ private def mkTreeEq (xs : Array Expr) (lhs rhs : Expr) : TacticM Expr := do
     if used then keep := keep.push x
   mkForallFVars keep.reverse eq
 
+private def simpEmp : TacticM Unit := Tactic.withMainContext do
+  let g ← Tactic.getMainGoal
+  let some (carrier, _, _) := (← instantiateMVars (← g.getType)).eq? | return
+  let some (u, laws) ← sepLaws? carrier | return
+  let mut thms : SimpTheorems := {}
+  for n in [``SepLaws.star_emp_l, ``SepLaws.star_emp_r] do
+    thms ← thms.add (.other n) #[]
+      (mkAppN (mkConst n [u, laws.lv]) (#[carrier] ++ laws.ops ++ #[laws.inst]))
+  let ctx ← Simp.mkContext (config := {}) (simpTheorems := #[thms])
+    (congrTheorems := ← getSimpCongrTheorems)
+  let (res, _) ← simpTarget g ctx
+  Tactic.replaceMainGoal res.toList
+
 /-- Prove a closed `∀ xs, lhs = rhs` by AC normalisation of `∗` plus the `emp`
 unit laws.  Throws if the equality does not hold up to those moves. -/
 private def proveTreeEq (ty : Expr) : TacticM Expr := do
   let goal ← mkFreshExprSyntheticOpaqueMVar ty
   let stx ← `(tactic|
-    (intros
-     -- The `emp` cleanup may already close the goal (a pure unit move), in which
-     -- case there is nothing left to close by `ac_rfl`; an unclosed goal is
-     -- caught by the emptiness check below, so `try` loses no failure.
-     try simp only [SepLogic.star_emp_l, SepLogic.star_emp_r]
-     try first
-       | rfl
-       | ac_rfl))
-  let rem ← Tactic.run goal.mvarId! (Tactic.evalTactic stx)
+    try first
+      | rfl
+      | ac_rfl)
+  let rem ← Tactic.run goal.mvarId! do
+    Tactic.evalTactic (← `(tactic| intros))
+    -- The `emp` cleanup may already close the goal (a pure unit move), in which
+    -- case there is nothing left to close by `ac_rfl`; an unclosed goal is
+    -- caught by the emptiness check below, so `try` loses no failure.
+    try simpEmp catch _ => pure ()
+    for g in ← Tactic.getUnsolvedGoals do
+      Tactic.setGoals [g]
+      Tactic.evalTactic stx
   unless rem.isEmpty do
     throwError "sl: could not prove the reshaping equality{indentExpr ty}"
   instantiateMVars goal
@@ -200,11 +252,13 @@ private def noOp (loc : Option FVarId) : TacticM Unit := do
     replaceMainGoal [fresh.mvarId!]
 
 /-- The maximal `∗`-trees of the current goal, or of the hypothesis `loc`. -/
-private def treesOf (loc : Option FVarId) : TacticM (Array StarTree) := do
+private def treesOf (loc : Option FVarId) : TacticM (Heads × Array StarTree) := do
   let e ← match loc with
     | none => getMainTarget
     | some fv => fv.getType
-  return collectTrees (← instantiateMVars e)
+  let e ← instantiateMVars e
+  let hs ← headsOf e
+  return (hs, collectTrees hs e)
 
 /-- Elaborate a pattern at a given type. -/
 private def elabPatternAt (stx : Term) (ty : Expr) : TacticM Expr := do
@@ -229,10 +283,10 @@ private def matchesAtom (pat a : Expr) : MetaM Bool :=
 /-- The implementation of `sl_pull`. -/
 private def slPullCore (patStx : Term) (occ : Option Nat) (loc : Option FVarId) :
     TacticM Unit := do
-  let trees ← treesOf loc
+  let (hs, trees) ← treesOf loc
   if trees.isEmpty then throwError "sl_pull: no separating conjunction found"
   let pat ← elabPattern patStx trees
-  if isStar pat then
+  if isStar hs pat then
     throwError "sl_pull: the pattern{indentExpr pat}\nis itself a `∗`-tree; \
       `sl_pull` moves a single atom.  Use `sl_perm` to reshape a whole tree."
   -- Every (tree, atom index) whose atom matches the pattern, in traversal order.
@@ -244,16 +298,16 @@ private def slPullCore (patStx : Term) (occ : Option Nat) (loc : Option FVarId) 
       -- The pattern is re-elaborated inside the tree's telescope: its holes must
       -- be allowed to be filled with the tree's own bound variables.
       let patIn ← elabPatternAt patStx (← inferType tree)
-      let atoms := atomsOf tree
+      let atoms := atomsOf hs tree
       let mut hits := hits
       for hj : ai in [0:atoms.size] do
         if ← matchesAtom patIn atoms[ai] then
           unless hits.any fun (ti', ai') =>
-              ti' == ti && reshape tree ai' == reshape tree ai do
+              ti' == ti && reshape hs tree ai' == reshape hs tree ai do
             hits := hits.push (ti, ai)
       return hits
   if hits.isEmpty then
-    let atoms ← trees.flatMapM fun t => withTree t fun _ tree => pure (atomsOf tree)
+    let atoms ← trees.flatMapM fun t => withTree t fun _ tree => pure (atomsOf hs tree)
     throwError "sl_pull: no atom matches{indentExpr pat}\nthe atoms in scope are:\n\
       {← fmtAtoms atoms}"
   let (ti, ai) ← match occ with
@@ -263,14 +317,14 @@ private def slPullCore (patStx : Term) (occ : Option Nat) (loc : Option FVarId) 
     | none =>
       if hits.size > 1 then
         let ms ← hits.mapM fun (ti, ai) =>
-          withTree trees[ti]! fun _ tree => pure (atomsOf tree)[ai]!
+          withTree trees[ti]! fun _ tree => pure (atomsOf hs tree)[ai]!
         throwError "sl_pull: {hits.size} atoms match{indentExpr pat}\n\
           namely:\n{← fmtAtoms ms}\ndisambiguate with `(occs := n)`"
       pure hits[0]!
   -- Build `∀ xs, tree = reshaped` inside the tree's binder telescope, so that
   -- the statement that leaves it is closed.
   let ty? ← withTree trees[ti]! fun xs tree => do
-    match reshape tree ai with
+    match reshape hs tree ai with
     | none => throwError "sl_pull: internal: not a `∗`-tree"
     | some rhs => if rhs == tree then pure none else return some (← mkTreeEq xs tree rhs)
   let some ty := ty? | return (← noOp loc)
@@ -312,13 +366,13 @@ elab_rules : tactic
 /-- Copy a target tree's shape, mapping each leaf to the source atom it was
 matched with (`emp` leaves to the source instance's `emp`), and rebuilding the
 connective at the source's instance. -/
-private partial def rebuildShape (starOf : Expr → Expr → Expr) (empE : Expr)
+private partial def rebuildShape (hs : Heads) (starOf : Expr → Expr → Expr) (empE : Expr)
     (assign : Array (Expr × Expr)) (t : Expr) : Expr :=
-  match starParts? t with
+  match starParts? hs t with
   | some (a, b, _) =>
-    starOf (rebuildShape starOf empE assign a) (rebuildShape starOf empE assign b)
+    starOf (rebuildShape hs starOf empE assign a) (rebuildShape hs starOf empE assign b)
   | none =>
-    if isEmp t then empE
+    if isEmp hs t then empE
     else match assign.find? fun (l, _) => l == t with
       | some (_, r) => r
       | none => t
@@ -326,16 +380,17 @@ private partial def rebuildShape (starOf : Expr → Expr → Expr) (empE : Expr)
 /-- Try to reshape `tree` (already instantiated, under binders `xs`) into the
 target elaborated from `tgtStx`.  Returns the closed `∀ xs, tree = target`, or
 `none` if the named target atoms do not all occur in this tree. -/
-private def permTreeEq? (tgtStx : Term) (xs : Array Expr) (tree : Expr) :
+private def permTreeEq? (hs : Heads) (tgtStx : Term) (xs : Array Expr) (tree : Expr) :
     TacticM (Option Expr) := do
   let tgt ← elabPatternAt tgtStx (← inferType tree)
-  let tgtAtoms := atomsOf tgt
-  let named := tgtAtoms.filter fun a => !a.isMVar && !isEmp a
+  let hs := { hs with stars := hs.stars ++ (← headsOf tgt).stars }
+  let tgtAtoms := atomsOf hs tgt
+  let named := tgtAtoms.filter fun a => !a.isMVar && !isEmp hs a
   let holes := tgtAtoms.filter fun a => a.isMVar
-  let srcAtoms := atomsOf tree
+  let srcAtoms := atomsOf hs tree
   -- Consume the source atoms: named target atoms first, then the `_` holes in
   -- left-to-right order over what is left.  `emp` is ignored on both sides.
-  let mut pool := (srcAtoms.filter (!isEmp ·)).toList
+  let mut pool := (srcAtoms.filter (!isEmp hs ·)).toList
   let mut assign : Array (Expr × Expr) := #[]
   for na in named do
     match ← pool.findM? (matchesAtom na ·) with
@@ -353,26 +408,25 @@ private def permTreeEq? (tgtStx : Term) (xs : Array Expr) (tree : Expr) :
     assign := assign.push (hole, a)
   -- Rebuild the target's *shape* out of the source's own atoms, connective and
   -- `emp`.  Elaborating the target on its own can pick a different (universe-)
-  -- instance of `SepLogic`; taking only the shape from it keeps the equality
+  -- instance of `SepLaws`; taking only the shape from it keeps the equality
   -- inside the instance the goal actually uses.
-  let some source := starParts? tree
+  let some source := starParts? hs tree
     | throwError "sl_perm: internal: not a `∗`-tree"
-  let f := tree.getAppFn
-  let lvls := f.constLevels!
-  let pre := tree.getAppArgs.extract 0 (tree.getAppArgs.size - 2)
-  let empE := mkAppN (mkConst empHead lvls) pre
-  let rhs := rebuildShape source.2.2 empE assign tgt
+  let some (_, laws) ← sepLaws? (← inferType tree)
+    | throwError "sl_perm: internal: no `SepLaws` instance"
+  let empE := mkOp laws.ops[2]! #[]
+  let rhs := rebuildShape hs source.2.2 empE assign tgt
   return some (← mkTreeEq xs tree rhs)
 
 /-- The implementation of `sl_perm`. -/
 private def slPermCore (tgtStx : Term) (loc : Option FVarId) : TacticM Unit := do
-  let trees ← treesOf loc
+  let (hs, trees) ← treesOf loc
   if trees.isEmpty then throwError "sl_perm: no separating conjunction found"
   -- The tree to rewrite is the first one containing all the named target atoms.
   let mut ty? : Option Expr := none
   for t in trees do
     if ty?.isNone then
-      ty? ← withTree t fun xs tree => permTreeEq? tgtStx xs tree
+      ty? ← withTree t fun xs tree => permTreeEq? hs tgtStx xs tree
   let some ty := ty?
     | throwError "sl_perm: no `∗`-tree in the goal contains all of the target's \
         named atoms"

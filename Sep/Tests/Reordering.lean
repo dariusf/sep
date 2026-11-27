@@ -1,13 +1,14 @@
 import Sep.Reordering
 import Sep.HProp.SepLogic
-
-open scoped SepLogic
+import Sep.Tests.Notation
 
 namespace Sep.Reordering.Tests
 
-universe u
+open Sep.Tests.Notation
 
-variable {α : Type u} [SepLogic α]
+local notation "α" => HProp
+
+variable [Params]
 
 def mockPts (l v : Nat) : α := ⌜l = v⌝
 
@@ -245,19 +246,21 @@ end Sep.Reordering.Tests
 
 /-! ## At a concrete instance
 
-The same tactics over `Sep.Xsimpl`'s `SepLogic HProp`, with the reshaped goal
+The same tactics over `HProp` in its own notation, with the reshaped goal
 handed straight to `xsimpl`: nothing beyond the instance is needed. -/
 
 namespace Sep.Xsimpl
 
+open HProp Notation
+
 variable [Params] (A B X : HProp)
 
-example (h : SepLogic.Entails (B ∗ (A ∗ B)) X) :
-    SepLogic.Entails (A ∗ (B ∗ B)) X := by
+example (h : B ✶ (A ✶ B) ==> X) :
+    A ✶ (B ✶ B) ==> X := by
   sl_pull B
   exact h
 
-example : SepLogic.Entails (A ∗ (B ∗ B)) (B ∗ (A ∗ B)) := by
+example : A ✶ (B ✶ B) ==> B ✶ (A ✶ B) := by
   sl_pull B (occs := 1)
   xsimpl
 

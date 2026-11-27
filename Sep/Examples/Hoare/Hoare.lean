@@ -160,12 +160,6 @@ elab "hoare_step" : tactic => withMainContext do
   -- Solve it automatically with biabduction so the user never sees a raw entailment.
   evalTactic (← `(tactic| try xsimpl_granular_frames))
 
-  -- `xsimpl` works with the `SepLogic` class operations; a frame it infers is
-  -- therefore stated in class form, and that form escapes through the frame
-  -- metavariable into the sibling goals we own. Restore `HProp`'s own constants
-  -- everywhere before continuing, so the Hoare rules keep matching.
-  evalTactic (← `(tactic| all_goals (try xsimpl_unfold_goal)))
-
   -- For commands that bind variables (alloc, read), the continuation is `∀ x, HT[...] ...`.
   -- Introduce the bound variable so the user sees a Hoare triple.
   evalTactic (← `(tactic| try with_reducible intro))
@@ -190,7 +184,5 @@ elab "hoare_close" : tactic => withMainContext do
     | xsimpl
     | assumption
   )))
-  -- As in `hoare_step`: undo any class-form leakage through inferred frames.
-  evalTactic (← `(tactic| all_goals (try xsimpl_unfold_goal)))
 
 end Sep.Hoare

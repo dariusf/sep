@@ -1,5 +1,6 @@
 import Sep.HProp
 import Sep.HProp.SepLogic
+import Sep.HProp.Meta
 import Lean
 open Lean Meta Elab Tactic
 open HProp Notation
@@ -49,7 +50,7 @@ private def rewriteLlistCons : TacticM Bool := withMainContext do
   unless fn == ``HProp.himpl && args.size == 3 do return false
   let lhs := args[1]!
   let rhs := args[2]!
-  for (side, items) in [("lhs", Sep.Xsimpl.parseHstar lhs), ("rhs", Sep.Xsimpl.parseHstar rhs)] do
+  for (side, items) in [("lhs", HProp.parseHstar lhs), ("rhs", HProp.parseHstar rhs)] do
     for item in items do
       if isLlistCons item then
         trace[xsimpl] m!"llist unfold on {side}: {← ppExpr item}"

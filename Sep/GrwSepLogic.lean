@@ -5,39 +5,36 @@ public import Mathlib.Tactic.GRewrite
 
 public section
 
-namespace SepLogic
-
-open scoped SepLogic
+namespace SepLaws
 
 universe u v
 
-variable {α : Type u} [SepLogic α]
+variable {α : Type u} {entails : α → α → Prop} {star : α → α → α} {emp : α} {pure : Prop → α}
+  {ex : {A : Sort v} → (A → α) → α} {wand : α → α → α}
+  [inst : SepLaws α entails star emp pure ex wand]
 
-attribute [refl] SepLogic.entails_refl
+local infixr:61 " ∗ " => star
+local infixr:60 " -∗ " => wand
+local infixr:25 " ==> " => entails
 
-instance : Trans (SepLogic.Entails (α := α)) SepLogic.Entails SepLogic.Entails :=
-  ⟨SepLogic.entails_trans⟩
+include inst
 
-@[gcongr]
 theorem entails_imp_entails {H1 H1' H2 H2' : α} (h1 : H1' ==> H1) (h2 : H2 ==> H2') :
     (H1 ==> H2) → (H1' ==> H2') :=
-  fun h => entails_trans h1 (entails_trans h h2)
+  fun h => inst.entails_trans h1 (inst.entails_trans h h2)
 
-@[gcongr]
 theorem star_mono {H1 H1' H2 H2' : α} (h1 : H1 ==> H1') (h2 : H2 ==> H2') :
     (H1 ∗ H2) ==> (H1' ∗ H2') :=
-  entails_trans (frame_l h1) (frame_r h2)
+  inst.entails_trans (inst.frame_l h1) (inst.frame_r h2)
 
-@[gcongr]
 theorem ex_mono {A : Sort v} {J K : A → α} (h : ∀ x, J x ==> K x) :
-    SepLogic.ex J ==> SepLogic.ex K :=
-  ex_l fun x => ex_r x (h x)
+    ex J ==> ex K :=
+  inst.ex_l fun x => inst.ex_r x (h x)
 
-@[gcongr]
 theorem wand_mono {H1 H1' H2 H2' : α} (h1 : H1' ==> H1) (h2 : H2 ==> H2') :
     (H1 -∗ H2) ==> (H1' -∗ H2') := by
-  refine wand_intro ?_
-  rw [star_comm]
-  exact entails_trans (frame_l h1) (entails_trans (wand_cancel H1 H2) h2)
+  apply inst.wand_intro
+  rw [inst.star_comm]
+  exact inst.entails_trans (inst.frame_l h1) (inst.entails_trans (inst.wand_cancel H1 H2) h2)
 
-end SepLogic
+end SepLaws
